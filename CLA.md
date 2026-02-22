@@ -10,11 +10,11 @@
 
 2. **您同意许可条款**：您同意将您的贡献按照本项目的 MIT 许可证进行许可。
 
-3. **您授予项目维护者权利**：您授予项目维护者和 linux.do 社区永久、全球、免版税、不可撤销的权利来使用、修改、分发您的贡献。
+3. **您授予项目维护者权利**：您授予项目维护者和 SeaTunnelX 社区永久、全球、免版税、不可撤销的权利来使用、修改、分发您的贡献。
 
 ### 您的贡献将如何使用？
 
-- 您的贡献将根据 [MIT 许可证](LICENSE) 进行许可
+- 您的贡献将根据 [Apache 2.0 许可证](LICENSE) 进行许可
 - 您的贡献可能被修改、整合到项目中或重新分发
 - 您将在项目的贡献者名单中被适当地标识
 
@@ -34,7 +34,7 @@ A Contributor License Agreement (CLA) is a legal document that clarifies your ri
 
 2. **You agree to the license terms**: You agree to license your contributions under this project's MIT License.
 
-3. **You grant rights to project maintainers**: You grant the project maintainers and linux.do community a perpetual, worldwide, royalty-free, irrevocable right to use, modify, and distribute your contributions.
+3. **You grant rights to project maintainers**: You grant the project maintainers and SeaTunnelX community a perpetual, worldwide, royalty-free, irrevocable right to use, modify, and distribute your contributions.
 
 ### How will your contributions be used?
 
