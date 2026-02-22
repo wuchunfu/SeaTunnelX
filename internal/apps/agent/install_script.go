@@ -551,6 +551,18 @@ install_agent() {
     mkdir -p "${CONFIG_DIR}"
     mkdir -p "${LOG_DIR}"
     
+    # Generate a fixed agent ID (stable across restarts; same machine = same ID)
+    # 生成固定 Agent ID（重启后不变；同一台机器 = 同一 ID）
+    if [ -n "${AGENT_ID:-}" ]; then
+        : # Already set (e.g. by caller); keep it
+    elif command -v sha256sum &>/dev/null; then
+        AGENT_ID="agent-$( (cat /etc/machine-id 2>/dev/null; hostname 2>/dev/null; uname -n 2>/dev/null) | tr -d ' \n\r' | sha256sum | head -c 16)"
+    else
+        AGENT_ID="agent-$( (cat /etc/machine-id 2>/dev/null; hostname 2>/dev/null; date +%s 2>/dev/null) | tr -d ' \n\r' | md5sum 2>/dev/null | head -c 16 || echo "id$$")"
+    fi
+    log_info "Generated fixed agent ID: ${AGENT_ID} (will be used for all registrations)"
+    log_info "已生成固定 Agent ID：${AGENT_ID}（将用于每次注册）"
+    
     # Generate config file
     # 生成配置文件
     cat > "${CONFIG_DIR}/config.yaml" << EOF
@@ -562,11 +574,9 @@ install_agent() {
 # ============================================================================
 
 # Agent settings
-# Agent 设置
+# Agent 设置（固定 ID 保证主服务重启后仍能识别本机）
 agent:
-  # ID is auto-generated if empty
-  # 如果为空则自动生成 ID
-  id: ""
+  id: "${AGENT_ID}"
 
 # Control Plane connection settings
 # Control Plane 连接设置
