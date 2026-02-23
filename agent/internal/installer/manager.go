@@ -43,6 +43,7 @@ import (
 	"strings"
 	"time"
 
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1138,7 +1139,7 @@ func NewInstallerManagerWithClient(client *http.Client) *InstallerManager {
 // - Retry failed steps / 重试失败的步骤
 // - Skip optional steps / 跳过可选步骤
 func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *InstallParams, reporter ProgressReporter) (*InstallResult, error) {
-	fmt.Println("[InstallStepByStep] Starting installation...")
+	agentlogger.Infof("[InstallStepByStep] Starting installation...")
 	if reporter == nil {
 		reporter = &NoOpProgressReporter{}
 	}
@@ -1159,7 +1160,7 @@ func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *Instal
 		}, err
 	}
 
-	fmt.Printf("[InstallStepByStep] JVM config: %+v\n", params.JVM)
+	agentlogger.Infof("[InstallStepByStep] JVM config: %+v", params.JVM)
 
 	// Execute each step / 执行每个步骤
 	// Note: Precheck should be done separately via Prechecker before calling this
@@ -1188,10 +1189,10 @@ func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *Instal
 		default:
 		}
 
-		fmt.Printf("[InstallStepByStep] Executing step: %s\n", s.step)
+		agentlogger.Infof("[InstallStepByStep] Executing step: %s", s.step)
 		reporter.ReportStepStart(s.step)
 		if err := s.execute(); err != nil {
-			fmt.Printf("[InstallStepByStep] Step %s failed: %v\n", s.step, err)
+			agentlogger.Errorf("[InstallStepByStep] Step %s failed: %v", s.step, err)
 			reporter.ReportStepFailed(s.step, err)
 			result.Success = false
 			result.FailedStep = s.step
@@ -1199,7 +1200,7 @@ func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *Instal
 			result.Message = fmt.Sprintf("Step %s failed: %v / 步骤 %s 失败：%v", s.step, err, s.step, err)
 			return result, err
 		}
-		fmt.Printf("[InstallStepByStep] Step %s completed\n", s.step)
+		agentlogger.Infof("[InstallStepByStep] Step %s completed", s.step)
 		reporter.ReportStepComplete(s.step)
 	}
 
@@ -1449,19 +1450,19 @@ func (m *InstallerManager) executeStepConfigureCheckpoint(params *InstallParams,
 // executeStepConfigureJVM 配置 JVM 设置
 func (m *InstallerManager) executeStepConfigureJVM(params *InstallParams, reporter ProgressReporter) error {
 	if params.JVM == nil {
-		fmt.Println("[JVM] JVM config is nil, skipping configuration")
+		agentlogger.Infof("[JVM] JVM config is nil, skipping configuration")
 		reporter.Report(InstallStepConfigureJVM, 100, "JVM configuration skipped (using defaults) / 跳过 JVM 配置（使用默认值）")
 		return nil
 	}
 
-	fmt.Printf("[JVM] Configuring JVM with: hybrid=%d, master=%d, worker=%d, mode=%s\n",
+	agentlogger.Infof("[JVM] Configuring JVM with: hybrid=%d, master=%d, worker=%d, mode=%s",
 		params.JVM.HybridHeapSize, params.JVM.MasterHeapSize, params.JVM.WorkerHeapSize, params.DeploymentMode)
 	reporter.Report(InstallStepConfigureJVM, 0, "Configuring JVM... / 配置 JVM...")
 	if err := m.configureJVM(params); err != nil {
-		fmt.Printf("[JVM] Configuration failed: %v\n", err)
+		agentlogger.Errorf("[JVM] Configuration failed: %v", err)
 		return err
 	}
-	fmt.Println("[JVM] Configuration completed successfully")
+	agentlogger.Infof("[JVM] Configuration completed successfully")
 	reporter.Report(InstallStepConfigureJVM, 100, "JVM configured / JVM 配置完成")
 	return nil
 }
@@ -1742,37 +1743,37 @@ func (m *InstallerManager) configureCheckpointStorage(params *InstallParams) err
 // configureJVM 配置 JVM 选项
 func (m *InstallerManager) configureJVM(params *InstallParams) error {
 	if params.JVM == nil {
-		fmt.Println("[configureJVM] JVM config is nil, skipping")
+		agentlogger.Infof("[configureJVM] JVM config is nil, skipping")
 		return nil
 	}
 
 	configDir := filepath.Join(params.InstallDir, "config")
-	fmt.Printf("[configureJVM] Config dir: %s, DeploymentMode: %s\n", configDir, params.DeploymentMode)
+	agentlogger.Infof("[configureJVM] Config dir: %s, DeploymentMode: %s", configDir, params.DeploymentMode)
 
 	// Configure based on deployment mode / 根据部署模式配置
 	if params.DeploymentMode == DeploymentModeHybrid {
 		// Hybrid mode: configure jvm_options / 混合模式：配置 jvm_options
 		jvmOptionsPath := filepath.Join(configDir, "jvm_options")
-		fmt.Printf("[configureJVM] Hybrid mode: modifying %s with heap=%dGB\n", jvmOptionsPath, params.JVM.HybridHeapSize)
+		agentlogger.Infof("[configureJVM] Hybrid mode: modifying %s with heap=%dGB", jvmOptionsPath, params.JVM.HybridHeapSize)
 		if err := m.modifyJVMOptions(jvmOptionsPath, params.JVM.HybridHeapSize); err != nil {
-			fmt.Printf("[configureJVM] Error modifying %s: %v\n", jvmOptionsPath, err)
+			agentlogger.Errorf("[configureJVM] Error modifying %s: %v", jvmOptionsPath, err)
 			return err
 		}
-		fmt.Printf("[configureJVM] Successfully modified %s\n", jvmOptionsPath)
+		agentlogger.Infof("[configureJVM] Successfully modified %s", jvmOptionsPath)
 	} else {
 		// Separated mode: configure jvm_master_options and jvm_worker_options
 		// 分离模式：配置 jvm_master_options 和 jvm_worker_options
 		masterOptionsPath := filepath.Join(configDir, "jvm_master_options")
-		fmt.Printf("[configureJVM] Separated mode: modifying %s with heap=%dGB\n", masterOptionsPath, params.JVM.MasterHeapSize)
+		agentlogger.Infof("[configureJVM] Separated mode: modifying %s with heap=%dGB", masterOptionsPath, params.JVM.MasterHeapSize)
 		if err := m.modifyJVMOptions(masterOptionsPath, params.JVM.MasterHeapSize); err != nil {
-			fmt.Printf("[configureJVM] Error modifying %s: %v\n", masterOptionsPath, err)
+			agentlogger.Errorf("[configureJVM] Error modifying %s: %v", masterOptionsPath, err)
 			return err
 		}
 
 		workerOptionsPath := filepath.Join(configDir, "jvm_worker_options")
-		fmt.Printf("[configureJVM] Separated mode: modifying %s with heap=%dGB\n", workerOptionsPath, params.JVM.WorkerHeapSize)
+		agentlogger.Infof("[configureJVM] Separated mode: modifying %s with heap=%dGB", workerOptionsPath, params.JVM.WorkerHeapSize)
 		if err := m.modifyJVMOptions(workerOptionsPath, params.JVM.WorkerHeapSize); err != nil {
-			fmt.Printf("[configureJVM] Error modifying %s: %v\n", workerOptionsPath, err)
+			agentlogger.Errorf("[configureJVM] Error modifying %s: %v", workerOptionsPath, err)
 			return err
 		}
 	}
@@ -1800,22 +1801,22 @@ func (m *InstallerManager) configureJVM(params *InstallParams) error {
 // This function handles both formats - uncomments if needed and sets the correct heap size
 // 此函数处理两种格式 - 如果需要则取消注释并设置正确的堆大小
 func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) error {
-	fmt.Printf("[modifyJVMOptions] Starting: file=%s, heapSize=%dGB\n", filePath, heapSizeGB)
+	agentlogger.Infof("[modifyJVMOptions] Starting: file=%s, heapSize=%dGB", filePath, heapSizeGB)
 	
 	// Backup original file / 备份原始文件
 	if err := backupFile(filePath); err != nil {
-		fmt.Printf("[modifyJVMOptions] Backup failed: %v\n", err)
+		agentlogger.Errorf("[modifyJVMOptions] Backup failed: %v", err)
 		return fmt.Errorf("%w: %v", ErrConfigGenerationFailed, err)
 	}
 
 	// Read file content / 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Printf("[modifyJVMOptions] Read failed: %v\n", err)
+		agentlogger.Errorf("[modifyJVMOptions] Read failed: %v", err)
 		return fmt.Errorf("%w: failed to read %s: %v", ErrConfigGenerationFailed, filePath, err)
 	}
 
-	fmt.Printf("[modifyJVMOptions] File content length: %d bytes\n", len(content))
+	agentlogger.Infof("[modifyJVMOptions] File content length: %d bytes", len(content))
 	lines := strings.Split(string(content), "\n")
 	var result []string
 	xmsModified := false
@@ -1833,13 +1834,13 @@ func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) err
 		if xmsPattern.MatchString(trimmed) {
 			// Replace with uncommented and correct heap size
 			// 替换为取消注释并设置正确的堆大小
-			fmt.Printf("[modifyJVMOptions] Found Xms line: '%s' -> '-Xms%dg'\n", trimmed, heapSizeGB)
+			agentlogger.Infof("[modifyJVMOptions] Found Xms line: '%s' -> '-Xms%dg'", trimmed, heapSizeGB)
 			result = append(result, fmt.Sprintf("-Xms%dg", heapSizeGB))
 			xmsModified = true
 		} else if xmxPattern.MatchString(trimmed) {
 			// Replace with uncommented and correct heap size
 			// 替换为取消注释并设置正确的堆大小
-			fmt.Printf("[modifyJVMOptions] Found Xmx line: '%s' -> '-Xmx%dg'\n", trimmed, heapSizeGB)
+			agentlogger.Infof("[modifyJVMOptions] Found Xmx line: '%s' -> '-Xmx%dg'", trimmed, heapSizeGB)
 			result = append(result, fmt.Sprintf("-Xmx%dg", heapSizeGB))
 			xmxModified = true
 		} else {
@@ -1848,16 +1849,16 @@ func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) err
 		}
 	}
 
-	fmt.Printf("[modifyJVMOptions] Modifications: Xms=%v, Xmx=%v\n", xmsModified, xmxModified)
+	agentlogger.Infof("[modifyJVMOptions] Modifications: Xms=%v, Xmx=%v", xmsModified, xmxModified)
 	contentStr := strings.Join(result, "\n")
 
 	// Write modified content / 写入修改后的内容
 	if err := os.WriteFile(filePath, []byte(contentStr), 0644); err != nil {
-		fmt.Printf("[modifyJVMOptions] Write failed: %v\n", err)
+		agentlogger.Errorf("[modifyJVMOptions] Write failed: %v", err)
 		return fmt.Errorf("%w: failed to write %s: %v", ErrConfigGenerationFailed, filePath, err)
 	}
 
-	fmt.Printf("[modifyJVMOptions] Successfully wrote %d bytes to %s\n", len(contentStr), filePath)
+	agentlogger.Infof("[modifyJVMOptions] Successfully wrote %d bytes to %s", len(contentStr), filePath)
 	return nil
 }
 

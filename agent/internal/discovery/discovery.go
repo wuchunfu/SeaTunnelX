@@ -29,6 +29,8 @@ package discovery
 import (
 	"fmt"
 	"sync"
+
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 )
 
 // ProcessDiscovery provides on-demand SeaTunnel process discovery
@@ -56,7 +58,7 @@ func (d *ProcessDiscovery) DiscoverProcesses() ([]*DiscoveredProcess, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	fmt.Println("[ProcessDiscovery] Scanning for SeaTunnel processes... / 正在扫描 SeaTunnel 进程...")
+	agentlogger.Infof("[ProcessDiscovery] Scanning for SeaTunnel processes... / 正在扫描 SeaTunnel 进程...")
 
 	processes, err := d.scanner.ScanProcesses()
 	if err != nil {
@@ -64,9 +66,9 @@ func (d *ProcessDiscovery) DiscoverProcesses() ([]*DiscoveredProcess, error) {
 	}
 
 	if len(processes) == 0 {
-		fmt.Println("[ProcessDiscovery] No SeaTunnel processes found / 未找到 SeaTunnel 进程")
+		agentlogger.Infof("[ProcessDiscovery] No SeaTunnel processes found / 未找到 SeaTunnel 进程")
 	} else {
-		fmt.Printf("[ProcessDiscovery] Found %d process(es) / 发现 %d 个进程\n", len(processes), len(processes))
+		agentlogger.Infof("[ProcessDiscovery] Found %d process(es) / 发现 %d 个进程", len(processes), len(processes))
 	}
 
 	return processes, nil
@@ -157,8 +159,8 @@ func NewClusterDiscovery() *ClusterDiscovery {
 // Returns empty cluster list - clusters should be created manually now
 // 返回空的集群列表 - 现在集群应该手动创建
 func (d *ClusterDiscovery) DiscoverNow() ([]*DiscoveredCluster, error) {
-	fmt.Println("[ClusterDiscovery] DiscoverNow is deprecated. Use ProcessDiscovery.DiscoverProcesses instead.")
-	fmt.Println("[ClusterDiscovery] DiscoverNow 已弃用。请使用 ProcessDiscovery.DiscoverProcesses。")
+	agentlogger.Warnf("[ClusterDiscovery] DiscoverNow is deprecated. Use ProcessDiscovery.DiscoverProcesses instead.")
+	agentlogger.Warnf("[ClusterDiscovery] DiscoverNow 已弃用。请使用 ProcessDiscovery.DiscoverProcesses。")
 	return nil, nil
 }
 

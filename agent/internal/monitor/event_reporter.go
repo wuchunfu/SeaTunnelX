@@ -18,9 +18,10 @@
 package monitor
 
 import (
-	"fmt"
 	"sync"
 	"time"
+
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 )
 
 // DefaultEventCacheSize is the default size of the event cache
@@ -99,7 +100,7 @@ func (r *EventReporter) SetConnected(connected bool) {
 	// If reconnected, try to flush cached events
 	// 如果重新连接，尝试刷新缓存的事件
 	if connected && wasDisconnected {
-		fmt.Println("[EventReporter] Connection restored, flushing cached events / 连接恢复，刷新缓存的事件")
+		agentlogger.Infof("[EventReporter] Connection restored, flushing cached events / 连接恢复，刷新缓存的事件")
 		go r.FlushEvents()
 	}
 }
@@ -147,7 +148,7 @@ func (r *EventReporter) ReportEvent(event *ProcessEvent) {
 	}
 	r.eventCache = append(r.eventCache, event)
 
-	fmt.Printf("[EventReporter] Event cached: type=%s, name=%s, pid=%d / 事件已缓存：类型=%s，名称=%s，PID=%d\n",
+	agentlogger.Infof("[EventReporter] Event cached: type=%s, name=%s, pid=%d / 事件已缓存：类型=%s，名称=%s，PID=%d",
 		event.Type, event.Name, event.PID, event.Type, event.Name, event.PID)
 
 	// Try to report immediately if connected and batch size reached
@@ -175,13 +176,13 @@ func (r *EventReporter) flushEventsLocked() {
 	}
 
 	if !r.isConnected {
-		fmt.Printf("[EventReporter] Not connected, keeping %d events in cache / 未连接，保留 %d 个事件在缓存中\n",
+		agentlogger.Warnf("[EventReporter] Not connected, keeping %d events in cache / 未连接，保留 %d 个事件在缓存中",
 			len(r.eventCache), len(r.eventCache))
 		return
 	}
 
 	if r.reportFunc == nil {
-		fmt.Println("[EventReporter] No report function set / 未设置上报函数")
+		agentlogger.Warnf("[EventReporter] No report function set / 未设置上报函数")
 		return
 	}
 
@@ -195,14 +196,14 @@ func (r *EventReporter) flushEventsLocked() {
 		batch := r.eventCache[:batchEnd]
 		err := r.reportFunc(batch)
 		if err != nil {
-			fmt.Printf("[EventReporter] Failed to report events: %v / 上报事件失败：%v\n", err, err)
+			agentlogger.Errorf("[EventReporter] Failed to report events: %v / 上报事件失败：%v", err, err)
 			// Keep events in cache for retry / 保留事件在缓存中以便重试
 			return
 		}
 
 		// Remove reported events from cache / 从缓存中移除已上报的事件
 		r.eventCache = r.eventCache[batchEnd:]
-		fmt.Printf("[EventReporter] Reported %d events, %d remaining / 上报了 %d 个事件，剩余 %d 个\n",
+		agentlogger.Infof("[EventReporter] Reported %d events, %d remaining / 上报了 %d 个事件，剩余 %d 个",
 			batchEnd, len(r.eventCache), batchEnd, len(r.eventCache))
 	}
 }
@@ -221,5 +222,5 @@ func (r *EventReporter) ClearCache() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.eventCache = make([]*ProcessEvent, 0, r.cacheSize)
-	fmt.Println("[EventReporter] Cache cleared / 缓存已清除")
+	agentlogger.Infof("[EventReporter] Cache cleared / 缓存已清除")
 }

@@ -32,6 +32,7 @@ import (
 
 	pb "github.com/seatunnel/seatunnelX/agent"
 	"github.com/seatunnel/seatunnelX/agent/internal/config"
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -356,9 +357,9 @@ func (c *Client) Reconnect(ctx context.Context) error {
 			return nil
 		}
 
-		// Log reconnection attempt (in production, use proper logging)
-		// 记录重连尝试（生产环境使用正确的日志）
-		fmt.Printf("Reconnection attempt %d failed: %v, next retry in %v\n",
+		// Log reconnection attempt
+		// 记录重连尝试
+		agentlogger.Warnf("Reconnection attempt %d failed: %v, next retry in %v",
 			c.backoff.Attempt(), err, c.backoff.NextBackoff())
 	}
 }
@@ -461,9 +462,9 @@ func (c *Client) StartHeartbeat(ctx context.Context, interval time.Duration, get
 				usage, processes := getUsage()
 				_, err := c.SendHeartbeat(ctx, usage, processes)
 				if err != nil {
-					// Log error (in production, use proper logging)
-					// 记录错误（生产环境使用正确的日志）
-					fmt.Printf("Heartbeat failed: %v\n", err)
+					// Log error
+					// 记录错误
+					agentlogger.Errorf("Heartbeat failed: %v", err)
 				}
 			}
 		}
@@ -531,7 +532,7 @@ func (c *Client) StartCommandStream(ctx context.Context, handler CommandHandler)
 		return fmt.Errorf("failed to send init message: %w", err)
 	}
 
-	fmt.Printf("Command stream established successfully for agent %s / 命令流建立成功，Agent: %s\n", agentID, agentID)
+	agentlogger.Infof("Command stream established successfully for agent %s / 命令流建立成功，Agent: %s", agentID, agentID)
 
 	// Start goroutine to receive commands and send responses
 	// 启动 goroutine 接收指令并发送响应
@@ -579,7 +580,7 @@ func (c *Client) StartCommandStream(ctx context.Context, handler CommandHandler)
 			// Send response back to Control Plane
 			// 将响应发送回 Control Plane
 			if sendErr := stream.Send(resp); sendErr != nil {
-				fmt.Printf("Failed to send command response: %v\n", sendErr)
+				agentlogger.Errorf("Failed to send command response: %v", sendErr)
 			}
 		}(cmd)
 	}

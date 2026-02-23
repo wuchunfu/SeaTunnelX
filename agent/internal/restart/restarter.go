@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 	"github.com/seatunnel/seatunnelX/agent/internal/monitor"
 	"github.com/seatunnel/seatunnelX/agent/internal/process"
 )
@@ -113,7 +114,7 @@ func (r *AutoRestarter) SetConfig(config *RestartConfig) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.config = config
-	fmt.Printf("[AutoRestarter] Config updated: enabled=%v, delay=%v, maxRestarts=%d, window=%v, cooldown=%v / 配置已更新\n",
+	agentlogger.Infof("[AutoRestarter] Config updated: enabled=%v, delay=%v, maxRestarts=%d, window=%v, cooldown=%v / 配置已更新",
 		config.Enabled, config.RestartDelay, config.MaxRestarts, config.TimeWindow, config.CooldownPeriod)
 }
 
@@ -143,20 +144,20 @@ func (r *AutoRestarter) OnProcessCrashed(proc *monitor.TrackedProcess) error {
 	r.mu.Unlock()
 
 	if !config.Enabled {
-		fmt.Printf("[AutoRestarter] Auto restart disabled, skipping restart for %s / 自动重启已禁用，跳过 %s 的重启\n",
+		agentlogger.Infof("[AutoRestarter] Auto restart disabled, skipping restart for %s / 自动重启已禁用，跳过 %s 的重启",
 			proc.Name, proc.Name)
 		return nil
 	}
 
 	// Check if should restart / 检查是否应该重启
 	if !r.ShouldRestart(proc) {
-		fmt.Printf("[AutoRestarter] Restart limit reached or in cooldown for %s / %s 已达重启限制或在冷却中\n",
+		agentlogger.Warnf("[AutoRestarter] Restart limit reached or in cooldown for %s / %s 已达重启限制或在冷却中",
 			proc.Name, proc.Name)
 		return fmt.Errorf("restart limit reached or in cooldown / 已达重启限制或在冷却中")
 	}
 
 	// Wait for restart delay / 等待重启延迟
-	fmt.Printf("[AutoRestarter] Waiting %v before restarting %s / 等待 %v 后重启 %s\n",
+	agentlogger.Infof("[AutoRestarter] Waiting %v before restarting %s / 等待 %v 后重启 %s",
 		config.RestartDelay, proc.Name, config.RestartDelay, proc.Name)
 	time.Sleep(config.RestartDelay)
 
@@ -166,7 +167,7 @@ func (r *AutoRestarter) OnProcessCrashed(proc *monitor.TrackedProcess) error {
 	stillEnabled := r.config.Enabled
 	r.mu.Unlock()
 	if !stillEnabled {
-		fmt.Printf("[AutoRestarter] Auto restart disabled after delay, skipping restart for %s / 延迟后自动重启已禁用，跳过 %s 的重启\n",
+		agentlogger.Infof("[AutoRestarter] Auto restart disabled after delay, skipping restart for %s / 延迟后自动重启已禁用，跳过 %s 的重启",
 			proc.Name, proc.Name)
 		return nil
 	}
@@ -197,7 +198,7 @@ func (r *AutoRestarter) ShouldRestart(proc *monitor.TrackedProcess) bool {
 
 	// Check if in cooldown / 检查是否在冷却中
 	if now.Before(history.CooldownUntil) {
-		fmt.Printf("[AutoRestarter] Process %s is in cooldown until %v / 进程 %s 在冷却中直到 %v\n",
+		agentlogger.Infof("[AutoRestarter] Process %s is in cooldown until %v / 进程 %s 在冷却中直到 %v",
 			proc.Name, history.CooldownUntil, proc.Name, history.CooldownUntil)
 		return false
 	}
@@ -222,7 +223,7 @@ func (r *AutoRestarter) ShouldRestart(proc *monitor.TrackedProcess) bool {
 	if restartsInWindow >= r.config.MaxRestarts {
 		// Enter cooldown / 进入冷却
 		history.CooldownUntil = now.Add(r.config.CooldownPeriod)
-		fmt.Printf("[AutoRestarter] Max restarts (%d) reached for %s, entering cooldown until %v / %s 已达最大重启次数（%d），进入冷却直到 %v\n",
+		agentlogger.Warnf("[AutoRestarter] Max restarts (%d) reached for %s, entering cooldown until %v / %s 已达最大重启次数（%d），进入冷却直到 %v",
 			r.config.MaxRestarts, proc.Name, history.CooldownUntil, proc.Name, r.config.MaxRestarts, history.CooldownUntil)
 		return false
 	}
@@ -239,7 +240,7 @@ func (r *AutoRestarter) DoRestart(ctx context.Context, proc *monitor.TrackedProc
 	callback := r.callback
 	r.mu.Unlock()
 
-	fmt.Printf("[AutoRestarter] Restarting process %s... / 正在重启进程 %s...\n", proc.Name, proc.Name)
+	agentlogger.Infof("[AutoRestarter] Restarting process %s... / 正在重启进程 %s...", proc.Name, proc.Name)
 
 	// Get start params / 获取启动参数
 	startParams := proc.StartParams
@@ -254,14 +255,14 @@ func (r *AutoRestarter) DoRestart(ctx context.Context, proc *monitor.TrackedProc
 	err := r.processManager.StartProcess(ctx, proc.Name, startParams)
 	if err != nil {
 		if errors.Is(err, process.ErrProcessAlreadyRunning) {
-			fmt.Printf("[AutoRestarter] Process %s already running, treating as success / 进程 %s 已在运行，视为成功\n", proc.Name, proc.Name)
+			agentlogger.Infof("[AutoRestarter] Process %s already running, treating as success / 进程 %s 已在运行，视为成功", proc.Name, proc.Name)
 			if callback != nil {
 				callback(proc.Name, true, nil)
 			}
 			return nil
 		}
 		r.recordRestart(proc.Name)
-		fmt.Printf("[AutoRestarter] Failed to restart %s: %v / 重启 %s 失败：%v\n", proc.Name, err, proc.Name, err)
+		agentlogger.Errorf("[AutoRestarter] Failed to restart %s: %v / 重启 %s 失败：%v", proc.Name, err, proc.Name, err)
 		if callback != nil {
 			callback(proc.Name, false, err)
 		}
@@ -269,7 +270,7 @@ func (r *AutoRestarter) DoRestart(ctx context.Context, proc *monitor.TrackedProc
 	}
 
 	r.recordRestart(proc.Name)
-	fmt.Printf("[AutoRestarter] Successfully restarted %s / 成功重启 %s\n", proc.Name, proc.Name)
+	agentlogger.Infof("[AutoRestarter] Successfully restarted %s / 成功重启 %s", proc.Name, proc.Name)
 	if callback != nil {
 		callback(proc.Name, true, nil)
 	}
@@ -308,7 +309,7 @@ func (r *AutoRestarter) recordRestart(processName string) {
 	}
 	history.RestartTimes = newTimes
 
-	fmt.Printf("[AutoRestarter] Recorded restart for %s, count in window: %d / 记录 %s 的重启，窗口内次数：%d\n",
+	agentlogger.Infof("[AutoRestarter] Recorded restart for %s, count in window: %d / 记录 %s 的重启，窗口内次数：%d",
 		processName, len(history.RestartTimes), processName, len(history.RestartTimes))
 }
 
@@ -330,7 +331,7 @@ func (r *AutoRestarter) resetHistoryLocked(processName string) {
 		history.RestartTimes = make([]time.Time, 0)
 		history.WindowStart = time.Now()
 		history.CooldownUntil = time.Time{}
-		fmt.Printf("[AutoRestarter] Reset restart count for %s / 重置 %s 的重启计数\n", processName, processName)
+		agentlogger.Infof("[AutoRestarter] Reset restart count for %s / 重置 %s 的重启计数", processName, processName)
 	}
 }
 

@@ -47,8 +47,8 @@ import (
 	"github.com/seatunnel/seatunnelX/agent/internal/discovery"
 	"github.com/seatunnel/seatunnelX/agent/internal/executor"
 	agentgrpc "github.com/seatunnel/seatunnelX/agent/internal/grpc"
-	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 	"github.com/seatunnel/seatunnelX/agent/internal/installer"
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 	"github.com/seatunnel/seatunnelX/agent/internal/monitor"
 	"github.com/seatunnel/seatunnelX/agent/internal/process"
 	"github.com/seatunnel/seatunnelX/agent/internal/restart"
@@ -1611,12 +1611,13 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information / 打印版本信息",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("SeaTunnelX Agent\n")
-		fmt.Printf("  Version:    %s\n", Version)
-		fmt.Printf("  Git Commit: %s\n", GitCommit)
-		fmt.Printf("  Build Time: %s\n", BuildTime)
-		fmt.Printf("  Go Version: %s\n", runtime.Version())
-		fmt.Printf("  OS/Arch:    %s/%s\n", runtime.GOOS, runtime.GOARCH)
+		msg := fmt.Sprintf(
+			"SeaTunnelX Agent\n  Version:    %s\n  Git Commit: %s\n  Build Time: %s\n  Go Version: %s\n  OS/Arch:    %s/%s\n",
+			Version, GitCommit, BuildTime, runtime.Version(), runtime.GOOS, runtime.GOARCH,
+		)
+		// 同时打印到控制台和写入日志，保持 CLI 体验又统一日志出口
+		fmt.Print(msg)
+		agentlogger.Infof("%s", strings.TrimSpace(msg))
 	},
 }
 

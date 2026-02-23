@@ -71,7 +71,7 @@ if (-not (Test-Path $bin)) {
     exit 1
 }
 Start-Process -FilePath $bin -ArgumentList "api" -WorkingDirectory $ProjectRoot -NoNewWindow
-Write-Host "      已启动 (API 默认 http://localhost:8000)." -ForegroundColor Green
+Write-Host "      已启动 (API 默认 http://localhost:8000，日志见 config.yaml 中 log.file_path)." -ForegroundColor Green
 
 if (-not $NoFrontend) {
     $step++; Write-Host "[$step/$total] 前端 ..." -ForegroundColor Cyan

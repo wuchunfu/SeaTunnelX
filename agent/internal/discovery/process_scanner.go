@@ -33,6 +33,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
 )
 
 // SeaTunnelMainClass is the main class name for SeaTunnel Server
@@ -85,7 +87,7 @@ func (s *ProcessScanner) scanProcessesUnix() ([]*DiscoveredProcess, error) {
 	if err != nil {
 		// No processes found is not an error / 未找到进程不是错误
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			fmt.Println("[ProcessScanner] No SeaTunnel processes found / 未找到 SeaTunnel 进程")
+			agentlogger.Infof("[ProcessScanner] No SeaTunnel processes found / 未找到 SeaTunnel 进程")
 			return processes, nil
 		}
 		return nil, fmt.Errorf("failed to scan processes: %w / 扫描进程失败：%w", err, err)
@@ -101,7 +103,7 @@ func (s *ProcessScanner) scanProcessesUnix() ([]*DiscoveredProcess, error) {
 
 		proc, err := s.parseUnixProcessLine(line)
 		if err != nil {
-			fmt.Printf("[ProcessScanner] Warning: failed to parse process line: %v\n", err)
+			agentlogger.Warnf("[ProcessScanner] Warning: failed to parse process line: %v", err)
 			continue
 		}
 
@@ -119,7 +121,7 @@ func (s *ProcessScanner) scanProcessesUnix() ([]*DiscoveredProcess, error) {
 			}
 
 			processes = append(processes, proc)
-			fmt.Printf("[ProcessScanner] Found: PID=%d, Role=%s, InstallDir=%s, Version=%s, HazelcastPort=%d, APIPort=%d\n",
+			agentlogger.Infof("[ProcessScanner] Found: PID=%d, Role=%s, InstallDir=%s, Version=%s, HazelcastPort=%d, APIPort=%d",
 				proc.PID, proc.Role, proc.InstallDir, proc.Version, proc.HazelcastPort, proc.APIPort)
 		}
 	}

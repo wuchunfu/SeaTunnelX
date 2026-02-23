@@ -75,8 +75,9 @@ if [[ ! -f ./seatunnelx ]]; then
     echo "未找到 ./seatunnelx，请先执行一次无 --no-build 的 restart 或手动构建"
     exit 1
 fi
-nohup ./seatunnelx api > seatunnelx.log 2>&1 &
-echo "      已启动 (API 默认 http://localhost:8000，日志 seatunnelx.log)."
+# API 服务自身按 config.yaml 的 log.file_path 输出日志，这里不再单独重定向
+nohup ./seatunnelx api >/dev/null 2>&1 &
+echo "      已启动 (API 默认 http://localhost:8000，日志见 config.yaml 中 log.file_path)."
 
 if $NO_FRONTEND; then
     echo "      跳过前端 (--no-frontend)."
