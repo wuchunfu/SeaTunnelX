@@ -29,24 +29,22 @@ apiClient.interceptors.request.use(
 );
 
 /**
- * 直接启动OAuth登录流程
- * Initiate OAuth login flow
- * @param currentPath - 当前路径，用于登录成功后重定向回来 / Current path for redirect after login
+ * 未授权时跳转到登录页（不强制 OAuth，用户可在登录页选择 admin 或 OAuth）
+ * On 401, redirect to login page so user can choose admin or OAuth (fixes: admin-only without OAuth enabled)
+ * @param currentPath - 当前路径，登录成功后通过 redirect 参数回到该页
  */
-function initiateLogin(currentPath: string): Promise<never> {
-  // 防止循环重定向 / Prevent circular redirect
+function redirectToLogin(currentPath: string): Promise<never> {
   if (
     !currentPath.startsWith('/login') &&
     !currentPath.startsWith('/callback')
   ) {
-    // 动态导入AuthService避免循环依赖 / Dynamic import to avoid circular dependency
-    import('../auth/auth.service').then(({AuthService}) => {
-      // 调用OAuth登录方法，传入当前路径作为重定向目标 / Call OAuth login with current path as redirect target
-      AuthService.loginWithOAuth(undefined, currentPath);
-    });
+    const redirect =
+      currentPath === '/' || currentPath === ''
+        ? '/login'
+        : `/login?redirect=${encodeURIComponent(currentPath)}`;
+    window.location.href = redirect;
   }
 
-  // 返回永不解决的Promise / Return never-resolving Promise
   return new Promise<never>(() => {});
 }
 
@@ -62,7 +60,7 @@ apiClient.interceptors.response.use(
     const isLoginRequest =
       error.config?.url?.includes('/auth/login') ?? false;
     if (error.response?.status === 401 && !isLoginRequest) {
-      return initiateLogin(window.location.pathname);
+      return redirectToLogin(window.location.pathname);
     }
 
     // 处理后端返回的错误信息

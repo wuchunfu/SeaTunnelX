@@ -763,7 +763,7 @@ type hostStatusUpdaterAdapter struct {
 
 // UpdateAgentStatus updates the agent status for a host by IP address.
 // UpdateAgentStatus 根据 IP 地址更新主机的 Agent 状态。
-func (a *hostStatusUpdaterAdapter) UpdateAgentStatus(ctx context.Context, ipAddress string, agentID string, version string, systemInfo *agent.SystemInfo) (hostID uint, err error) {
+func (a *hostStatusUpdaterAdapter) UpdateAgentStatus(ctx context.Context, ipAddress string, agentID string, version string, systemInfo *agent.SystemInfo, hostname string) (hostID uint, err error) {
 	var sysInfo *host.SystemInfo
 	if systemInfo != nil {
 		sysInfo = &host.SystemInfo{
@@ -775,7 +775,7 @@ func (a *hostStatusUpdaterAdapter) UpdateAgentStatus(ctx context.Context, ipAddr
 		}
 	}
 
-	h, err := a.hostService.UpdateAgentStatus(ctx, ipAddress, agentID, version, sysInfo)
+	h, err := a.hostService.UpdateAgentStatus(ctx, ipAddress, agentID, version, sysInfo, hostname)
 	if err != nil {
 		return 0, err
 	}
