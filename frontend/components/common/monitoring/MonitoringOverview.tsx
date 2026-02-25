@@ -2,6 +2,7 @@
 
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslations} from 'next-intl';
+import {useTheme} from 'next-themes';
 import {useLocale} from '@/lib/i18n';
 import {Button} from '@/components/ui/button';
 import {
@@ -16,6 +17,8 @@ import {ExternalLink, Loader2, RefreshCw} from 'lucide-react';
 
 type TimeRange = 'now-1h' | 'now-6h' | 'now-24h' | 'now-7d';
 type RefreshInterval = 'off' | '15s' | '30s' | '1m';
+type GrafanaTheme = 'light' | 'dark';
+const DEFAULT_LOAD_TIMEOUT_MS = 60000;
 
 function resolveDashboardUID(locale: string): string {
   return locale === 'zh' ? 'seatunnel-overview-zh' : 'seatunnel-overview-en';
@@ -31,7 +34,7 @@ function buildGrafanaProxyDashboardURL(
   locale: string,
   timeFrom: TimeRange,
   refresh: RefreshInterval,
-  embedMode: boolean,
+  grafanaTheme: GrafanaTheme,
 ): string {
   const uid = resolveDashboardUID(locale);
   const slug = resolveDashboardSlug(locale);
@@ -41,21 +44,21 @@ function buildGrafanaProxyDashboardURL(
     orgId: '1',
     from: timeFrom,
     to: 'now',
-    kiosk: 'tv',
   });
   if (refresh !== 'off') {
     search.set('refresh', refresh);
   }
-  if (embedMode) {
-    search.set('theme', 'dark');
-  }
+  search.set('theme', grafanaTheme);
 
-  return `${path}?${search.toString()}`;
+  // Use full kiosk mode to hide Grafana side/top navigation as much as possible.
+  // 使用完整 kiosk 模式，尽量隐藏 Grafana 左侧/顶部导航。
+  return `${path}?${search.toString()}&kiosk`;
 }
 
 export function MonitoringOverview() {
   const t = useTranslations('monitoringCenter');
   const {locale} = useLocale();
+  const {resolvedTheme} = useTheme();
 
   const [timeRange, setTimeRange] = useState<TimeRange>('now-6h');
   const [refreshInterval, setRefreshInterval] =
@@ -63,7 +66,12 @@ export function MonitoringOverview() {
   const [iframeKey, setIframeKey] = useState(1);
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [loadTimeoutMs, setLoadTimeoutMs] = useState(DEFAULT_LOAD_TIMEOUT_MS);
+  const [iframeHeight, setIframeHeight] = useState(900);
+  const frameContainerRef = useRef<HTMLDivElement | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const grafanaTheme: GrafanaTheme =
+    resolvedTheme === 'light' ? 'light' : 'dark';
 
   const clearLoadTimeout = () => {
     if (timeoutRef.current) {
@@ -74,14 +82,42 @@ export function MonitoringOverview() {
 
   const dashboardURL = useMemo(
     () =>
-      buildGrafanaProxyDashboardURL(locale, timeRange, refreshInterval, false),
-    [locale, timeRange, refreshInterval],
+      buildGrafanaProxyDashboardURL(
+        locale,
+        timeRange,
+        refreshInterval,
+        grafanaTheme,
+      ),
+    [locale, timeRange, refreshInterval, grafanaTheme],
   );
   const embedURL = useMemo(
     () =>
-      buildGrafanaProxyDashboardURL(locale, timeRange, refreshInterval, true),
-    [locale, timeRange, refreshInterval],
+      buildGrafanaProxyDashboardURL(
+        locale,
+        timeRange,
+        refreshInterval,
+        grafanaTheme,
+      ),
+    [locale, timeRange, refreshInterval, grafanaTheme],
   );
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') {
+      setLoadTimeoutMs(DEFAULT_LOAD_TIMEOUT_MS);
+      return;
+    }
+
+    const connection = (
+      navigator as Navigator & {
+        connection?: {effectiveType?: string; saveData?: boolean};
+      }
+    ).connection;
+    const effectiveType = connection?.effectiveType || '';
+    const saveData = connection?.saveData === true;
+    const slowNetwork =
+      saveData || effectiveType.includes('2g') || effectiveType.includes('3g');
+    setLoadTimeoutMs(slowNetwork ? 90000 : DEFAULT_LOAD_TIMEOUT_MS);
+  }, []);
 
   useEffect(() => {
     setLoaded(false);
@@ -89,9 +125,58 @@ export function MonitoringOverview() {
     clearLoadTimeout();
     timeoutRef.current = setTimeout(() => {
       setLoadFailed(true);
-    }, 15000);
+    }, loadTimeoutMs);
     return () => clearLoadTimeout();
-  }, [embedURL, iframeKey]);
+  }, [embedURL, iframeKey, loadTimeoutMs]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    let rafId = 0;
+    const recalcHeight = () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        const el = frameContainerRef.current;
+        if (!el) {
+          return;
+        }
+        const rect = el.getBoundingClientRect();
+        if (!Number.isFinite(rect.top) || rect.top <= 0) {
+          return;
+        }
+
+        // Keep one smooth scroll context by making iframe fill the remaining viewport.
+        // 让 iframe 填充剩余视口高度，避免外层与内层双重滚动错位。
+        const next = Math.max(720, Math.floor(window.innerHeight - rect.top - 12));
+        setIframeHeight((prev) => (Math.abs(prev - next) > 2 ? next : prev));
+      });
+    };
+
+    recalcHeight();
+    window.addEventListener('resize', recalcHeight);
+    window.addEventListener('scroll', recalcHeight, {passive: true});
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(recalcHeight);
+      if (frameContainerRef.current) {
+        observer.observe(frameContainerRef.current);
+      }
+    }
+
+    return () => {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      window.removeEventListener('resize', recalcHeight);
+      window.removeEventListener('scroll', recalcHeight);
+      observer?.disconnect();
+    };
+  }, [locale]);
 
   return (
     <div className='space-y-4'>
@@ -169,7 +254,11 @@ export function MonitoringOverview() {
         </CardHeader>
 
         <CardContent className='p-0'>
-          <div className='relative min-h-[760px] border-t bg-muted/20'>
+          <div
+            ref={frameContainerRef}
+            className='relative border-t bg-muted/20 overflow-hidden'
+            style={{height: `${iframeHeight}px`}}
+          >
             {!loaded && !loadFailed ? (
               <div className='absolute inset-0 z-10 flex items-center justify-center bg-background/70 backdrop-blur-sm'>
                 <div className='flex items-center gap-2 text-sm text-muted-foreground'>
@@ -197,10 +286,10 @@ export function MonitoringOverview() {
               key={iframeKey}
               title='Seatunnel Grafana Dashboard'
               src={embedURL}
-              className='w-full min-h-[760px] h-[calc(100vh-230px)] border-0 rounded-b-xl'
+              className='w-full h-full border-0 rounded-b-xl'
               sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-downloads'
               referrerPolicy='strict-origin-when-cross-origin'
-              loading='lazy'
+              loading='eager'
               onLoad={() => {
                 clearLoadTimeout();
                 setLoaded(true);
@@ -212,9 +301,8 @@ export function MonitoringOverview() {
               }}
             />
 
-            <div className='pointer-events-none absolute top-0 left-0 right-0 h-8 bg-background/95' />
+            <div className='pointer-events-none absolute top-0 left-0 right-0 h-12 bg-background/95' />
             <div className='pointer-events-none absolute bottom-0 left-0 right-0 h-2 bg-background/95' />
-            <div className='pointer-events-none absolute top-0 bottom-0 left-0 w-1 bg-background/95' />
           </div>
         </CardContent>
       </Card>

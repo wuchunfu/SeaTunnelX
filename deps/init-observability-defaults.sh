@@ -1392,17 +1392,235 @@ runtime_dir = Path(os.environ["RUNTIME_DIR"]) / "grafana" / "dashboards"
 en_file = runtime_dir / "seatunnel-overview-en.json"
 zh_file = runtime_dir / "seatunnel-overview-zh.json"
 
-dashboard = json.loads(en_file.read_text())
-dashboard["uid"] = "seatunnel-overview-zh"
-dashboard["title"] = "SeaTunnelX 深度监控"
+dashboard_en = json.loads(en_file.read_text())
+
+playbook_en = (
+    "### Deep Troubleshooting Path\n"
+    "1. **Split-brain / partition risk first**: watch `Cluster Safe` and `Local Member Safe`; any persistent `0` is HA consistency risk.\n"
+    "2. **CPU vs FD correlation**: high CPU + high FD% often indicates downstream/socket pressure; high FD alone often suggests connection leak risk.\n"
+    "3. **Memory & GC pressure**: if old-gen stays high while `GC Time Ratio` climbs, investigate state accumulation / leakage.\n"
+    "4. **Thread deadlock**: `Deadlocked Threads > 0` requires immediate thread-dump and lock analysis.\n"
+    "5. **Jobs stuck / backlog rising**: if completed/s stays low while failure/rejection rises, focus on scheduler or downstream bottlenecks.\n"
+    "6. **Recovery priority**: restore partition safety first, then reduce rejection and queue backlog."
+)
+
+
+def make_row(panel_id, title, y):
+    return {
+        "id": panel_id,
+        "type": "row",
+        "title": title,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": y},
+        "collapsed": False,
+        "panels": [],
+    }
+
+
+def make_stat_panel(
+    panel_id,
+    title,
+    expr,
+    grid_pos,
+    unit="none",
+    mappings=None,
+    thresholds=None,
+):
+    defaults = {"unit": unit}
+    if mappings:
+        defaults["mappings"] = mappings
+    if thresholds:
+        defaults["thresholds"] = thresholds
+    return {
+        "id": panel_id,
+        "type": "stat",
+        "title": title,
+        "gridPos": grid_pos,
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "targets": [{"expr": expr, "refId": "A"}],
+        "fieldConfig": {"defaults": defaults, "overrides": []},
+        "options": {
+            "reduceOptions": {
+                "calcs": ["lastNotNull"],
+                "fields": "",
+                "values": False,
+            },
+            "orientation": "auto",
+            "textMode": "auto",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+        },
+    }
+
+
+panel_blacklist_ids = {19, 20, 21, 1001, 1002, 1003, 1004, 1005}
+base_panels = [
+    p
+    for p in dashboard_en.get("panels", [])
+    if p.get("id") not in panel_blacklist_ids and p.get("type") != "row"
+]
+panel_by_title = {p.get("title"): p for p in base_panels if p.get("title")}
+
+
+def require_panel(title):
+    panel = panel_by_title.get(title)
+    if panel is None:
+        raise SystemExit(f"panel not found: {title}")
+    return panel
+
+
+def set_grid(panel, x, y, w, h):
+    panel["gridPos"] = {"x": x, "y": y, "w": w, "h": h}
+
+
+panel_up = require_panel("Scrape Availability (Up)")
+panel_node = require_panel("Seatunnel Node State")
+panel_cluster_safe = require_panel("Cluster Safe")
+panel_running = require_panel("Running Jobs")
+panel_failing = require_panel("Failing+Failed Jobs")
+panel_lifecycle = require_panel("Job Lifecycle State Distribution")
+panel_throughput = require_panel("Coordinator Throughput (5m)")
+panel_saturation = require_panel("Coordinator Saturation")
+panel_hz_queue_type = require_panel("Hazelcast Executor Queue by Type")
+panel_hz_util = require_panel("Hazelcast Queue Utilization %")
+panel_jvm = require_panel("JVM Memory Pressure %")
+panel_gc = require_panel("GC Time Ratio % (5m)")
+panel_threads = require_panel("Thread State Breakdown")
+panel_cpu_fd = require_panel("Process CPU & FD Pressure")
+panel_process_mem = require_panel("Process Memory Footprint")
+panel_anomaly = require_panel("Critical Anomaly Signals")
+panel_playbook = require_panel("Deep Troubleshooting Playbook")
+
+panel_playbook.setdefault("options", {})["content"] = playbook_en
+
+panel_local_member_safe = make_stat_panel(
+    panel_id=19,
+    title="Local Member Safe",
+    expr='min(hazelcast_partition_isLocalMemberSafe{job="seatunnel_engine_http",cluster=~"$cluster",instance=~"$instance"})',
+    grid_pos={"x": 9, "y": 1, "w": 3, "h": 4},
+    mappings=[
+        {
+            "type": "value",
+            "options": {"0": {"text": "UNSAFE"}, "1": {"text": "SAFE"}},
+        }
+    ],
+    thresholds={
+        "mode": "absolute",
+        "steps": [
+            {"color": "red", "value": None},
+            {"color": "green", "value": 1},
+        ],
+    },
+)
+
+panel_deadlocked = make_stat_panel(
+    panel_id=20,
+    title="Deadlocked Threads",
+    expr='max(jvm_threads_deadlocked{job="seatunnel_engine_http",cluster=~"$cluster",instance=~"$instance"})',
+    grid_pos={"x": 12, "y": 1, "w": 3, "h": 4},
+    thresholds={
+        "mode": "absolute",
+        "steps": [
+            {"color": "green", "value": None},
+            {"color": "red", "value": 1},
+        ],
+    },
+)
+
+panel_fd_usage = make_stat_panel(
+    panel_id=21,
+    title="FD Usage %",
+    expr='max(seatunnel:fd_usage_percent{cluster=~"$cluster",instance=~"$instance"})',
+    grid_pos={"x": 15, "y": 1, "w": 3, "h": 4},
+    unit="percent",
+    thresholds={
+        "mode": "absolute",
+        "steps": [
+            {"color": "green", "value": None},
+            {"color": "orange", "value": 70},
+            {"color": "red", "value": 85},
+        ],
+    },
+)
+
+# Re-layout for grouped triage workflow
+set_grid(panel_up, 0, 1, 3, 4)
+set_grid(panel_node, 3, 1, 3, 4)
+set_grid(panel_cluster_safe, 6, 1, 3, 4)
+set_grid(panel_running, 18, 1, 3, 4)
+set_grid(panel_failing, 21, 1, 3, 4)
+
+set_grid(panel_cpu_fd, 0, 6, 12, 8)
+set_grid(panel_jvm, 12, 6, 12, 8)
+set_grid(panel_gc, 0, 14, 12, 8)
+set_grid(panel_threads, 12, 14, 12, 8)
+set_grid(panel_process_mem, 0, 22, 24, 8)
+
+set_grid(panel_throughput, 0, 31, 12, 8)
+set_grid(panel_saturation, 12, 31, 12, 8)
+set_grid(panel_lifecycle, 0, 39, 24, 8)
+
+set_grid(panel_hz_queue_type, 0, 48, 12, 8)
+set_grid(panel_hz_util, 12, 48, 12, 8)
+
+set_grid(panel_anomaly, 0, 57, 12, 10)
+set_grid(panel_playbook, 12, 57, 12, 10)
+
+row_ha = make_row(1001, "P0 Availability & HA", 0)
+row_resource = make_row(1002, "P1 Resource Pressure (CPU/Memory/GC/Threads/FD)", 5)
+row_schedule = make_row(1003, "P2 Scheduling & Throughput", 30)
+row_hazelcast = make_row(1004, "P3 Hazelcast Consistency", 47)
+row_anomaly = make_row(1005, "P4 Anomaly & Playbook", 56)
+
+dashboard_en["panels"] = [
+    row_ha,
+    panel_up,
+    panel_node,
+    panel_cluster_safe,
+    panel_local_member_safe,
+    panel_deadlocked,
+    panel_fd_usage,
+    panel_running,
+    panel_failing,
+    row_resource,
+    panel_cpu_fd,
+    panel_jvm,
+    panel_gc,
+    panel_threads,
+    panel_process_mem,
+    row_schedule,
+    panel_throughput,
+    panel_saturation,
+    panel_lifecycle,
+    row_hazelcast,
+    panel_hz_queue_type,
+    panel_hz_util,
+    row_anomaly,
+    panel_anomaly,
+    panel_playbook,
+]
+
+en_file.write_text(json.dumps(dashboard_en, ensure_ascii=False, indent=2) + "\n")
+
+# Build Chinese dashboard from English template and translate titles/playbook.
+dashboard_zh = json.loads(json.dumps(dashboard_en))
+dashboard_zh["uid"] = "seatunnel-overview-zh"
+dashboard_zh["title"] = "SeaTunnelX 深度监控"
 
 title_map = {
+    "P0 Availability & HA": "P0 可用性与高可用",
+    "P1 Resource Pressure (CPU/Memory/GC/Threads/FD)": "P1 资源压力（CPU/内存/GC/线程/FD）",
+    "P2 Scheduling & Throughput": "P2 调度与吞吐",
+    "P3 Hazelcast Consistency": "P3 Hazelcast 一致性",
+    "P4 Anomaly & Playbook": "P4 异常与排障手册",
     "Scrape Availability (Up)": "抓取可用性 (Up)",
     "Seatunnel Node State": "SeaTunnel 节点状态",
     "Cluster Safe": "集群分区安全",
+    "Local Member Safe": "本地成员分区安全",
+    "Deadlocked Threads": "死锁线程数",
+    "FD Usage %": "FD 使用率 %",
     "Running Jobs": "运行中作业",
     "Failing+Failed Jobs": "失败/失败中作业",
-    "Coordinator Queue Depth": "协调器队列深度",
     "Job Lifecycle State Distribution": "作业生命周期状态分布",
     "Coordinator Throughput (5m)": "协调器吞吐 (5分钟)",
     "Coordinator Saturation": "协调器饱和度",
@@ -1418,23 +1636,23 @@ title_map = {
 }
 
 playbook_zh = (
-    "### 深度排障路径\\n"
-    "1. **任务卡住/延迟升高**：先看 `Coordinator Queue Depth` 与 `Coordinator Throughput`，若队列持续升、completed/s 低，优先定位调度瓶颈。\\n"
-    "2. **集群可用但任务不推进**：看 `Cluster Safe`、`Hazelcast Executor Queue by Type`，若 queue 高且分区不安全，多为协调层阻塞。\\n"
-    "3. **频繁失败或抖动**：联动 `Failing+Failed Jobs` 与 `Critical Anomaly Signals` 中 rejection/s。\\n"
-    "4. **内存慢性退化**：关注 `JVM Memory Pressure %` 的 old-gen，若长期高位且 GC 占比升高，排查状态累积/作业泄漏。\\n"
-    "5. **CPU 高但吞吐不升**：对比 `Process CPU & FD Pressure` 与 `Coordinator Throughput`，CPU 高+completed/s 低通常是忙等或下游阻塞。\\n"
-    "6. **资源耗尽风险**：持续观察 fd usage % 与 RSS 增长趋势，提前扩容或优化连接生命周期。"
+    "### 深度排障路径\n"
+    "1. **先看脑裂/分区风险**：`Cluster Safe` 与 `Local Member Safe` 只要持续为 `0`，就是高可用一致性风险。\n"
+    "2. **CPU 与 FD 联动看**：CPU 高 + FD% 高常见于下游/网络 socket 压力；FD 高但 CPU 一般更像连接泄漏风险。\n"
+    "3. **内存与 GC 压力**：old-gen 长期高位且 `GC Time Ratio` 上升，优先排查状态累积/泄漏。\n"
+    "4. **线程死锁**：`Deadlocked Threads > 0` 需要立即做 thread dump 与锁链路分析。\n"
+    "5. **任务卡住/吞吐不升**：若 completed/s 长期偏低且 rejection 上升，优先定位调度器或下游瓶颈。\n"
+    "6. **恢复顺序**：先恢复分区安全，再降低 rejection 和队列积压。"
 )
 
-for panel in dashboard.get("panels", []):
+for panel in dashboard_zh.get("panels", []):
     title = panel.get("title")
     if title in title_map:
         panel["title"] = title_map[title]
     if panel.get("type") == "text" and panel.get("id") == 18:
         panel.setdefault("options", {})["content"] = playbook_zh
 
-zh_file.write_text(json.dumps(dashboard, ensure_ascii=False, indent=2) + "\n")
+zh_file.write_text(json.dumps(dashboard_zh, ensure_ascii=False, indent=2) + "\n")
 PY
 
 echo "Default observability config generated:"
