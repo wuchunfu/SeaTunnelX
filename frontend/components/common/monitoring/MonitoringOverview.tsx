@@ -1,6 +1,6 @@
 'use client';
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslations} from 'next-intl';
 import {useLocale} from '@/lib/i18n';
 import {Button} from '@/components/ui/button';
@@ -63,6 +63,14 @@ export function MonitoringOverview() {
   const [iframeKey, setIframeKey] = useState(1);
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearLoadTimeout = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
 
   const dashboardURL = useMemo(
     () =>
@@ -78,10 +86,11 @@ export function MonitoringOverview() {
   useEffect(() => {
     setLoaded(false);
     setLoadFailed(false);
-    const timer = setTimeout(() => {
+    clearLoadTimeout();
+    timeoutRef.current = setTimeout(() => {
       setLoadFailed(true);
     }, 15000);
-    return () => clearTimeout(timer);
+    return () => clearLoadTimeout();
   }, [embedURL, iframeKey]);
 
   return (
@@ -193,8 +202,13 @@ export function MonitoringOverview() {
               referrerPolicy='strict-origin-when-cross-origin'
               loading='lazy'
               onLoad={() => {
+                clearLoadTimeout();
                 setLoaded(true);
                 setLoadFailed(false);
+              }}
+              onError={() => {
+                clearLoadTimeout();
+                setLoadFailed(true);
               }}
             />
 
