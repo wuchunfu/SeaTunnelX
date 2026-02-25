@@ -340,6 +340,12 @@ func (h *Handler) DeleteNotificationChannel(c *gin.Context) {
 // ProxyGrafana handles reverse proxy for Grafana UI.
 // ProxyGrafana 处理 Grafana UI 反向代理。
 func (h *Handler) ProxyGrafana(c *gin.Context) {
+	if isGrafanaLiveWSRequest(c.Request.URL.Path) {
+		// 监控中心默认关闭 Grafana Live，避免 iframe 中持续 WS 重连带来的噪音和开销。
+		c.Status(http.StatusNoContent)
+		return
+	}
+
 	target, err := parseProxyTarget(config.Config.Observability.Grafana.URL)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, Response{ErrorMsg: "invalid observability.grafana.url: " + err.Error()})
@@ -401,4 +407,8 @@ func resolveRequestScheme(r *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+func isGrafanaLiveWSRequest(path string) bool {
+	return strings.Contains(path, "/api/live/ws")
 }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * MIT License
  *
  * Copyright (c) 2025 linux.do
@@ -31,6 +31,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -44,7 +45,8 @@ func loggerMiddleware() gin.HandlerFunc {
 		start := time.Now()
 
 		// 记录请求路径和 Query
-		path := c.Request.URL.Path
+		requestPath := c.Request.URL.Path
+		path := requestPath
 		raw := c.Request.URL.RawQuery
 		if raw != "" {
 			path = path + "?" + raw
@@ -57,19 +59,37 @@ func loggerMiddleware() gin.HandlerFunc {
 		end := time.Now()
 		latency := end.Sub(start)
 
-		// 打印日志
-		logger.InfoF(
-			ctx,
-			"[LoggerMiddleware] %s %s\nStartTime: %s\nEndTime: %s\nLatency: %d\nClientIP: %s\nResponse: %d %d",
-			c.Request.Method,
-			path,
-			start.Format(time.RFC3339),
-			end.Format(time.RFC3339),
-			latency.Milliseconds(),
-			c.ClientIP(),
-			c.Writer.Status(),
-			c.Writer.Size(),
-		)
+		// 打印日志（Grafana Live WS 属于高频噪音请求，默认不打印）
+		switch {
+		case isGrafanaLiveWSPath(requestPath):
+			// no-op
+		case isGrafanaStaticAssetPath(requestPath):
+			logger.DebugF(
+				ctx,
+				"[LoggerMiddleware] %s %s\nStartTime: %s\nEndTime: %s\nLatency: %d\nClientIP: %s\nResponse: %d %d",
+				c.Request.Method,
+				path,
+				start.Format(time.RFC3339),
+				end.Format(time.RFC3339),
+				latency.Milliseconds(),
+				c.ClientIP(),
+				c.Writer.Status(),
+				c.Writer.Size(),
+			)
+		default:
+			logger.InfoF(
+				ctx,
+				"[LoggerMiddleware] %s %s\nStartTime: %s\nEndTime: %s\nLatency: %d\nClientIP: %s\nResponse: %d %d",
+				c.Request.Method,
+				path,
+				start.Format(time.RFC3339),
+				end.Format(time.RFC3339),
+				latency.Milliseconds(),
+				c.ClientIP(),
+				c.Writer.Status(),
+				c.Writer.Size(),
+			)
+		}
 
 		// 设置 Span 状态
 		if c.Writer.Status() >= 400 {
@@ -77,4 +97,16 @@ func loggerMiddleware() gin.HandlerFunc {
 			span.SetStatus(codes.Error, strconv.Itoa(c.Writer.Status()))
 		}
 	}
+}
+
+func isGrafanaLiveWSPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/monitoring/proxy/grafana/api/live/ws")
+}
+
+func isGrafanaStaticAssetPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/v1/monitoring/proxy/grafana/") {
+		return false
+	}
+	// 仅对静态资源降级日志级别，便于保留核心 API 行为日志。
+	return strings.Contains(path, "/public/")
 }

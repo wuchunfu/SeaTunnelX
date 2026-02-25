@@ -344,8 +344,14 @@ func Serve() {
 				monitoringRouter.POST("/notification-channels", monitoringHandler.CreateNotificationChannel)
 				monitoringRouter.PUT("/notification-channels/:id", monitoringHandler.UpdateNotificationChannel)
 				monitoringRouter.DELETE("/notification-channels/:id", monitoringHandler.DeleteNotificationChannel)
-				monitoringRouter.Any("/proxy/grafana", monitoringHandler.ProxyGrafana)
-				monitoringRouter.Any("/proxy/grafana/*proxyPath", monitoringHandler.ProxyGrafana)
+			}
+
+			// Grafana 代理是高频请求路径，使用轻量会话校验降低每请求数据库开销。
+			monitoringGrafanaProxyRouter := apiV1Router.Group("/monitoring/proxy/grafana")
+			monitoringGrafanaProxyRouter.Use(auth.LoginRequiredSessionOnly())
+			{
+				monitoringGrafanaProxyRouter.Any("", monitoringHandler.ProxyGrafana)
+				monitoringGrafanaProxyRouter.Any("/*proxyPath", monitoringHandler.ProxyGrafana)
 			}
 
 			// Discovery 集群发现

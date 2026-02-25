@@ -20,6 +20,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/seatunnel/seatunnelX/internal/db"
@@ -77,12 +78,45 @@ func LoginRequired() gin.HandlerFunc {
 			return
 		}
 
-		logger.InfoF(ctx, "[LoginRequired] 验证通过: %d %s", user.ID, user.Username)
+		logger.DebugF(ctx, "[LoginRequired] 验证通过: %d %s", user.ID, user.Username)
 
 		// 将用户信息存入上下文
 		SetUserToContext(c, user)
 
 		// 继续处理请求
+		c.Next()
+	}
+}
+
+// LoginRequiredSessionOnly 轻量会话登录验证中间件（不查数据库）
+// 适用于高频静态资源代理场景，避免每个请求触发数据库读取。
+func LoginRequiredSessionOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, span := otel_trace.Start(c.Request.Context(), "LoginRequiredSessionOnly")
+		defer span.End()
+
+		userID := GetUserIDFromContext(c)
+		if userID == 0 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, ErrorResponse{
+				ErrorMsg: "未登录",
+				Data:     nil,
+			})
+			return
+		}
+
+		username := strings.TrimSpace(GetUsernameFromContext(c))
+		if username == "" {
+			username = "unknown"
+		}
+
+		// 仅注入最小可用用户上下文，避免后续处理器空指针。
+		SetUserToContext(c, &User{
+			ID:       userID,
+			Username: username,
+			IsActive: true,
+		})
+
+		logger.DebugF(ctx, "[LoginRequiredSessionOnly] 验证通过: %d %s", userID, username)
 		c.Next()
 	}
 }
@@ -116,7 +150,7 @@ func AdminRequired() gin.HandlerFunc {
 			return
 		}
 
-		logger.InfoF(ctx, "[AdminRequired] 管理员验证通过: %d %s", user.ID, user.Username)
+		logger.DebugF(ctx, "[AdminRequired] 管理员验证通过: %d %s", user.ID, user.Username)
 
 		// 继续处理请求
 		c.Next()

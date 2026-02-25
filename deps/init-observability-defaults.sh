@@ -286,6 +286,11 @@ allow_sign_up = false
 enabled = true
 org_role = Viewer
 
+[live]
+# Disable Grafana Live websocket channel by default to reduce iframe embed noise/retry overhead.
+# 默认关闭 Grafana Live WebSocket，减少嵌入场景下的重试噪音与开销。
+max_connections = 0
+
 [plugins]
 preinstall =
 EOF2
