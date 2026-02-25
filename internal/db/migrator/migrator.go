@@ -1,4 +1,4 @@
-﻿/*
+/*
  * MIT License
  *
  * Copyright (c) 2025 linux.do
@@ -37,6 +37,7 @@ import (
 	appconfig "github.com/seatunnel/seatunnelX/internal/apps/config"
 	"github.com/seatunnel/seatunnelX/internal/apps/host"
 	"github.com/seatunnel/seatunnelX/internal/apps/monitor"
+	monitoringapp "github.com/seatunnel/seatunnelX/internal/apps/monitoring"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
 	"github.com/seatunnel/seatunnelX/internal/apps/project"
 	"github.com/seatunnel/seatunnelX/internal/config"
@@ -69,14 +70,17 @@ func Migrate() {
 		&project.ProjectItem{}, // 项目条目表 / Project item table
 		&project.ProjectTag{},  // 项目标签表 / Project tag table
 		&project.ProjectReport{},
-		&audit.CommandLog{},              // 命令日志表 / Command log table
-		&audit.AuditLog{},                // 审计日志表 / Audit log table
-		&plugin.InstalledPlugin{},        // 已安装插件表 / Installed plugin table
-		&plugin.PluginDependencyConfig{}, // 插件依赖配置表 / Plugin dependency config table
-		&appconfig.Config{},              // 配置文件表 / Config file table
-		&appconfig.ConfigVersion{},       // 配置版本表 / Config version table
-		&monitor.MonitorConfig{},         // 监控配置表 / Monitor config table (Requirements: 5.2)
-		&monitor.ProcessEvent{},          // 进程事件表 / Process event table (Requirements: 6.1)
+		&audit.CommandLog{},                  // 命令日志表 / Command log table
+		&audit.AuditLog{},                    // 审计日志表 / Audit log table
+		&plugin.InstalledPlugin{},            // 已安装插件表 / Installed plugin table
+		&plugin.PluginDependencyConfig{},     // 插件依赖配置表 / Plugin dependency config table
+		&appconfig.Config{},                  // 配置文件表 / Config file table
+		&appconfig.ConfigVersion{},           // 配置版本表 / Config version table
+		&monitor.MonitorConfig{},             // 监控配置表 / Monitor config table (Requirements: 5.2)
+		&monitor.ProcessEvent{},              // 进程事件表 / Process event table (Requirements: 6.1)
+		&monitoringapp.AlertRule{},           // 监控告警规则表 / Monitoring alert rule table
+		&monitoringapp.AlertEventState{},     // 告警事件状态表 / Alert event state table
+		&monitoringapp.NotificationChannel{}, // 通知渠道表 / Notification channel table
 	); err != nil {
 		log.Fatalf("[Database] auto migrate failed: %v\n", err)
 	}

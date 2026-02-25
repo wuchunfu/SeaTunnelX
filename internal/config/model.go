@@ -29,6 +29,7 @@ type configModel struct {
 	GRPC           GRPCConfig           `mapstructure:"grpc"`
 	Log            logConfig            `mapstructure:"log"`
 	Telemetry      TelemetryConfig      `mapstructure:"telemetry"`
+	Observability  ObservabilityConfig  `mapstructure:"observability"`
 	Schedule       scheduleConfig       `mapstructure:"schedule"`
 	Worker         workerConfig         `mapstructure:"worker"`
 	ClickHouse     clickHouseConfig     `mapstructure:"clickhouse"`
@@ -241,6 +242,77 @@ type TelemetryConfig struct {
 	// Endpoint is the OTLP collector endpoint (default: localhost:4317)
 	// Endpoint 是 OTLP 收集器端点（默认：localhost:4317）
 	Endpoint string `mapstructure:"endpoint"`
+}
+
+// ObservabilityConfig 可观测性配置（Prometheus/Grafana/Alertmanager 集成）
+type ObservabilityConfig struct {
+	// Enabled indicates whether observability integration is enabled.
+	// Enabled 表示是否启用可观测性集成。
+	Enabled bool `mapstructure:"enabled"`
+
+	// BundledStackEnabled indicates whether this package includes built-in monitoring stack binaries.
+	// BundledStackEnabled 表示当前安装包是否内置三件套二进制。
+	BundledStackEnabled bool `mapstructure:"bundled_stack_enabled"`
+
+	// AutoOnboardClusters auto-discovers managed SeaTunnel clusters and updates Prometheus scrape targets.
+	// AutoOnboardClusters 自动发现受管集群并更新 Prometheus 抓取目标。
+	AutoOnboardClusters bool `mapstructure:"auto_onboard_clusters"`
+
+	Prometheus      ObservabilityPrometheusConfig      `mapstructure:"prometheus"`
+	Alertmanager    ObservabilityAlertmanagerConfig    `mapstructure:"alertmanager"`
+	Grafana         ObservabilityGrafanaConfig         `mapstructure:"grafana"`
+	SeatunnelMetric ObservabilitySeatunnelMetricConfig `mapstructure:"seatunnel_metrics"`
+}
+
+// ObservabilityPrometheusConfig Prometheus 集成配置
+type ObservabilityPrometheusConfig struct {
+	URL string `mapstructure:"url"`
+
+	// ManageConfig indicates whether SeaTunnelX can rewrite Prometheus config file and trigger reload.
+	// ManageConfig 表示 SeaTunnelX 是否可改写 Prometheus 配置并触发热加载。
+	ManageConfig bool `mapstructure:"manage_config"`
+
+	// ConfigFile is Prometheus config path managed by SeaTunnelX.
+	// ConfigFile 是由 SeaTunnelX 管理的 Prometheus 配置文件路径。
+	ConfigFile string `mapstructure:"config_file"`
+
+	// ReloadURL is Prometheus lifecycle reload endpoint.
+	// ReloadURL 是 Prometheus 热加载接口地址。
+	ReloadURL string `mapstructure:"reload_url"`
+
+	// RulesGlob points to Prometheus rule files glob.
+	// RulesGlob 指向 Prometheus 规则文件通配路径。
+	RulesGlob string `mapstructure:"rules_glob"`
+
+	ScrapeInterval     string `mapstructure:"scrape_interval"`
+	EvaluationInterval string `mapstructure:"evaluation_interval"`
+
+	// AlertmanagerTarget is target address used by Prometheus alerting config, e.g. "127.0.0.1:9093".
+	// AlertmanagerTarget 是 Prometheus alerting 配置使用的告警管理器目标地址。
+	AlertmanagerTarget string `mapstructure:"alertmanager_target"`
+}
+
+// ObservabilityAlertmanagerConfig Alertmanager 集成配置
+type ObservabilityAlertmanagerConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+// ObservabilityGrafanaConfig Grafana 集成配置
+type ObservabilityGrafanaConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+// ObservabilitySeatunnelMetricConfig SeaTunnel metrics 探测配置
+type ObservabilitySeatunnelMetricConfig struct {
+	Path string `mapstructure:"path"`
+
+	// StaticTargets are additional metrics targets (host:port) outside managed clusters.
+	// StaticTargets 用于配置受管集群之外的额外 metrics 抓取目标（host:port）。
+	StaticTargets []string `mapstructure:"static_targets"`
+
+	// ProbeTimeoutSeconds is the timeout for probing one metrics endpoint.
+	// ProbeTimeoutSeconds 是单个 metrics 端点探测超时时间（秒）。
+	ProbeTimeoutSeconds int `mapstructure:"probe_timeout_seconds"`
 }
 
 // scheduleConfig 定时任务配置

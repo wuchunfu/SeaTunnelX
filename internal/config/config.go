@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -19,7 +19,10 @@ package config
 
 import (
 	"log"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -141,6 +144,79 @@ func setDefaults(c *configModel) {
 	if c.Storage.CleanupIntervalHours == 0 {
 		c.Storage.CleanupIntervalHours = 24
 	}
+
+	// 可观测性默认配置
+	if c.Observability.Prometheus.URL == "" {
+		c.Observability.Prometheus.URL = "http://127.0.0.1:9090"
+	}
+	if c.Observability.Alertmanager.URL == "" {
+		c.Observability.Alertmanager.URL = "http://127.0.0.1:9093"
+	}
+	if c.Observability.Grafana.URL == "" {
+		c.Observability.Grafana.URL = "http://127.0.0.1:3000"
+	}
+
+	// 默认启用可观测中心（仅在用户未显式配置时）
+	if !viper.IsSet("observability.enabled") {
+		c.Observability.Enabled = true
+	}
+	if !viper.IsSet("observability.bundled_stack_enabled") {
+		c.Observability.BundledStackEnabled = true
+	}
+	if !viper.IsSet("observability.auto_onboard_clusters") {
+		c.Observability.AutoOnboardClusters = true
+	}
+
+	if !viper.IsSet("observability.prometheus.manage_config") {
+		c.Observability.Prometheus.ManageConfig = true
+	}
+	if c.Observability.Prometheus.ConfigFile == "" {
+		c.Observability.Prometheus.ConfigFile = "./deps/runtime/prometheus/prometheus.yml"
+	}
+	if c.Observability.Prometheus.ReloadURL == "" {
+		base := strings.TrimRight(c.Observability.Prometheus.URL, "/")
+		c.Observability.Prometheus.ReloadURL = base + "/-/reload"
+	}
+	if c.Observability.Prometheus.RulesGlob == "" {
+		c.Observability.Prometheus.RulesGlob = filepath.ToSlash(filepath.Join(filepath.Dir(c.Observability.Prometheus.ConfigFile), "rules", "*.yml"))
+	}
+	if c.Observability.Prometheus.ScrapeInterval == "" {
+		c.Observability.Prometheus.ScrapeInterval = "15s"
+	}
+	if c.Observability.Prometheus.EvaluationInterval == "" {
+		c.Observability.Prometheus.EvaluationInterval = "15s"
+	}
+	if c.Observability.Prometheus.AlertmanagerTarget == "" {
+		c.Observability.Prometheus.AlertmanagerTarget = resolveHostPort(c.Observability.Alertmanager.URL, "127.0.0.1:9093")
+	}
+
+	if c.Observability.SeatunnelMetric.Path == "" {
+		c.Observability.SeatunnelMetric.Path = "/metrics"
+	}
+	if !viper.IsSet("observability.seatunnel_metrics.static_targets") {
+		c.Observability.SeatunnelMetric.StaticTargets = []string{"127.0.0.1:8081"}
+	}
+	if c.Observability.SeatunnelMetric.ProbeTimeoutSeconds <= 0 {
+		c.Observability.SeatunnelMetric.ProbeTimeoutSeconds = 2
+	}
+}
+
+func resolveHostPort(rawURL, fallback string) string {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" {
+		return fallback
+	}
+	if !strings.Contains(trimmed, "://") {
+		trimmed = "http://" + trimmed
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return fallback
+	}
+	if u.Host != "" {
+		return u.Host
+	}
+	return fallback
 }
 
 // GetDatabaseType 获取数据库类型

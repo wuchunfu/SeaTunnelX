@@ -1,0 +1,269 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package monitoring
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/seatunnel/seatunnelX/internal/apps/monitor"
+	"gorm.io/gorm"
+)
+
+// AlertEventQueryFilter defines query options for alert events.
+// AlertEventQueryFilter 定义告警事件查询条件。
+type AlertEventQueryFilter struct {
+	ClusterID uint
+	StartTime *time.Time
+	EndTime   *time.Time
+	Page      int
+	PageSize  int
+}
+
+// AlertEventSource represents joined alert event rows from DB.
+// AlertEventSource 表示从 DB 联表查询出的告警事件记录。
+type AlertEventSource struct {
+	ID          uint                     `json:"id"`
+	ClusterID   uint                     `json:"cluster_id"`
+	ClusterName string                   `json:"cluster_name"`
+	NodeID      uint                     `json:"node_id"`
+	HostID      uint                     `json:"host_id"`
+	EventType   monitor.ProcessEventType `json:"event_type"`
+	PID         int                      `json:"pid"`
+	ProcessName string                   `json:"process_name"`
+	InstallDir  string                   `json:"install_dir"`
+	Role        string                   `json:"role"`
+	Details     string                   `json:"details"`
+	CreatedAt   time.Time                `json:"created_at"`
+	Hostname    string                   `json:"hostname"`
+	IP          string                   `json:"ip"`
+}
+
+// Repository provides data access for monitoring center.
+// Repository 提供监控中心的数据访问能力。
+type Repository struct {
+	db *gorm.DB
+}
+
+// NewRepository creates a new monitoring repository.
+// NewRepository 创建监控中心仓库。
+func NewRepository(db *gorm.DB) *Repository {
+	return &Repository{db: db}
+}
+
+// ListCriticalEvents returns critical process events joined with host and cluster info.
+// ListCriticalEvents 返回关键进程事件（含主机和集群信息）。
+func (r *Repository) ListCriticalEvents(ctx context.Context, filter *AlertEventQueryFilter) ([]*AlertEventSource, int64, error) {
+	if filter == nil {
+		filter = &AlertEventQueryFilter{}
+	}
+
+	criticalTypes := []monitor.ProcessEventType{
+		monitor.EventTypeCrashed,
+		monitor.EventTypeRestartFailed,
+		monitor.EventTypeRestartLimitReached,
+	}
+
+	countQuery := r.db.WithContext(ctx).
+		Table("process_events").
+		Where("process_events.event_type IN ?", criticalTypes)
+
+	if filter.ClusterID > 0 {
+		countQuery = countQuery.Where("process_events.cluster_id = ?", filter.ClusterID)
+	}
+	if filter.StartTime != nil {
+		countQuery = countQuery.Where("process_events.created_at >= ?", filter.StartTime)
+	}
+	if filter.EndTime != nil {
+		countQuery = countQuery.Where("process_events.created_at <= ?", filter.EndTime)
+	}
+
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	query := r.db.WithContext(ctx).
+		Table("process_events").
+		Select("process_events.*, hosts.name AS hostname, hosts.ip_address AS ip, clusters.name AS cluster_name").
+		Joins("LEFT JOIN hosts ON process_events.host_id = hosts.id").
+		Joins("LEFT JOIN clusters ON process_events.cluster_id = clusters.id").
+		Where("process_events.event_type IN ?", criticalTypes)
+
+	if filter.ClusterID > 0 {
+		query = query.Where("process_events.cluster_id = ?", filter.ClusterID)
+	}
+	if filter.StartTime != nil {
+		query = query.Where("process_events.created_at >= ?", filter.StartTime)
+	}
+	if filter.EndTime != nil {
+		query = query.Where("process_events.created_at <= ?", filter.EndTime)
+	}
+
+	if filter.Page > 0 && filter.PageSize > 0 {
+		offset := (filter.Page - 1) * filter.PageSize
+		query = query.Offset(offset).Limit(filter.PageSize)
+	}
+
+	query = query.Order("process_events.created_at DESC")
+
+	var rows []*AlertEventSource
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return rows, total, nil
+}
+
+// ListRulesByClusterID returns alert rules for one cluster.
+// ListRulesByClusterID 返回指定集群的告警规则。
+func (r *Repository) ListRulesByClusterID(ctx context.Context, clusterID uint) ([]*AlertRule, error) {
+	var rules []*AlertRule
+	err := r.db.WithContext(ctx).
+		Where("cluster_id = ?", clusterID).
+		Order("id ASC").
+		Find(&rules).Error
+	if err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+// GetRuleByID gets one alert rule by ID.
+// GetRuleByID 根据 ID 获取单条告警规则。
+func (r *Repository) GetRuleByID(ctx context.Context, id uint) (*AlertRule, error) {
+	var rule AlertRule
+	err := r.db.WithContext(ctx).First(&rule, id).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
+// GetRuleByClusterAndKey gets one rule by cluster and rule key.
+// GetRuleByClusterAndKey 根据集群和规则键获取规则。
+func (r *Repository) GetRuleByClusterAndKey(ctx context.Context, clusterID uint, ruleKey string) (*AlertRule, error) {
+	var rule AlertRule
+	err := r.db.WithContext(ctx).
+		Where("cluster_id = ? AND rule_key = ?", clusterID, ruleKey).
+		First(&rule).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
+// CreateRule creates one alert rule.
+// CreateRule 创建告警规则。
+func (r *Repository) CreateRule(ctx context.Context, rule *AlertRule) error {
+	return r.db.WithContext(ctx).Create(rule).Error
+}
+
+// SaveRule updates one alert rule.
+// SaveRule 更新告警规则。
+func (r *Repository) SaveRule(ctx context.Context, rule *AlertRule) error {
+	return r.db.WithContext(ctx).Save(rule).Error
+}
+
+// GetEventStateByEventID returns state for one event. Nil if not found.
+// GetEventStateByEventID 返回单个事件状态，未找到返回 nil。
+func (r *Repository) GetEventStateByEventID(ctx context.Context, eventID uint) (*AlertEventState, error) {
+	var state AlertEventState
+	err := r.db.WithContext(ctx).Where("event_id = ?", eventID).First(&state).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &state, nil
+}
+
+// SaveEventState creates or updates alert event state.
+// SaveEventState 创建或更新告警事件状态。
+func (r *Repository) SaveEventState(ctx context.Context, state *AlertEventState) error {
+	if state == nil {
+		return nil
+	}
+	return r.db.WithContext(ctx).
+		Where("event_id = ?", state.EventID).
+		Assign(state).
+		FirstOrCreate(state).Error
+}
+
+// ListEventStatesByEventIDs returns states mapped by event_id.
+// ListEventStatesByEventIDs 根据事件 ID 列表返回状态映射。
+func (r *Repository) ListEventStatesByEventIDs(ctx context.Context, eventIDs []uint) (map[uint]*AlertEventState, error) {
+	result := make(map[uint]*AlertEventState)
+	if len(eventIDs) == 0 {
+		return result, nil
+	}
+
+	var states []*AlertEventState
+	if err := r.db.WithContext(ctx).
+		Where("event_id IN ?", eventIDs).
+		Find(&states).Error; err != nil {
+		return nil, err
+	}
+
+	for _, s := range states {
+		result[s.EventID] = s
+	}
+	return result, nil
+}
+
+// ListNotificationChannels returns all notification channels.
+// ListNotificationChannels 返回全部通知渠道。
+func (r *Repository) ListNotificationChannels(ctx context.Context) ([]*NotificationChannel, error) {
+	var channels []*NotificationChannel
+	if err := r.db.WithContext(ctx).
+		Order("id DESC").
+		Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	return channels, nil
+}
+
+// GetNotificationChannelByID returns one channel by ID.
+// GetNotificationChannelByID 根据 ID 返回单条通知渠道。
+func (r *Repository) GetNotificationChannelByID(ctx context.Context, id uint) (*NotificationChannel, error) {
+	var channel NotificationChannel
+	if err := r.db.WithContext(ctx).First(&channel, id).Error; err != nil {
+		return nil, err
+	}
+	return &channel, nil
+}
+
+// CreateNotificationChannel creates a channel.
+// CreateNotificationChannel 创建通知渠道。
+func (r *Repository) CreateNotificationChannel(ctx context.Context, channel *NotificationChannel) error {
+	return r.db.WithContext(ctx).Create(channel).Error
+}
+
+// SaveNotificationChannel updates a channel.
+// SaveNotificationChannel 更新通知渠道。
+func (r *Repository) SaveNotificationChannel(ctx context.Context, channel *NotificationChannel) error {
+	return r.db.WithContext(ctx).Save(channel).Error
+}
+
+// DeleteNotificationChannel deletes channel by ID.
+// DeleteNotificationChannel 根据 ID 删除通知渠道。
+func (r *Repository) DeleteNotificationChannel(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Delete(&NotificationChannel{}, id).Error
+}

@@ -51,14 +51,14 @@ const (
 // This interface decouples cluster from host package to avoid import cycles.
 // 此接口将集群与主机包解耦以避免导入循环。
 type HostInfo struct {
-	ID                uint
-	Name              string
-	HostType          string
-	IPAddress         string
-	AgentID           string
-	AgentStatus       string
-	LastHeartbeat     *time.Time
-	ProcessStartedAt  *time.Time // when set, online requires heartbeat after this (e.g. API process start)
+	ID               uint
+	Name             string
+	HostType         string
+	IPAddress        string
+	AgentID          string
+	AgentStatus      string
+	LastHeartbeat    *time.Time
+	ProcessStartedAt *time.Time // when set, online requires heartbeat after this (e.g. API process start)
 }
 
 // IsOnline checks if the host is online based on heartbeat timeout.
@@ -158,11 +158,12 @@ type AgentCommandSender interface {
 // Service provides business logic for cluster management operations.
 // Service 提供集群管理操作的业务逻辑。
 type Service struct {
-	repo                 *Repository
-	hostProvider         HostProvider
-	heartbeatTimeout     time.Duration
-	agentSender          AgentCommandSender
-	onBeforeClusterDelete func(context.Context, uint) // optional hook for monitor cleanup etc.
+	repo                     *Repository
+	hostProvider             HostProvider
+	heartbeatTimeout         time.Duration
+	agentSender              AgentCommandSender
+	onBeforeClusterDelete    func(context.Context, uint) // optional hook for monitor cleanup etc.
+	onClusterTopologyChanged func(context.Context, uint) // optional hook for observability sync etc.
 }
 
 // ServiceConfig holds configuration for the Cluster Service.
@@ -196,6 +197,29 @@ func (s *Service) SetAgentCommandSender(sender AgentCommandSender) {
 // SetOnBeforeClusterDelete 设置删除集群前可选钩子（如清理监控配置）。
 func (s *Service) SetOnBeforeClusterDelete(fn func(context.Context, uint)) {
 	s.onBeforeClusterDelete = fn
+}
+
+// SetOnClusterTopologyChanged sets an optional hook called when cluster topology changes
+// (create/update/add-node/remove-node/delete), typically used for observability target sync.
+// SetOnClusterTopologyChanged 设置集群拓扑变更回调（创建/更新/加减节点/删除），通常用于可观测目标同步。
+func (s *Service) SetOnClusterTopologyChanged(fn func(context.Context, uint)) {
+	s.onClusterTopologyChanged = fn
+}
+
+func (s *Service) notifyClusterTopologyChanged(ctx context.Context, clusterID uint) {
+	if s.onClusterTopologyChanged == nil {
+		return
+	}
+	go func(parent context.Context) {
+		hookCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		defer func() {
+			if r := recover(); r != nil {
+				logger.WarnF(parent, "[Cluster] topology change hook panic recovered: cluster=%d, panic=%v", clusterID, r)
+			}
+		}()
+		s.onClusterTopologyChanged(hookCtx, clusterID)
+	}(ctx)
 }
 
 // Create creates a new cluster with validation.
@@ -288,6 +312,8 @@ func (s *Service) Create(ctx context.Context, req *CreateClusterRequest) (*Clust
 		// 重新加载集群及其节点
 		cluster, _ = s.repo.GetByID(ctx, cluster.ID, true)
 	}
+
+	s.notifyClusterTopologyChanged(ctx, cluster.ID)
 
 	return cluster, nil
 }
@@ -402,6 +428,8 @@ func (s *Service) Update(ctx context.Context, id uint, req *UpdateClusterRequest
 		return nil, err
 	}
 
+	s.notifyClusterTopologyChanged(ctx, cluster.ID)
+
 	return cluster, nil
 }
 
@@ -439,7 +467,12 @@ func (s *Service) Delete(ctx context.Context, id uint, forceRemoveInstallDir boo
 		s.onBeforeClusterDelete(ctx, id)
 	}
 
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+
+	s.notifyClusterTopologyChanged(ctx, id)
+	return nil
 }
 
 // stopProcessesForDeletion sends stop command to each node's agent so actual SeaTunnel processes are stopped.
@@ -615,6 +648,8 @@ func (s *Service) AddNode(ctx context.Context, clusterID uint, req *AddNodeReque
 	// 根据所有节点状态更新集群状态
 	s.updateClusterStatusFromNodes(ctx, clusterID)
 
+	s.notifyClusterTopologyChanged(ctx, clusterID)
+
 	return node, nil
 }
 
@@ -633,13 +668,22 @@ func (s *Service) RemoveNode(ctx context.Context, clusterID uint, nodeID uint) e
 		return ErrNodeNotFound
 	}
 
-	return s.repo.RemoveNode(ctx, nodeID)
+	if err := s.repo.RemoveNode(ctx, nodeID); err != nil {
+		return err
+	}
+
+	s.notifyClusterTopologyChanged(ctx, clusterID)
+	return nil
 }
 
 // RemoveNodeByHostID removes a node from a cluster by host ID.
 // RemoveNodeByHostID 根据主机 ID 从集群中移除节点。
 func (s *Service) RemoveNodeByHostID(ctx context.Context, clusterID uint, hostID uint) error {
-	return s.repo.RemoveNodeByClusterAndHost(ctx, clusterID, hostID)
+	if err := s.repo.RemoveNodeByClusterAndHost(ctx, clusterID, hostID); err != nil {
+		return err
+	}
+	s.notifyClusterTopologyChanged(ctx, clusterID)
+	return nil
 }
 
 // GetNodes retrieves all nodes for a cluster with host information.
@@ -827,6 +871,8 @@ func (s *Service) UpdateNode(ctx context.Context, clusterID uint, nodeID uint, r
 	// Update cluster status based on all nodes
 	// 根据所有节点状态更新集群状态
 	s.updateClusterStatusFromNodes(ctx, clusterID)
+
+	s.notifyClusterTopologyChanged(ctx, clusterID)
 
 	return node, nil
 }
@@ -1724,7 +1770,6 @@ func (s *Service) GetNodeLogs(ctx context.Context, clusterID uint, nodeID uint, 
 
 	return message, nil
 }
-
 
 // ============================================================================
 // Monitor Config Push Methods (Task 8.5)

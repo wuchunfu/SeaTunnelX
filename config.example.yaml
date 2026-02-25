@@ -192,6 +192,53 @@ telemetry:
   # OTLP collector endpoint (default: localhost:4317)
   endpoint: "localhost:4317"
 
+# 可观测配置（三件套集成）
+# Observability configuration (Prometheus/Grafana/Alertmanager integration)
+observability:
+  # 总开关：关闭后监控中心集成状态只展示 disabled
+  # Master switch: when false, integration status will show disabled
+  enabled: true
+  # 当前安装包是否内置三件套（有/无三件套安装包切换此项）
+  # Whether this installation package bundles monitoring stack binaries
+  bundled_stack_enabled: true
+  # 注册/安装集群后自动纳入监控（自动发现集群节点 metrics 端点）
+  # Auto-onboard managed clusters by discovering metrics endpoints
+  auto_onboard_clusters: true
+
+  prometheus:
+    # Prometheus 访问地址（用于状态检查）
+    # Prometheus base URL (for health check)
+    url: "http://127.0.0.1:9090"
+    # 是否允许 SeaTunnelX 改写 Prometheus 配置并触发 reload
+    # Whether SeaTunnelX can rewrite Prometheus config and trigger reload
+    manage_config: true
+    # manage_config=true 时生效
+    # Effective only when manage_config=true
+    config_file: "./deps/runtime/prometheus/prometheus.yml"
+    reload_url: "http://127.0.0.1:9090/-/reload"
+    rules_glob: "./deps/runtime/prometheus/rules/*.yml"
+    scrape_interval: "15s"
+    evaluation_interval: "15s"
+    # Prometheus 中 alertmanagers.targets 的地址（host:port）
+    # Alertmanager target address in Prometheus alerting config (host:port)
+    alertmanager_target: "127.0.0.1:9093"
+
+  alertmanager:
+    url: "http://127.0.0.1:9093"
+
+  grafana:
+    url: "http://127.0.0.1:3000"
+
+  seatunnel_metrics:
+    # SeaTunnel metrics path，用于探测是否开启指标推送
+    # SeaTunnel metrics path, used to verify metrics is really enabled
+    path: "/metrics"
+    # 静态抓取目标（host:port）。用于未纳管集群或外部集群快速接入
+    # Static scrape targets (host:port) for unmanaged/external clusters
+    static_targets:
+      - "127.0.0.1:8081"
+    probe_timeout_seconds: 2
+
 # 定时任务配置
 schedule:
   user_badge_score_dispatch_interval_seconds: 1

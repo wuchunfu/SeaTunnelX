@@ -44,6 +44,7 @@ import (
 	"github.com/seatunnel/seatunnelX/internal/apps/host"
 	"github.com/seatunnel/seatunnelX/internal/apps/installer"
 	"github.com/seatunnel/seatunnelX/internal/apps/monitor"
+	monitoringapp "github.com/seatunnel/seatunnelX/internal/apps/monitoring"
 	"github.com/seatunnel/seatunnelX/internal/apps/oauth"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
 	"github.com/seatunnel/seatunnelX/internal/apps/project"
@@ -311,6 +312,41 @@ func Serve() {
 			clusterRouter.PUT("/:id/monitor-config", monitorHandler.UpdateMonitorConfig)
 			clusterRouter.GET("/:id/events", monitorHandler.ListProcessEvents)
 			clusterRouter.GET("/:id/events/stats", monitorHandler.GetEventStats)
+
+			// Monitoring center 监控中心
+			monitoringRepo := monitoringapp.NewRepository(db.DB(context.Background()))
+			monitoringService := monitoringapp.NewService(clusterService, monitorService, monitoringRepo)
+			monitoringHandler := monitoringapp.NewHandler(monitoringService)
+
+			// Cluster topology change hook -> auto sync managed Prometheus targets (best effort).
+			// 集群拓扑变更后自动同步 Prometheus 受管抓取目标（尽力而为）。
+			clusterService.SetOnClusterTopologyChanged(func(ctx context.Context, clusterID uint) {
+				if err := monitoringService.SyncManagedClusterTargets(ctx); err != nil {
+					log.Printf("[Monitoring] sync managed targets failed after cluster change (cluster=%d): %v", clusterID, err)
+				}
+			})
+			if err := monitoringService.SyncManagedClusterTargets(context.Background()); err != nil {
+				log.Printf("[Monitoring] initial sync managed targets failed: %v", err)
+			}
+
+			monitoringRouter := apiV1Router.Group("/monitoring")
+			monitoringRouter.Use(auth.LoginRequired())
+			{
+				monitoringRouter.GET("/overview", monitoringHandler.GetOverview)
+				monitoringRouter.GET("/clusters/:id/overview", monitoringHandler.GetClusterOverview)
+				monitoringRouter.GET("/alerts", monitoringHandler.ListAlerts)
+				monitoringRouter.POST("/alerts/:eventId/ack", monitoringHandler.AcknowledgeAlert)
+				monitoringRouter.POST("/alerts/:eventId/silence", monitoringHandler.SilenceAlert)
+				monitoringRouter.GET("/clusters/:id/rules", monitoringHandler.ListClusterRules)
+				monitoringRouter.PUT("/clusters/:id/rules/:ruleId", monitoringHandler.UpdateClusterRule)
+				monitoringRouter.GET("/integration/status", monitoringHandler.GetIntegrationStatus)
+				monitoringRouter.GET("/notification-channels", monitoringHandler.ListNotificationChannels)
+				monitoringRouter.POST("/notification-channels", monitoringHandler.CreateNotificationChannel)
+				monitoringRouter.PUT("/notification-channels/:id", monitoringHandler.UpdateNotificationChannel)
+				monitoringRouter.DELETE("/notification-channels/:id", monitoringHandler.DeleteNotificationChannel)
+				monitoringRouter.Any("/proxy/grafana", monitoringHandler.ProxyGrafana)
+				monitoringRouter.Any("/proxy/grafana/*proxyPath", monitoringHandler.ProxyGrafana)
+			}
 
 			// Discovery 集群发现
 			// Initialize discovery service and handler
@@ -1148,12 +1184,11 @@ func (a *installerAgentManagerAdapter) SendTransferPackageCommand(ctx context.Co
 	}
 
 	if resp.Error != "" {
-		return false, receivedBytes, localPath, fmt.Errorf(resp.Error)
+		return false, receivedBytes, localPath, fmt.Errorf("%s", resp.Error)
 	}
 
 	return success, receivedBytes, localPath, nil
 }
-
 
 // ==================== Config Service Adapters 配置服务适配器 ====================
 
