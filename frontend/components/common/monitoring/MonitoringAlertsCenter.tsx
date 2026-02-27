@@ -1,6 +1,7 @@
 'use client';
 
 import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useSearchParams} from 'next/navigation';
 import {useTranslations} from 'next-intl';
 import {toast} from 'sonner';
 import {RefreshCw} from 'lucide-react';
@@ -79,6 +80,7 @@ function resolveBadgeVariant(
 
 export function MonitoringAlertsCenter() {
   const t = useTranslations('monitoringCenter');
+  const searchParams = useSearchParams();
 
   const [clusterOptions, setClusterOptions] = useState<ClusterOption[]>([]);
   const [clusterFilter, setClusterFilter] = useState<string>('all');
@@ -166,6 +168,15 @@ export function MonitoringAlertsCenter() {
   useEffect(() => {
     loadClusters();
   }, [loadClusters]);
+
+  useEffect(() => {
+    const clusterIDFromQuery = searchParams.get('cluster_id');
+    if (!clusterIDFromQuery) {
+      return;
+    }
+    setClusterFilter(clusterIDFromQuery);
+    setPage(1);
+  }, [searchParams]);
 
   useEffect(() => {
     loadAlerts();
