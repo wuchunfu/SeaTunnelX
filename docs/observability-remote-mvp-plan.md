@@ -149,8 +149,19 @@
   远程告警页增加时间过滤、分页、按 `cluster_id` URL 过滤；  
   平台健康表增加跳转详情与跳转告警入口。
 
+- 2026-02-27 / Step-6（M3 联调）  
+  在本地临时环境完成端到端 smoke：  
+  `scripts/observability-remote-smoke.sh`（含登录态）全部通过，覆盖：  
+  `prometheus/discovery`、`alertmanager/webhook`、`remote-alerts`、`clusters/health`、`platform-health`。
+
+- 2026-02-27 / Step-7（M3 回归）  
+  新增并执行开关回归脚本 `scripts/observability-enabled-switch-regression.sh`：  
+  - `observability.enabled=true`：discovery/webhook 均 `HTTP 200`；  
+  - `observability.enabled=false`：discovery/webhook 均 `HTTP 404`；  
+  两条路径回归通过。
+
 ### 当前严格 MVP 剩余项（下一步）
 
 - [ ] 在真实外部三件套环境完成一轮端到端联调记录（不是仅本地接口可用）；
-- [ ] 补齐兼容性/回归验证记录（开启与关闭 `observability.enabled` 两条路径）；
+- [x] 补齐兼容性/回归验证记录（开启与关闭 `observability.enabled` 两条路径）；
 - [ ] 将联调结果与排障结论沉淀回文档（本文件 + integration guide）。

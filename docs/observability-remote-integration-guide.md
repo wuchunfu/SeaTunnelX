@@ -118,6 +118,21 @@ SEATUNNELX_PASSWORD=admin \
 - `GET /api/v1/clusters/health`
 - `GET /api/v1/monitoring/platform-health`
 
+### 6.3 开关回归（enabled true/false）
+
+仓库内置脚本：`scripts/observability-enabled-switch-regression.sh`
+
+```bash
+./scripts/observability-enabled-switch-regression.sh
+```
+
+默认行为：
+
+- 使用 `go run . api` 启动临时实例（保证测试当前源码而非历史二进制）；
+- 自动验证两组用例：
+  - `observability.enabled=true`：`/prometheus/discovery`、`/alertmanager/webhook` 期望 `200`
+  - `observability.enabled=false`：上述接口期望 `404`
+
 ---
 
 ## 7. 监控中心 UI（MVP）能力说明
