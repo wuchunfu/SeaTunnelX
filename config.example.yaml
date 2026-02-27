@@ -207,16 +207,6 @@ observability:
     # HTTP SD path exposed by SeaTunnelX
     http_sd_path: "/api/v1/monitoring/prometheus/discovery"
 
-    # 以下字段来自本地一体化历史模式（远程集成模式可不配置）
-    # Legacy fields from bundled-stack mode (optional in remote integration mode)
-    manage_config: false
-    config_file: "./deps/runtime/prometheus/prometheus.yml"
-    reload_url: "http://127.0.0.1:9090/-/reload"
-    rules_glob: "./deps/runtime/prometheus/rules/*.yml"
-    scrape_interval: "15s"
-    evaluation_interval: "15s"
-    alertmanager_target: "127.0.0.1:9093"
-
   alertmanager:
     url: "http://127.0.0.1:9093"
     # SeaTunnelX 对外暴露的 Alertmanager Webhook 路径
@@ -230,10 +220,6 @@ observability:
     # SeaTunnel metrics path，用于探测是否开启指标推送
     # SeaTunnel metrics path, used to verify metrics is really enabled
     path: "/metrics"
-    # 静态抓取目标（host:port），用于补充非纳管节点
-    # Static scrape targets (host:port) for extra unmanaged targets
-    static_targets:
-      - "127.0.0.1:8081"
     probe_timeout_seconds: 2
 
 # 定时任务配置

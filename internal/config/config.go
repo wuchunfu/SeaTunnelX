@@ -173,14 +173,14 @@ func setDefaults(c *configModel) {
 		c.Observability.Enabled = true
 	}
 	if !viper.IsSet("observability.bundled_stack_enabled") {
-		c.Observability.BundledStackEnabled = true
+		c.Observability.BundledStackEnabled = false
 	}
 	if !viper.IsSet("observability.auto_onboard_clusters") {
-		c.Observability.AutoOnboardClusters = true
+		c.Observability.AutoOnboardClusters = false
 	}
 
 	if !viper.IsSet("observability.prometheus.manage_config") {
-		c.Observability.Prometheus.ManageConfig = true
+		c.Observability.Prometheus.ManageConfig = false
 	}
 	if c.Observability.Prometheus.ConfigFile == "" {
 		c.Observability.Prometheus.ConfigFile = "./deps/runtime/prometheus/prometheus.yml"
@@ -204,9 +204,6 @@ func setDefaults(c *configModel) {
 
 	if c.Observability.SeatunnelMetric.Path == "" {
 		c.Observability.SeatunnelMetric.Path = "/metrics"
-	}
-	if !viper.IsSet("observability.seatunnel_metrics.static_targets") {
-		c.Observability.SeatunnelMetric.StaticTargets = []string{"127.0.0.1:8081"}
 	}
 	if c.Observability.SeatunnelMetric.ProbeTimeoutSeconds <= 0 {
 		c.Observability.SeatunnelMetric.ProbeTimeoutSeconds = 2

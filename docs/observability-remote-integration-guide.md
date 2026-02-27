@@ -9,6 +9,9 @@
 - SeaTunnelX 提供告警查询和健康聚合 API；
 - Grafana 导入 SeaTunnelX 提供的默认 Dashboard JSON。
 
+补充：
+- 如果你要走“本地 deps 一键启动（含预置配置文件）”模式，见：`docs/可观测性三件套一键接入说明.md`
+
 ---
 
 ## 2. SeaTunnelX 配置
@@ -135,7 +138,7 @@ SEATUNNELX_PASSWORD=admin \
 
 ---
 
-## 8. 常见问题（MVP）
+## 7. 常见问题（MVP）
 
 ### Q1：`/api/v1/monitoring/prometheus/discovery` 返回 404
 
@@ -155,35 +158,44 @@ SEATUNNELX_PASSWORD=admin \
 
 ---
 
-## 9. deps 三件套联调参考（2026-02-27 实测）
+## 8. deps 三件套联调参考（2026-02-27 实测）
 
-如果三件套已部署在 `deps` 目录（默认端口 `9090/9093/3000`），推荐直接使用内置脚本切到远程模式：
+如果三件套已部署在 `deps` 目录（默认端口 `9090/9093/3000`），本地脚本只做本地启停与状态检查：
 
 ```bash
-./deps/set-observability-remote-mode.sh http://127.0.0.1:8000
+# 一键重启（会先停旧进程再启动）
+./deps/start-observability.sh
+
+# 一键检查状态
+./deps/status-observability.sh
 ```
 
-脚本会完成：
+如果希望使用你自己准备的本地配置文件（例如 Prometheus/Grafana），可先放入：
 
-- 写入持久化 profile：`deps/runtime/observability.env`
-- 重新生成 `prometheus.yml`（切换为 `http_sd_configs`）
-- 重新生成 `alertmanager.yml`（追加 webhook receiver）
-- best-effort 热重载 Prometheus / Alertmanager
+- `deps/runtime/prometheus/prometheus.yml`
+- `deps/runtime/grafana/grafana.ini`
 
-> 从现在开始，执行 `deps/start-observability.sh` 时会自动加载该 profile，避免重启后被默认静态配置覆盖。
+然后关闭自动初始化再启动：
+
+```bash
+OBSERVABILITY_AUTO_INIT=false ./deps/start-observability.sh
+```
+
+约定：
+
+- 本地脚本不负责“远程模式自动改写”；
+- 远程可观测性联动依赖 `config.yaml` 中 `observability.*.url`；
+- 默认本地地址就是 `127.0.0.1:9090/9093/3000`，满足本地 deps 部署场景。
 
 如需手工检查，关键点如下：
 
 1. **Prometheus**
-   - `seatunnel_engine_http` job 使用 `http_sd_configs`
-   - URL 指向：
-     `http://127.0.0.1:8000/api/v1/monitoring/prometheus/discovery`
-   - 执行 reload：`POST http://127.0.0.1:9090/-/reload`
+   - 本地部署可先使用默认 `static_configs`
+   - 若切远程 HTTP SD，由运维手工配置 `http_sd_configs`（不是本地启停脚本职责）
 
 2. **Alertmanager**
-   - 在 receiver 增加 webhook：
-     `http://127.0.0.1:8000/api/v1/monitoring/alertmanager/webhook`
-   - 热重载（SIGHUP）或重启 Alertmanager
+   - 若需要告警回流 SeatunnelX，由运维手工增加 webhook receiver
+   - 然后热重载（SIGHUP）或重启 Alertmanager
 
 3. **验证**
    - 执行：
@@ -201,7 +213,7 @@ SEATUNNELX_PASSWORD=admin \
 
 ---
 
-## 7. 监控中心 UI（MVP）能力说明
+## 9. 监控中心 UI（MVP）能力说明
 
 当前监控中心（以 Grafana 为主）对应 MVP 已支持：
 

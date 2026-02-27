@@ -20,7 +20,7 @@
 
 ### M1：接入基础能力（本轮优先）
 
-- 配置模型调整（远程模式）：
+- 配置模型调整（远程集成）：
   - 保留 `observability.enabled` 作为总开关；
   - 新增：
     - `observability.prometheus.http_sd_path`
@@ -180,12 +180,12 @@
   5) 通过向 Alertmanager `POST /api/v2/alerts` 注入测试告警，验证告警成功转发并落库到  
      `GET /api/v1/monitoring/remote-alerts`（总数从 2 增至 3，命中 `AMForwardTest`）。
 
-- 2026-02-27 / Step-10（配置固化，避免重启回退）  
-  新增 `deps/set-observability-remote-mode.sh`，并增强 `deps/start-observability.sh`：  
-  - 写入并持久化 `deps/runtime/observability.env`；  
-  - 启动脚本自动加载该 profile；  
-  - `deps/init-observability-defaults.sh` 支持 `PROMETHEUS_USE_HTTP_SD=true` 生成 HTTP SD 抓取配置；  
-  - 解决“重启三件套后配置被默认静态模式覆盖”的问题。
+- 2026-02-27 / Step-10（deps 脚本简化）  
+  按 MVP 最小原则收敛本地脚本职责：  
+  - 删除 `deps/set-observability-remote-mode.sh`，不再引入额外“模式切换脚本”；  
+  - `deps/start-observability.sh` 仅负责本地三件套一键重启（含默认配置初始化）；  
+  - `deps/init-observability-defaults.sh` 固定生成本地 `static_configs`（默认 `127.0.0.1:*`）；  
+  - 远程联动统一通过 `config.yaml` 的 `observability.*.url` 与运维手工配置实现。
 
 ### 当前严格 MVP 剩余项（下一步）
 
