@@ -22,7 +22,6 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -172,35 +171,6 @@ func setDefaults(c *configModel) {
 	if !viper.IsSet("observability.enabled") {
 		c.Observability.Enabled = true
 	}
-	if !viper.IsSet("observability.bundled_stack_enabled") {
-		c.Observability.BundledStackEnabled = false
-	}
-	if !viper.IsSet("observability.auto_onboard_clusters") {
-		c.Observability.AutoOnboardClusters = false
-	}
-
-	if !viper.IsSet("observability.prometheus.manage_config") {
-		c.Observability.Prometheus.ManageConfig = false
-	}
-	if c.Observability.Prometheus.ConfigFile == "" {
-		c.Observability.Prometheus.ConfigFile = "./deps/runtime/prometheus/prometheus.yml"
-	}
-	if c.Observability.Prometheus.ReloadURL == "" {
-		base := strings.TrimRight(c.Observability.Prometheus.URL, "/")
-		c.Observability.Prometheus.ReloadURL = base + "/-/reload"
-	}
-	if c.Observability.Prometheus.RulesGlob == "" {
-		c.Observability.Prometheus.RulesGlob = filepath.ToSlash(filepath.Join(filepath.Dir(c.Observability.Prometheus.ConfigFile), "rules", "*.yml"))
-	}
-	if c.Observability.Prometheus.ScrapeInterval == "" {
-		c.Observability.Prometheus.ScrapeInterval = "15s"
-	}
-	if c.Observability.Prometheus.EvaluationInterval == "" {
-		c.Observability.Prometheus.EvaluationInterval = "15s"
-	}
-	if c.Observability.Prometheus.AlertmanagerTarget == "" {
-		c.Observability.Prometheus.AlertmanagerTarget = resolveHostPort(c.Observability.Alertmanager.URL, "127.0.0.1:9093")
-	}
 
 	if c.Observability.SeatunnelMetric.Path == "" {
 		c.Observability.SeatunnelMetric.Path = "/metrics"
@@ -274,24 +244,6 @@ func validateRequiredPath(name, raw string) error {
 		return fmt.Errorf("%s must start with '/'", name)
 	}
 	return nil
-}
-
-func resolveHostPort(rawURL, fallback string) string {
-	trimmed := strings.TrimSpace(rawURL)
-	if trimmed == "" {
-		return fallback
-	}
-	if !strings.Contains(trimmed, "://") {
-		trimmed = "http://" + trimmed
-	}
-	u, err := url.Parse(trimmed)
-	if err != nil {
-		return fallback
-	}
-	if u.Host != "" {
-		return u.Host
-	}
-	return fallback
 }
 
 // GetDatabaseType 获取数据库类型

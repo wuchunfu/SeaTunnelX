@@ -250,14 +250,6 @@ type ObservabilityConfig struct {
 	// Enabled 表示是否启用可观测性集成。
 	Enabled bool `mapstructure:"enabled"`
 
-	// BundledStackEnabled indicates whether this package includes built-in monitoring stack binaries.
-	// BundledStackEnabled 表示当前安装包是否内置三件套二进制。
-	BundledStackEnabled bool `mapstructure:"bundled_stack_enabled"`
-
-	// AutoOnboardClusters auto-discovers managed SeaTunnel clusters and updates Prometheus scrape targets.
-	// AutoOnboardClusters 自动发现受管集群并更新 Prometheus 抓取目标。
-	AutoOnboardClusters bool `mapstructure:"auto_onboard_clusters"`
-
 	Prometheus      ObservabilityPrometheusConfig      `mapstructure:"prometheus"`
 	Alertmanager    ObservabilityAlertmanagerConfig    `mapstructure:"alertmanager"`
 	Grafana         ObservabilityGrafanaConfig         `mapstructure:"grafana"`
@@ -271,29 +263,6 @@ type ObservabilityPrometheusConfig struct {
 	// HTTPSDPath is the fixed HTTP SD endpoint path exposed by SeaTunnelX.
 	// HTTPSDPath 是 SeaTunnelX 暴露的 Prometheus HTTP SD 路径。
 	HTTPSDPath string `mapstructure:"http_sd_path"`
-
-	// ManageConfig indicates whether SeaTunnelX can rewrite Prometheus config file and trigger reload.
-	// ManageConfig 表示 SeaTunnelX 是否可改写 Prometheus 配置并触发热加载。
-	ManageConfig bool `mapstructure:"manage_config"`
-
-	// ConfigFile is Prometheus config path managed by SeaTunnelX.
-	// ConfigFile 是由 SeaTunnelX 管理的 Prometheus 配置文件路径。
-	ConfigFile string `mapstructure:"config_file"`
-
-	// ReloadURL is Prometheus lifecycle reload endpoint.
-	// ReloadURL 是 Prometheus 热加载接口地址。
-	ReloadURL string `mapstructure:"reload_url"`
-
-	// RulesGlob points to Prometheus rule files glob.
-	// RulesGlob 指向 Prometheus 规则文件通配路径。
-	RulesGlob string `mapstructure:"rules_glob"`
-
-	ScrapeInterval     string `mapstructure:"scrape_interval"`
-	EvaluationInterval string `mapstructure:"evaluation_interval"`
-
-	// AlertmanagerTarget is target address used by Prometheus alerting config, e.g. "127.0.0.1:9093".
-	// AlertmanagerTarget 是 Prometheus alerting 配置使用的告警管理器目标地址。
-	AlertmanagerTarget string `mapstructure:"alertmanager_target"`
 }
 
 // ObservabilityAlertmanagerConfig Alertmanager 集成配置
@@ -313,10 +282,6 @@ type ObservabilityGrafanaConfig struct {
 // ObservabilitySeatunnelMetricConfig SeaTunnel metrics 探测配置
 type ObservabilitySeatunnelMetricConfig struct {
 	Path string `mapstructure:"path"`
-
-	// StaticTargets are additional metrics targets (host:port) outside managed clusters.
-	// StaticTargets 用于配置受管集群之外的额外 metrics 抓取目标（host:port）。
-	StaticTargets []string `mapstructure:"static_targets"`
 
 	// ProbeTimeoutSeconds is the timeout for probing one metrics endpoint.
 	// ProbeTimeoutSeconds 是单个 metrics 端点探测超时时间（秒）。

@@ -41,7 +41,7 @@ observability:
     probe_timeout_seconds: 2
 ```
 
-**废弃 / 不再推荐的字段（由本地一体化栈演进而来）：**
+**已移除的历史字段（由本地一体化栈演进而来）：**
 
 - `bundled_stack_enabled`
 - `auto_onboard_clusters`
@@ -49,7 +49,7 @@ observability:
 - `prometheus.config_file`
 - `prometheus.rules_glob`
 
-这些字段与“由 SeaTunnelX 直接拉起和管理 Prometheus/Grafana/Alertmanager 进程及配置文件”强耦合，在远程集成模式下不再需要。
+这些字段与“由 SeaTunnelX 直接拉起和管理 Prometheus/Grafana/Alertmanager 进程及配置文件”强耦合，已从当前最小远程集成配置模型中移除。
 
 **启用条件校验建议：**
 
@@ -278,4 +278,3 @@ deps/grafana_config/dashboards/
 
 - SeaTunnelX 内部看到按集群维度的健康状态与告警收敛信息；
 - Grafana 中通过 Dashboard 面板查看每个 Seatunnel 集群的深度监控数据。
-

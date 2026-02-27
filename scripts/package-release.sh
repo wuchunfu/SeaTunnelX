@@ -367,23 +367,6 @@ prepare_observability_stack() {
     "$deps_dir/status-observability.sh"
 }
 
-patch_observability_config() {
-  local config_file="$1"
-  local mode="$2" # with|without
-
-  if [[ "$mode" == "with" ]]; then
-    sed -i \
-      -e 's/^  bundled_stack_enabled: .*/  bundled_stack_enabled: true/' \
-      -e 's/^    manage_config: .*/    manage_config: true/' \
-      "$config_file"
-  else
-    sed -i \
-      -e 's/^  bundled_stack_enabled: .*/  bundled_stack_enabled: false/' \
-      -e 's/^    manage_config: .*/    manage_config: false/' \
-      "$config_file"
-  fi
-}
-
 for arch in "${ARCHES[@]}"; do
   for obs in "${OBS_VARIANTS[@]}"; do
     pkg_name="seatunnelx-${APP_VERSION_SAFE}-linux-${arch}-node${NODE_MAJOR}-${obs}-observability"
@@ -402,8 +385,6 @@ for arch in "${ARCHES[@]}"; do
     cp "$ROOT_DIR/config.example.yaml" "$pkg_dir/config.example.yaml"
     cp "$ROOT_DIR/config.example.yaml" "$pkg_dir/config.yaml"
     cp "$ROOT_DIR/install_seatunnel.sh" "$pkg_dir/"
-
-    patch_observability_config "$pkg_dir/config.yaml" "$obs"
 
     mkdir -p "$pkg_dir/lib/agent"
     cp "$BUILD_DIR/seatunnelx-agent-linux-amd64" "$pkg_dir/lib/agent/seatunnelx-agent-linux-amd64"

@@ -187,6 +187,14 @@
   - `deps/init-observability-defaults.sh` 固定生成本地 `static_configs`（默认 `127.0.0.1:*`）；  
   - 远程联动统一通过 `config.yaml` 的 `observability.*.url` 与运维手工配置实现。
 
+- 2026-02-27 / Step-11（遗留字段与脚本瘦身）  
+  继续收敛远程集成模型，完成“1-2”阶段：  
+  - `internal/config/model.go` 移除历史字段（`bundled_stack_enabled`、`auto_onboard_clusters`、`prometheus.manage_config` 等）；  
+  - `monitoring.Service` 删除本地 Prometheus 配置改写/热重载逻辑，仅保留远程健康探测与聚合；  
+  - `router` 移除集群拓扑变更触发的本地 Prometheus 同步钩子；  
+  - `scripts/package-release.sh` 移除对历史字段的 `sed` 改写；  
+  - 回归脚本与设计文档同步更新，配置模板保持最小远程集成形态。
+
 ### 当前严格 MVP 剩余项（下一步）
 
 - [x] 在真实外部三件套环境完成一轮端到端联调记录（不是仅本地接口可用）；

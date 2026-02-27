@@ -71,7 +71,6 @@ observability:
   prometheus:
     url: "http://127.0.0.1:9090"
     http_sd_path: "/api/v1/monitoring/prometheus/discovery"
-    manage_config: false
   alertmanager:
     url: "http://127.0.0.1:9093"
     webhook_path: "/api/v1/monitoring/alertmanager/webhook"
@@ -79,8 +78,6 @@ observability:
     url: "http://127.0.0.1:3000"
   seatunnel_metrics:
     path: "/metrics"
-    static_targets:
-      - "127.0.0.1:65535"
     probe_timeout_seconds: 1
 YAML
 }

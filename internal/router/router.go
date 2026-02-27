@@ -327,17 +327,6 @@ func Serve() {
 				apiV1Router.POST(alertWebhookPath, monitoringHandler.AlertmanagerWebhook)
 			}
 
-			// Cluster topology change hook -> auto sync managed Prometheus targets (best effort).
-			// 集群拓扑变更后自动同步 Prometheus 受管抓取目标（尽力而为）。
-			clusterService.SetOnClusterTopologyChanged(func(ctx context.Context, clusterID uint) {
-				if err := monitoringService.SyncManagedClusterTargets(ctx); err != nil {
-					log.Printf("[Monitoring] sync managed targets failed after cluster change (cluster=%d): %v", clusterID, err)
-				}
-			})
-			if err := monitoringService.SyncManagedClusterTargets(context.Background()); err != nil {
-				log.Printf("[Monitoring] initial sync managed targets failed: %v", err)
-			}
-
 			monitoringRouter := apiV1Router.Group("/monitoring")
 			monitoringRouter.Use(auth.LoginRequired())
 			{

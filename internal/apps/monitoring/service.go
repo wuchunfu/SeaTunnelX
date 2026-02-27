@@ -18,27 +18,20 @@
 package monitoring
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	neturl "net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/seatunnel/seatunnelX/internal/apps/cluster"
 	"github.com/seatunnel/seatunnelX/internal/apps/monitor"
 	"github.com/seatunnel/seatunnelX/internal/config"
-	"github.com/seatunnel/seatunnelX/internal/logger"
-	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -48,7 +41,6 @@ type Service struct {
 	clusterService *cluster.Service
 	monitorService *monitor.Service
 	repo           *Repository
-	syncMu         sync.Mutex
 }
 
 // NewService creates a monitoring service.
@@ -546,14 +538,6 @@ func (s *Service) UpdateClusterRule(ctx context.Context, clusterID, ruleID uint,
 func (s *Service) GetIntegrationStatus(ctx context.Context) (*IntegrationStatusData, error) {
 	obsCfg := config.Config.Observability
 
-	// Keep Prometheus managed targets in sync when entering integration page (best effort).
-	// 进入集成页时顺带同步 Prometheus 目标（尽力而为）。
-	if obsCfg.Enabled && obsCfg.AutoOnboardClusters && obsCfg.Prometheus.ManageConfig {
-		if err := s.SyncManagedClusterTargets(ctx); err != nil {
-			logger.WarnF(ctx, "[Monitoring] sync managed cluster targets failed: %v", err)
-		}
-	}
-
 	components := []*IntegrationComponentStatus{
 		{Name: "prometheus", URL: joinURL(obsCfg.Prometheus.URL, "/-/healthy")},
 		{Name: "alertmanager", URL: joinURL(obsCfg.Alertmanager.URL, "/-/healthy")},
@@ -636,53 +620,6 @@ func (s *Service) GetIntegrationStatus(ctx context.Context) (*IntegrationStatusD
 	}, nil
 }
 
-// SyncManagedClusterTargets discovers managed cluster metrics endpoints and rewrites Prometheus scrape config.
-// SyncManagedClusterTargets 发现受管集群 metrics 端点并更新 Prometheus 抓取配置。
-func (s *Service) SyncManagedClusterTargets(ctx context.Context) error {
-	obsCfg := config.Config.Observability
-	if !obsCfg.Enabled || !obsCfg.AutoOnboardClusters || !obsCfg.Prometheus.ManageConfig {
-		return nil
-	}
-
-	configFile := strings.TrimSpace(obsCfg.Prometheus.ConfigFile)
-	if configFile == "" {
-		return fmt.Errorf("observability.prometheus.config_file is empty while manage_config=true")
-	}
-
-	targets, err := s.collectManagedMetricsTargets(ctx, true)
-	if err != nil {
-		return err
-	}
-
-	rendered, err := s.renderPrometheusConfig(targets)
-	if err != nil {
-		return err
-	}
-
-	s.syncMu.Lock()
-	defer s.syncMu.Unlock()
-
-	if err := os.MkdirAll(filepath.Dir(configFile), 0o755); err != nil {
-		return err
-	}
-
-	oldContent, _ := os.ReadFile(configFile)
-	if bytes.Equal(oldContent, rendered) {
-		return nil
-	}
-
-	if err := os.WriteFile(configFile, rendered, 0o644); err != nil {
-		return err
-	}
-
-	if err := s.reloadPrometheus(ctx); err != nil {
-		return err
-	}
-
-	logger.InfoF(ctx, "[Monitoring] synced Prometheus managed targets: file=%s, target_count=%d", configFile, len(targets))
-	return nil
-}
-
 type managedMetricsTarget struct {
 	ClusterID   uint
 	ClusterName string
@@ -742,32 +679,6 @@ func (s *Service) collectManagedMetricsTargets(ctx context.Context, doProbe bool
 		}
 	}
 
-	// Append static targets defined in config for unmanaged/legacy clusters.
-	// 追加配置中的静态目标，用于未纳管或历史集群。
-	for _, rawTarget := range obsCfg.SeatunnelMetric.StaticTargets {
-		target := strings.TrimSpace(rawTarget)
-		if target == "" {
-			continue
-		}
-		if _, ok := seen[target]; ok {
-			continue
-		}
-		seen[target] = struct{}{}
-
-		item := &managedMetricsTarget{
-			ClusterID:   0,
-			ClusterName: "static",
-			Env:         "static",
-			Target:      target,
-		}
-		if doProbe {
-			item.ProbeURL, item.StatusCode, item.Healthy, item.ProbeError = s.probeMetricsEndpoint(ctx, target)
-		} else {
-			item.ProbeURL = "http://" + target + ensureLeadingSlash(obsCfg.SeatunnelMetric.Path)
-		}
-		results = append(results, item)
-	}
-
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].ClusterID != results[j].ClusterID {
 			return results[i].ClusterID < results[j].ClusterID
@@ -812,158 +723,6 @@ func (s *Service) probeMetricsEndpoint(ctx context.Context, target string) (prob
 		return probeURL, statusCode, true, ""
 	}
 	return probeURL, statusCode, false, "metrics payload signature not detected"
-}
-
-type prometheusFileConfig struct {
-	Global        prometheusGlobalConfig  `yaml:"global"`
-	RuleFiles     []string                `yaml:"rule_files,omitempty"`
-	Alerting      prometheusAlertingBlock `yaml:"alerting"`
-	ScrapeConfigs []prometheusScrapeJob   `yaml:"scrape_configs"`
-}
-
-type prometheusGlobalConfig struct {
-	ScrapeInterval     string `yaml:"scrape_interval"`
-	EvaluationInterval string `yaml:"evaluation_interval"`
-}
-
-type prometheusAlertingBlock struct {
-	Alertmanagers []prometheusAlertmanagerConfig `yaml:"alertmanagers"`
-}
-
-type prometheusAlertmanagerConfig struct {
-	StaticConfigs []prometheusStaticConfig `yaml:"static_configs"`
-}
-
-type prometheusScrapeJob struct {
-	JobName     string                   `yaml:"job_name"`
-	MetricsPath string                   `yaml:"metrics_path,omitempty"`
-	Static      []prometheusStaticConfig `yaml:"static_configs"`
-}
-
-type prometheusStaticConfig struct {
-	Targets []string          `yaml:"targets"`
-	Labels  map[string]string `yaml:"labels,omitempty"`
-}
-
-func (s *Service) renderPrometheusConfig(targets []*managedMetricsTarget) ([]byte, error) {
-	obsCfg := config.Config.Observability
-	promCfg := obsCfg.Prometheus
-
-	prometheusTarget := resolveURLHost(promCfg.URL, "127.0.0.1:9090")
-	alertmanagerTarget := strings.TrimSpace(promCfg.AlertmanagerTarget)
-	if alertmanagerTarget == "" {
-		alertmanagerTarget = resolveURLHost(obsCfg.Alertmanager.URL, "127.0.0.1:9093")
-	}
-
-	fileCfg := &prometheusFileConfig{
-		Global: prometheusGlobalConfig{
-			ScrapeInterval:     promCfg.ScrapeInterval,
-			EvaluationInterval: promCfg.EvaluationInterval,
-		},
-		RuleFiles: []string{promCfg.RulesGlob},
-		Alerting: prometheusAlertingBlock{
-			Alertmanagers: []prometheusAlertmanagerConfig{
-				{
-					StaticConfigs: []prometheusStaticConfig{
-						{Targets: []string{alertmanagerTarget}},
-					},
-				},
-			},
-		},
-		ScrapeConfigs: []prometheusScrapeJob{
-			{
-				JobName: "prometheus",
-				Static: []prometheusStaticConfig{
-					{Targets: []string{prometheusTarget}},
-				},
-			},
-			{
-				JobName: "alertmanager",
-				Static: []prometheusStaticConfig{
-					{Targets: []string{alertmanagerTarget}},
-				},
-			},
-		},
-	}
-
-	clusterStatics := make(map[uint]*prometheusStaticConfig)
-	clusterNames := make(map[uint]string)
-	clusterIDs := make([]uint, 0, 8)
-	for _, target := range targets {
-		if target == nil || !target.Healthy {
-			continue
-		}
-		staticCfg, ok := clusterStatics[target.ClusterID]
-		if !ok {
-			staticCfg = &prometheusStaticConfig{
-				Targets: make([]string, 0, 2),
-				Labels: map[string]string{
-					"cluster_id":   fmt.Sprintf("%d", target.ClusterID),
-					"cluster_name": target.ClusterName,
-					"service":      "seatunnel-engine",
-				},
-			}
-			clusterStatics[target.ClusterID] = staticCfg
-			clusterNames[target.ClusterID] = target.ClusterName
-			clusterIDs = append(clusterIDs, target.ClusterID)
-		}
-		staticCfg.Targets = append(staticCfg.Targets, target.Target)
-	}
-
-	if len(clusterIDs) > 0 {
-		sort.Slice(clusterIDs, func(i, j int) bool {
-			return clusterIDs[i] < clusterIDs[j]
-		})
-
-		seatunnelJob := prometheusScrapeJob{
-			JobName:     "seatunnel_engine_http",
-			MetricsPath: ensureLeadingSlash(obsCfg.SeatunnelMetric.Path),
-			Static:      make([]prometheusStaticConfig, 0, len(clusterIDs)),
-		}
-
-		for _, clusterID := range clusterIDs {
-			staticCfg := clusterStatics[clusterID]
-			sort.Strings(staticCfg.Targets)
-			if staticCfg.Labels["cluster_name"] == "" {
-				staticCfg.Labels["cluster_name"] = clusterNames[clusterID]
-			}
-			seatunnelJob.Static = append(seatunnelJob.Static, *staticCfg)
-		}
-
-		fileCfg.ScrapeConfigs = append(fileCfg.ScrapeConfigs, seatunnelJob)
-	}
-
-	out, err := yaml.Marshal(fileCfg)
-	if err != nil {
-		return nil, err
-	}
-	if len(out) == 0 || out[len(out)-1] != '\n' {
-		out = append(out, '\n')
-	}
-	return out, nil
-}
-
-func (s *Service) reloadPrometheus(ctx context.Context) error {
-	reloadURL := normalizeBaseURL(config.Config.Observability.Prometheus.ReloadURL)
-	if reloadURL == "" {
-		return nil
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reloadURL, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("prometheus reload failed, status=%d, body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return nil
 }
 
 func checkHTTPComponent(ctx context.Context, targetURL string, timeout time.Duration) (bool, int, string) {
@@ -1024,21 +783,6 @@ func ensureLeadingSlash(path string) string {
 		return trimmed
 	}
 	return "/" + trimmed
-}
-
-func resolveURLHost(rawURL, fallback string) string {
-	base := normalizeBaseURL(rawURL)
-	if base == "" {
-		return fallback
-	}
-	parsed, err := neturl.Parse(base)
-	if err != nil {
-		return fallback
-	}
-	if parsed.Host == "" {
-		return fallback
-	}
-	return parsed.Host
 }
 
 // ListNotificationChannels returns all notification channels.
