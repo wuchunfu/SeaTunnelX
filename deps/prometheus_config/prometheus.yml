@@ -19,9 +19,9 @@ scrape_configs:
     static_configs:
       - targets: ['127.0.0.1:9093']
 
-  # Seatunnel 集群 targets 通过 HTTP SD 动态发现，由用户在 Prometheus 中添加：
+  # SeaTunnelX HTTP SD：需为完整 URL，可通过 init 脚本的 SEATUNNELX_EXTERNAL_URL 环境变量替换
   - job_name: 'seatunnel_engine_http'
     http_sd_configs:
-    - url: ${SEATUNNELX_EXTERNAL_URL}/api/v1/monitoring/prometheus/discovery
+    - url: http://127.0.0.1:8080/api/v1/monitoring/prometheus/discovery
       refresh_interval: 30s
 
