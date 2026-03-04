@@ -53,7 +53,16 @@ log() {
   echo "[install-observability] $*"
 }
 
-# 用于 GitHub 源：优先代理，失败回退官方
+ensure_wget() {
+  if ! command -v wget >/dev/null 2>&1; then
+    echo "[install-observability] ERROR: wget not found. Please install wget first, e.g.:" >&2
+    echo "  yum install -y wget   # CentOS/RHEL" >&2
+    echo "  apt-get install -y wget   # Debian/Ubuntu" >&2
+    exit 1
+  fi
+}
+
+# 用于 GitHub 源：优先代理，失败回退官方（wget）
 download_with_proxy() {
   local url="$1"
   local out="$2"
@@ -61,22 +70,22 @@ download_with_proxy() {
   local proxy_url="${PROXY_PREFIX}${url}"
 
   log "Downloading (proxy first): $proxy_url"
-  if curl -fSL "$proxy_url" -o "$out"; then
+  if wget -q --show-progress -O "$out" "$proxy_url"; then
     log "Downloaded via proxy"
     return 0
   fi
 
   log "Proxy failed, falling back to origin: $url"
-  curl -fSL "$url" -o "$out"
+  wget -q --show-progress -O "$out" "$url"
   log "Downloaded from origin"
 }
 
-# 直接下载（Grafana 等非 GitHub 源，代理不支持）
+# 直接下载（Grafana 等非 GitHub 源，代理不支持，wget）
 download_direct() {
   local url="$1"
   local out="$2"
   log "Downloading: $url"
-  curl -fSL "$url" -o "$out"
+  wget -q --show-progress -O "$out" "$url"
   log "Downloaded: $url"
 }
 
@@ -127,6 +136,9 @@ main() {
   log "Architecture detected: $ARCH ($PROM_OSARCH)"
   log "Versions: prometheus=$PROMETHEUS_VERSION, alertmanager=$ALERTMANAGER_VERSION, grafana=$GRAFANA_VERSION"
   log "Download directory: $DOWNLOAD_DIR"
+
+  # 确保有 wget
+  ensure_wget
 
   if have_offline_bundles; then
     log "Found offline archives in downloads/:"
