@@ -566,6 +566,7 @@ export function ClusterDeployWizard({
           master_addresses: masterAddresses,
           worker_addresses: workerAddresses,
           cluster_port: config.clusterPort,
+          worker_port: config.workerPort,
           http_port: config.httpPort,
           jvm: config.jvm,
           checkpoint: config.checkpoint,

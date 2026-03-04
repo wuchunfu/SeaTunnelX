@@ -1840,6 +1840,9 @@ func buildInstallParams(req *InstallationRequest) map[string]string {
 	if req.ClusterPort > 0 {
 		params["cluster_port"] = fmt.Sprintf("%d", req.ClusterPort)
 	}
+	if req.WorkerPort > 0 {
+		params["worker_port"] = fmt.Sprintf("%d", req.WorkerPort)
+	}
 	if req.HTTPPort > 0 {
 		params["http_port"] = fmt.Sprintf("%d", req.HTTPPort)
 	}

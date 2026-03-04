@@ -173,7 +173,9 @@ func setDefaults(c *configModel) {
 	}
 
 	if c.Observability.SeatunnelMetric.Path == "" {
-		c.Observability.SeatunnelMetric.Path = "/metrics"
+		// 默认使用 SeaTunnel Engine Telemetry 文档中的 Hazelcast REST metrics 路径：
+		// http://{instanceHost}:5801/hazelcast/rest/instance/metrics
+		c.Observability.SeatunnelMetric.Path = "/hazelcast/rest/instance/metrics"
 	}
 	if c.Observability.SeatunnelMetric.ProbeTimeoutSeconds <= 0 {
 		c.Observability.SeatunnelMetric.ProbeTimeoutSeconds = 2

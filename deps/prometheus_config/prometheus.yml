@@ -21,6 +21,9 @@ scrape_configs:
 
   # SeaTunnelX HTTP SD：需为完整 URL，可通过 init 脚本的 SEATUNNELX_EXTERNAL_URL 环境变量替换
   - job_name: 'seatunnel_engine_http'
+    # SeaTunnel Engine metrics 暴露在 Hazelcast REST 接口下
+    # SeaTunnel Engine metrics are exposed under Hazelcast REST path
+    metrics_path: /hazelcast/rest/instance/metrics
     http_sd_configs:
     - url: http://127.0.0.1:8000/api/v1/monitoring/prometheus/discovery
       refresh_interval: 30s

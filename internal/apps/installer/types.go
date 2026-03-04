@@ -227,8 +227,9 @@ type InstallationRequest struct {
 	NodeRole        NodeRole          `json:"node_role"`
 	MasterAddresses []string          `json:"master_addresses,omitempty"`
 	WorkerAddresses []string          `json:"worker_addresses,omitempty"` // Worker addresses for separated mode / 分离模式的 worker 地址
-	ClusterPort     int               `json:"cluster_port,omitempty"`
-	HTTPPort        int               `json:"http_port,omitempty"`
+	ClusterPort     int               `json:"cluster_port,omitempty"`  // Master hazelcast port / Master Hazelcast 端口
+	WorkerPort      int               `json:"worker_port,omitempty"`   // Worker hazelcast port / Worker Hazelcast 端口
+	HTTPPort        int               `json:"http_port,omitempty"`     // SeaTunnel HTTP API 端口
 	JVM             *JVMConfig        `json:"jvm,omitempty"`
 	Checkpoint      *CheckpointConfig `json:"checkpoint,omitempty"`
 	Connector       *ConnectorConfig  `json:"connector,omitempty"`

@@ -34,7 +34,11 @@ import (
 // BuildPrometheusSDTargets builds Prometheus HTTP SD target groups from managed clusters.
 // BuildPrometheusSDTargets 从受管集群构建 Prometheus HTTP SD 目标组。
 func (s *Service) BuildPrometheusSDTargets(ctx context.Context) ([]*PrometheusSDTargetGroup, error) {
-	targets, err := s.collectManagedMetricsTargets(ctx, true)
+	// now not do metrics probe in HTTP SD stage, directly build targets based on cluster/node metadata,
+	// let Prometheus itself handle the fetch and health check.
+	// 不再在 HTTP SD 阶段做指标探活，直接基于集群/节点元数据构造 targets，
+	// 由 Prometheus 自己负责抓取与健康判定。
+	targets, err := s.collectManagedMetricsTargets(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +48,7 @@ func (s *Service) BuildPrometheusSDTargets(ctx context.Context) ([]*PrometheusSD
 	groupKeys := make([]string, 0, 8)
 
 	for _, item := range targets {
-		if item == nil || !item.Healthy {
+		if item == nil {
 			continue
 		}
 

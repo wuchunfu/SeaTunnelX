@@ -41,28 +41,34 @@ esac
 
 PROM_ARCHIVE="prometheus-${PROMETHEUS_VERSION}.${PROM_OSARCH}.tar.gz"
 ALERT_ARCHIVE="alertmanager-${ALERTMANAGER_VERSION}.${ALERT_OSARCH}.tar.gz"
-GRAFANA_ARCHIVE="grafana-${GRAFANA_VERSION}.${GRAFANA_OSARCH}.tar.gz"
+
+# Grafana 使用企业版华为云镜像包
+GRAFANA_ENTERPRISE_BUILD_ID="21957728731"
+case "$GRAFANA_OSARCH" in
+  linux-amd64)
+    GRAFANA_ARCHIVE="grafana-enterprise_${GRAFANA_VERSION}_${GRAFANA_ENTERPRISE_BUILD_ID}_linux_amd64.tar.gz"
+    ;;
+  linux-arm64)
+    GRAFANA_ARCHIVE="grafana-enterprise_${GRAFANA_VERSION}_${GRAFANA_ENTERPRISE_BUILD_ID}_linux_arm64.tar.gz"
+    ;;
+  *)
+    echo "Unsupported grafana arch: $GRAFANA_OSARCH" >&2
+    exit 1
+    ;;
+esac
 
 PROM_URL="https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/${PROM_ARCHIVE}"
 ALERT_URL="https://github.com/prometheus/alertmanager/releases/download/v${ALERTMANAGER_VERSION}/${ALERT_ARCHIVE}"
-GRAFANA_URL="https://dl.grafana.com/oss/release/${GRAFANA_ARCHIVE}"
+# Grafana 使用华为云镜像源（结构与官方保持一致）
+GRAFANA_URL="https://repo.huaweicloud.com/grafana/${GRAFANA_VERSION}/${GRAFANA_ARCHIVE}"
 
-PROXY_PREFIX="https://edgeone.gh-proxy.org/"
+PROXY_PREFIX="https://hk.gh-proxy.org/"
 
 log() {
   echo "[install-observability] $*"
 }
 
-ensure_wget() {
-  if ! command -v wget >/dev/null 2>&1; then
-    echo "[install-observability] ERROR: wget not found. Please install wget first, e.g.:" >&2
-    echo "  yum install -y wget   # CentOS/RHEL" >&2
-    echo "  apt-get install -y wget   # Debian/Ubuntu" >&2
-    exit 1
-  fi
-}
-
-# 用于 GitHub 源：优先代理，失败回退官方（wget）
+# 用于 GitHub 源：优先代理，失败回退官方（curl）
 download_with_proxy() {
   local url="$1"
   local out="$2"
@@ -70,22 +76,22 @@ download_with_proxy() {
   local proxy_url="${PROXY_PREFIX}${url}"
 
   log "Downloading (proxy first): $proxy_url"
-  if wget -q --show-progress -O "$out" "$proxy_url"; then
+  if curl -fSL "$proxy_url" -o "$out"; then
     log "Downloaded via proxy"
     return 0
   fi
 
   log "Proxy failed, falling back to origin: $url"
-  wget -q --show-progress -O "$out" "$url"
+  curl -fSL "$url" -o "$out"
   log "Downloaded from origin"
 }
 
-# 直接下载（Grafana 等非 GitHub 源，代理不支持，wget）
+# 直接下载（Grafana 等非 GitHub 源，代理不支持，curl）
 download_direct() {
   local url="$1"
   local out="$2"
   log "Downloading: $url"
-  wget -q --show-progress -O "$out" "$url"
+  curl -fSL "$url" -o "$out"
   log "Downloaded: $url"
 }
 
@@ -98,7 +104,7 @@ have_offline_bundles() {
 install_component_from_tar() {
   local archive="$1"     # 文件名（不含路径）
   local target_name="$2" # 安装后在 BASE_DIR 下的目录名，例如 prometheus/alertmanager/grafana
-  local prefix="$3"      # 解压出来的目录前缀，例如 prometheus-3.9.1.linux-amd64
+  local prefix="$3"      # 解压出来的目录前缀；为空时自动探测
 
   local tar_path="$DOWNLOAD_DIR/$archive"
 
@@ -116,11 +122,31 @@ install_component_from_tar() {
   log "Extracting $archive to $BASE_DIR"
   tar -xf "$tar_path" -C "$BASE_DIR"
 
-  local extracted_dir="$BASE_DIR/$prefix"
+  local extracted_dir=""
 
-  if [[ ! -d "$extracted_dir" ]]; then
-    echo "expected directory not found after extract: $extracted_dir" >&2
-    exit 1
+  if [[ -n "$prefix" ]]; then
+    extracted_dir="$BASE_DIR/$prefix"
+    if [[ ! -d "$extracted_dir" ]]; then
+      echo "expected directory not found after extract: $extracted_dir" >&2
+      exit 1
+    fi
+  else
+    # 自动探测解压出来的目录（用于 Grafana enterprise 这类包）
+    local base_prefix="${target_name%%-*}-" # grafana- / prometheus- 等
+    for d in "$BASE_DIR"/${base_prefix}*; do
+      if [[ -d "$d" ]]; then
+        extracted_dir="$d"
+        # 若目录名中包含版本号则优先选用
+        if [[ "$d" == *"$GRAFANA_VERSION"* ]]; then
+          extracted_dir="$d"
+          break
+        fi
+      fi
+    done
+    if [[ -z "$extracted_dir" ]]; then
+      echo "failed to auto-detect extracted directory for $archive" >&2
+      exit 1
+    fi
   fi
 
   # 如果解压目录名已经等于目标目录名，则无需再移动
@@ -137,9 +163,6 @@ main() {
   log "Versions: prometheus=$PROMETHEUS_VERSION, alertmanager=$ALERTMANAGER_VERSION, grafana=$GRAFANA_VERSION"
   log "Download directory: $DOWNLOAD_DIR"
 
-  # 确保有 wget
-  ensure_wget
-
   if have_offline_bundles; then
     log "Found offline archives in downloads/:"
     log "  - $PROM_ARCHIVE"
@@ -155,8 +178,8 @@ main() {
   # 安装到带版本号的目录
   install_component_from_tar "$PROM_ARCHIVE" "prometheus-${PROMETHEUS_VERSION}" "prometheus-${PROMETHEUS_VERSION}.${PROM_OSARCH}"
   install_component_from_tar "$ALERT_ARCHIVE" "alertmanager-${ALERTMANAGER_VERSION}" "alertmanager-${ALERTMANAGER_VERSION}.${ALERT_OSARCH}"
-  # Grafana 解压目录名为 grafana-X.Y.Z（不含 .linux-amd64）
-  install_component_from_tar "$GRAFANA_ARCHIVE" "grafana-${GRAFANA_VERSION}" "grafana-${GRAFANA_VERSION}"
+  # Grafana Enterprise 包解压目录名可能与文件名不完全一致，使用自动探测前缀 grafana-
+  install_component_from_tar "$GRAFANA_ARCHIVE" "grafana-${GRAFANA_VERSION}" ""
 
   log "Binaries installed under:"
   log "  - $BASE_DIR/prometheus-${PROMETHEUS_VERSION}"

@@ -273,12 +273,12 @@ type CheckpointConfig struct {
 	KerberosKeytabFilePath string `json:"kerberos_keytab_file_path,omitempty"`
 
 	// HDFS HA mode configuration / HDFS HA 模式配置
-	HDFSHAEnabled                bool   `json:"hdfs_ha_enabled,omitempty"`
-	HDFSNameServices             string `json:"hdfs_name_services,omitempty"`              // e.g., "usdp-bing"
-	HDFSHANamenodes              string `json:"hdfs_ha_namenodes,omitempty"`               // e.g., "nn1,nn2"
-	HDFSNamenodeRPCAddress1      string `json:"hdfs_namenode_rpc_address_1,omitempty"`     // e.g., "usdp-bing-nn1:8020"
-	HDFSNamenodeRPCAddress2      string `json:"hdfs_namenode_rpc_address_2,omitempty"`     // e.g., "usdp-bing-nn2:8020"
-	HDFSFailoverProxyProvider    string `json:"hdfs_failover_proxy_provider,omitempty"`    // default: org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider
+	HDFSHAEnabled             bool   `json:"hdfs_ha_enabled,omitempty"`
+	HDFSNameServices          string `json:"hdfs_name_services,omitempty"`           // e.g., "usdp-bing"
+	HDFSHANamenodes           string `json:"hdfs_ha_namenodes,omitempty"`            // e.g., "nn1,nn2"
+	HDFSNamenodeRPCAddress1   string `json:"hdfs_namenode_rpc_address_1,omitempty"`  // e.g., "usdp-bing-nn1:8020"
+	HDFSNamenodeRPCAddress2   string `json:"hdfs_namenode_rpc_address_2,omitempty"`  // e.g., "usdp-bing-nn2:8020"
+	HDFSFailoverProxyProvider string `json:"hdfs_failover_proxy_provider,omitempty"` // default: org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider
 
 	// OSS/S3 configuration / OSS/S3 配置
 	StorageEndpoint  string `json:"storage_endpoint,omitempty"`
@@ -1802,7 +1802,7 @@ func (m *InstallerManager) configureJVM(params *InstallParams) error {
 // 此函数处理两种格式 - 如果需要则取消注释并设置正确的堆大小
 func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) error {
 	agentlogger.Infof("[modifyJVMOptions] Starting: file=%s, heapSize=%dGB", filePath, heapSizeGB)
-	
+
 	// Backup original file / 备份原始文件
 	if err := backupFile(filePath); err != nil {
 		agentlogger.Errorf("[modifyJVMOptions] Backup failed: %v", err)
@@ -2224,6 +2224,12 @@ func (m *InstallerManager) modifyHazelcastConfig(filePath string, params *Instal
 		return fmt.Errorf("%w: failed to set port: %v", ErrConfigGenerationFailed, err)
 	}
 
+	// Enable Hazelcast REST API with basic endpoints (best-effort). / 启用 Hazelcast REST API 以及基础端点（最佳努力）
+	// If the path does not exist, it will be created. / 如果路径不存在，则创建
+	_ = setYAMLValueCreate(&root, []string{"hazelcast", "network", "rest-api", "enabled"}, true)
+	_ = setYAMLValueCreate(&root, []string{"hazelcast", "network", "rest-api", "endpoint-groups", "CLUSTER_WRITE", "enabled"}, true)
+	_ = setYAMLValueCreate(&root, []string{"hazelcast", "network", "rest-api", "endpoint-groups", "DATA", "enabled"}, true)
+
 	// Write modified content / 写入修改后的内容
 	output, err := yaml.Marshal(&root)
 	if err != nil {
@@ -2314,9 +2320,9 @@ func (m *InstallerManager) modifySeaTunnelConfig(filePath string, params *Instal
 	// 配置 HTTP 设置（SeaTunnel 2.3.9+）
 	if params.HTTPPort > 0 {
 		// Set HTTP configuration / 设置 HTTP 配置
-		_ = setYAMLValue(&root, []string{"seatunnel", "engine", "http", "enable-http"}, true)
-		_ = setYAMLValue(&root, []string{"seatunnel", "engine", "http", "port"}, params.HTTPPort)
-		_ = setYAMLValue(&root, []string{"seatunnel", "engine", "http", "enable-dynamic-port"}, false)
+		_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "http", "enable-http"}, true)
+		_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "http", "port"}, params.HTTPPort)
+		_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "http", "enable-dynamic-port"}, false)
 	}
 
 	// Set dynamic-slot value (default: true, can be overridden by user)
@@ -2325,7 +2331,12 @@ func (m *InstallerManager) modifySeaTunnelConfig(filePath string, params *Instal
 	if params.DynamicSlot != nil && !*params.DynamicSlot {
 		dynamicSlotValue = false
 	}
-	_ = setYAMLValue(&root, []string{"seatunnel", "engine", "slot-service", "dynamic-slot"}, dynamicSlotValue)
+	_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "slot-service", "dynamic-slot"}, dynamicSlotValue)
+
+	// Ensure telemetry metric and log settings are enabled by default (best-effort).
+	// If the path does not exist, it will be created.
+	_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "telemetry", "metric", "enabled"}, true)
+	_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "telemetry", "logs", "scheduled-deletion-enable"}, true)
 
 	// Write modified content / 写入修改后的内容
 	output, err := yaml.Marshal(&root)
@@ -2420,6 +2431,80 @@ func setNodeValue(node *yaml.Node, value interface{}) error {
 	return nil
 }
 
+// setYAMLValueCreate sets a value at the specified path in a YAML node tree,
+// creating intermediate mapping nodes as needed.
+// setYAMLValueCreate 在 YAML 节点树中的指定路径设置值，如有需要会自动创建中间映射节点。
+func setYAMLValueCreate(root *yaml.Node, path []string, value interface{}) error {
+	if root == nil || len(path) == 0 {
+		return fmt.Errorf("invalid arguments")
+	}
+
+	// Handle document node / 处理文档节点
+	node := root
+	if node.Kind == yaml.DocumentNode {
+		if len(node.Content) == 0 {
+			// Initialize document root as a mapping node if empty
+			// 如果文档为空，则初始化为 mapping 节点
+			node.Content = []*yaml.Node{
+				{
+					Kind: yaml.MappingNode,
+					Tag:  "!!map",
+				},
+			}
+		}
+		node = node.Content[0]
+	}
+
+	// Ensure we have a mapping at the top level/ 确保在顶层有一个映射节点
+	if node.Kind != yaml.MappingNode {
+		node.Kind = yaml.MappingNode
+		node.Tag = "!!map"
+	}
+
+	// Traverse or create intermediate nodes / 遍历或创建必要的中间映射节点
+	current := node
+	for i, key := range path {
+		isLast := i == len(path)-1
+
+		// Find existing child / 查找存在的子节点
+		var valueNode *yaml.Node
+		if current.Kind == yaml.MappingNode {
+			for j := 0; j < len(current.Content); j += 2 {
+				if current.Content[j].Value == key {
+					valueNode = current.Content[j+1]
+					break
+				}
+			}
+		}
+
+		// Create if not found / 如果未找到，则创建
+		if valueNode == nil {
+			keyNode := &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!str",
+				Value: key,
+			}
+			valueNode = &yaml.Node{}
+			current.Content = append(current.Content, keyNode, valueNode)
+		}
+
+		if isLast {
+			// Set the final value / 设置最终值
+			return setNodeValue(valueNode, value)
+		}
+
+		// For intermediate nodes, ensure mapping type / 中间节点确保为 mapping
+		if valueNode.Kind != yaml.MappingNode {
+			valueNode.Kind = yaml.MappingNode
+			valueNode.Tag = "!!map"
+			valueNode.Content = nil
+		}
+		current = valueNode
+	}
+
+	return nil
+}
+
 // setYAMLMapValue sets a map value at the specified path in a YAML node tree
 // setYAMLMapValue 在 YAML 节点树中的指定路径设置 map 值
 // This replaces all children of the target node with the new map entries
@@ -2493,7 +2578,6 @@ func setYAMLMapValue(root *yaml.Node, path []string, values map[string]string) e
 	return nil
 }
 
-
 // Uninstall removes the SeaTunnel installation
 // Uninstall 移除 SeaTunnel 安装
 func (m *InstallerManager) Uninstall(ctx context.Context, installDir string) error {
@@ -2509,4 +2593,3 @@ func (m *InstallerManager) Uninstall(ctx context.Context, installDir string) err
 
 	return nil
 }
-

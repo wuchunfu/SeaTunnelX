@@ -632,7 +632,6 @@ type managedMetricsTarget struct {
 }
 
 func (s *Service) collectManagedMetricsTargets(ctx context.Context, doProbe bool) ([]*managedMetricsTarget, error) {
-	obsCfg := config.Config.Observability
 	clusters, _, err := s.clusterService.List(ctx, &cluster.ClusterFilter{Page: 1, PageSize: 1000})
 	if err != nil {
 		return nil, err
@@ -647,7 +646,8 @@ func (s *Service) collectManagedMetricsTargets(ctx context.Context, doProbe bool
 			continue
 		}
 		for _, node := range nodes {
-			if node == nil || node.APIPort <= 0 {
+			// 仅对在线节点进行探测，且必须配置 Hazelcast 端口（用于暴露 /hazelcast/rest/instance/metrics）
+			if node == nil || node.HazelcastPort <= 0 {
 				continue
 			}
 			if !node.IsOnline {
@@ -658,7 +658,8 @@ func (s *Service) collectManagedMetricsTargets(ctx context.Context, doProbe bool
 				continue
 			}
 
-			target := net.JoinHostPort(host, strconv.Itoa(node.APIPort))
+			// 使用 Hazelcast 端口作为 Prometheus 抓取目标端口（支持 master / worker 多节点）
+			target := net.JoinHostPort(host, strconv.Itoa(node.HazelcastPort))
 			if _, ok := seen[target]; ok {
 				continue
 			}
@@ -670,11 +671,7 @@ func (s *Service) collectManagedMetricsTargets(ctx context.Context, doProbe bool
 				Env:         resolveClusterEnvLabel(c),
 				Target:      target,
 			}
-			if doProbe {
-				item.ProbeURL, item.StatusCode, item.Healthy, item.ProbeError = s.probeMetricsEndpoint(ctx, target)
-			} else {
-				item.ProbeURL = "http://" + target + ensureLeadingSlash(obsCfg.SeatunnelMetric.Path)
-			}
+			// 探活逻辑已下沉到 Prometheus 侧，这里不再进行 HTTP 探测。
 			results = append(results, item)
 		}
 	}

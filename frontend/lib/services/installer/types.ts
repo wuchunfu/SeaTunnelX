@@ -176,6 +176,7 @@ export interface InstallationRequest {
   master_addresses?: string[]; // Master node addresses for cluster configuration / 集群配置的 master 节点地址
   worker_addresses?: string[]; // Worker node addresses for separated mode / 分离模式的 worker 节点地址
   cluster_port?: number; // Cluster communication port / 集群通信端口
+  worker_port?: number; // Worker hazelcast port / Worker Hazelcast 端口
   http_port?: number; // HTTP API port / HTTP API 端口
   jvm?: JVMConfig;
   checkpoint?: CheckpointConfig;

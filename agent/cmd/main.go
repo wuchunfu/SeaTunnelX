@@ -902,6 +902,7 @@ func (a *Agent) handleInstallCommand(ctx context.Context, cmd *pb.CommandRequest
 		DeploymentMode: installer.DeploymentMode(getParamString(cmd.Parameters, "deployment_mode", "hybrid")),
 		NodeRole:       installer.NodeRole(getParamString(cmd.Parameters, "node_role", "master")),
 		ClusterPort:    getParamInt(cmd.Parameters, "cluster_port", 5801),
+		WorkerPort:     getParamInt(cmd.Parameters, "worker_port", 5802),
 		HTTPPort:       getParamInt(cmd.Parameters, "http_port", 8080),
 		ClusterID:      getParamString(cmd.Parameters, "cluster_id", ""),
 	}
@@ -1065,6 +1066,7 @@ func (a *Agent) handleUpgradeCommand(ctx context.Context, cmd *pb.CommandRequest
 		DeploymentMode: installer.DeploymentMode(getParamString(cmd.Parameters, "deployment_mode", "hybrid")),
 		NodeRole:       installer.NodeRole(getParamString(cmd.Parameters, "node_role", "master")),
 		ClusterPort:    getParamInt(cmd.Parameters, "cluster_port", 5801),
+		WorkerPort:     getParamInt(cmd.Parameters, "worker_port", 5802),
 		HTTPPort:       getParamInt(cmd.Parameters, "http_port", 8080),
 	}
 
