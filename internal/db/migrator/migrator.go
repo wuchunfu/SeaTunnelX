@@ -40,6 +40,7 @@ import (
 	monitoringapp "github.com/seatunnel/seatunnelX/internal/apps/monitoring"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
 	"github.com/seatunnel/seatunnelX/internal/apps/project"
+	"github.com/seatunnel/seatunnelX/internal/apps/stupgrade"
 	"github.com/seatunnel/seatunnelX/internal/config"
 	"github.com/seatunnel/seatunnelX/internal/db"
 	"gorm.io/gorm"
@@ -82,10 +83,25 @@ func Migrate() {
 		&monitoringapp.AlertEventState{},     // 告警事件状态表 / Alert event state table
 		&monitoringapp.NotificationChannel{}, // 通知渠道表 / Notification channel table
 		&monitoringapp.RemoteAlertRecord{},   // 远程告警记录表 / Remote alert record table
+		&stupgrade.UpgradePlanRecord{},       // SeaTunnel 升级计划表 / SeaTunnel upgrade plan table
+		&stupgrade.UpgradeTask{},             // SeaTunnel 升级任务表 / SeaTunnel upgrade task table
+		&stupgrade.UpgradeTaskStep{},         // SeaTunnel 升级步骤表 / SeaTunnel upgrade step table
+		&stupgrade.UpgradeNodeExecution{},    // SeaTunnel 升级节点执行表 / SeaTunnel upgrade node execution table
+		&stupgrade.UpgradeStepLog{},          // SeaTunnel 升级日志表 / SeaTunnel upgrade log table
 	); err != nil {
 		log.Fatalf("[Database] auto migrate failed: %v\n", err)
 	}
 	log.Printf("[Database] auto migrate success\n")
+
+	upgradeMigrator := db.GetDB(context.Background()).Migrator()
+	if upgradeMigrator.HasIndex(&stupgrade.UpgradeTaskStep{}, "idx_st_upgrade_task_step_code") {
+		if err := upgradeMigrator.DropIndex(&stupgrade.UpgradeTaskStep{}, "idx_st_upgrade_task_step_code"); err != nil {
+			log.Printf("[Database] failed to recreate st upgrade task step index: %v\n", err)
+		}
+	}
+	if err := upgradeMigrator.CreateIndex(&stupgrade.UpgradeTaskStep{}, "idx_st_upgrade_task_step_code"); err != nil {
+		log.Printf("[Database] failed to create st upgrade task step index: %v\n", err)
+	}
 
 	// 初始化默认管理员用户
 	if err := initDefaultAdminUser(); err != nil {

@@ -219,7 +219,7 @@ export function UploadPackageDialog({
               id="version"
               value={version}
               onChange={(e) => setVersion(e.target.value)}
-              placeholder="e.g., 2.3.12"
+              placeholder={existingVersions[0] ? `e.g., ${existingVersions[0]}` : 'e.g., 2.x.y'}
               disabled={uploading}
             />
             <p className="text-xs text-muted-foreground">

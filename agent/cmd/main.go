@@ -52,6 +52,7 @@ import (
 	"github.com/seatunnel/seatunnelX/agent/internal/monitor"
 	"github.com/seatunnel/seatunnelX/agent/internal/process"
 	"github.com/seatunnel/seatunnelX/agent/internal/restart"
+	"github.com/seatunnel/seatunnelX/internal/seatunnel"
 	"github.com/spf13/cobra"
 )
 
@@ -914,9 +915,11 @@ func (a *Agent) handleInstallCommand(ctx context.Context, cmd *pb.CommandRequest
 
 	// Create install params from command parameters
 	// 从命令参数创建安装参数
+	version := getParamString(cmd.Parameters, "version", seatunnel.DefaultVersion())
+	installDir := getParamString(cmd.Parameters, "install_dir", seatunnel.DefaultInstallDir(version))
 	params := &installer.InstallParams{
-		Version:        getParamString(cmd.Parameters, "version", "2.3.12"),
-		InstallDir:     getParamString(cmd.Parameters, "install_dir", "/opt/seatunnel"),
+		Version:        version,
+		InstallDir:     installDir,
 		DeploymentMode: installer.DeploymentMode(getParamString(cmd.Parameters, "deployment_mode", "hybrid")),
 		NodeRole:       installer.NodeRole(getParamString(cmd.Parameters, "node_role", "master")),
 		ClusterPort:    getParamInt(cmd.Parameters, "cluster_port", 5801),
@@ -1052,55 +1055,7 @@ func (a *Agent) handleUninstallCommand(ctx context.Context, cmd *pb.CommandReque
 }
 
 func (a *Agent) handleUpgradeCommand(ctx context.Context, cmd *pb.CommandRequest, reporter executor.ProgressReporter) (*pb.CommandResponse, error) {
-	reporter.Report(5, "Preparing upgrade... / 准备升级...")
-
-	// Upgrade is essentially uninstall + install with new version
-	// 升级本质上是卸载 + 使用新版本安装
-	installDir := getParamString(cmd.Parameters, "install_dir", "/opt/seatunnel")
-	newVersion := getParamString(cmd.Parameters, "new_version", "")
-
-	if newVersion == "" {
-		return executor.CreateErrorResponse(cmd.CommandId, "new_version is required / 需要 new_version 参数"), fmt.Errorf("new_version is required")
-	}
-
-	// Step 1: Backup current installation (optional)
-	// 步骤 1：备份当前安装（可选）
-	reporter.Report(10, "Backing up current installation... / 备份当前安装...")
-
-	// Step 2: Uninstall current version
-	// 步骤 2：卸载当前版本
-	reporter.Report(30, "Uninstalling current version... / 卸载当前版本...")
-	if err := a.installerManager.Uninstall(ctx, installDir); err != nil {
-		return executor.CreateErrorResponse(cmd.CommandId, fmt.Sprintf("Uninstall failed: %v / 卸载失败：%v", err, err)), err
-	}
-
-	// Step 3: Install new version
-	// 步骤 3：安装新版本
-	reporter.Report(50, "Installing new version... / 安装新版本...")
-	params := &installer.InstallParams{
-		Version:        newVersion,
-		InstallDir:     installDir,
-		Mode:           installer.InstallModeOnline,
-		DeploymentMode: installer.DeploymentMode(getParamString(cmd.Parameters, "deployment_mode", "hybrid")),
-		NodeRole:       installer.NodeRole(getParamString(cmd.Parameters, "node_role", "master")),
-		ClusterPort:    getParamInt(cmd.Parameters, "cluster_port", 5801),
-		WorkerPort:     getParamInt(cmd.Parameters, "worker_port", 5802),
-		HTTPPort:       getParamInt(cmd.Parameters, "http_port", 8080),
-	}
-
-	installReporter := &installerProgressAdapter{
-		reporter:  reporter,
-		commandID: cmd.CommandId,
-	}
-
-	// Use InstallStepByStep for complete installation including JVM configuration
-	// 使用 InstallStepByStep 进行完整安装，包括 JVM 配置
-	_, err := a.installerManager.InstallStepByStep(ctx, params, installReporter)
-	if err != nil {
-		return executor.CreateErrorResponse(cmd.CommandId, fmt.Sprintf("Install failed: %v / 安装失败：%v", err, err)), err
-	}
-
-	return executor.CreateSuccessResponse(cmd.CommandId, "Upgrade completed / 升级完成"), nil
+	return a.handleManagedUpgradeCommand(ctx, cmd, reporter)
 }
 
 func (a *Agent) handleStartCommand(ctx context.Context, cmd *pb.CommandRequest, reporter executor.ProgressReporter) (*pb.CommandResponse, error) {

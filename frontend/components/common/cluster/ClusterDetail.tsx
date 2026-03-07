@@ -8,12 +8,19 @@
  * 显示集群的详细信息，包括节点和状态。
  */
 
-import {useState, useEffect, useCallback} from 'react';
+import {useState, useEffect, useCallback, type KeyboardEvent} from 'react';
 import {useRouter} from 'next/navigation';
 import {useTranslations} from 'next-intl';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
-import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {Pagination} from '@/components/ui/pagination';
 import {Separator} from '@/components/ui/separator';
 import {
   Table,
@@ -59,6 +66,11 @@ import {
   NodeStatus,
   HealthStatus,
 } from '@/lib/services/cluster/types';
+import type {UpgradeTaskSummary} from '@/lib/services/st-upgrade';
+import {
+  getExecutionStatusLabel,
+  getStatusBadgeVariant as getUpgradeStatusBadgeVariant,
+} from './upgrade/utils';
 import {EditClusterDialog} from './EditClusterDialog';
 import {AddNodeDialog} from './AddNodeDialog';
 import {EditNodeDialog} from './EditNodeDialog';
@@ -148,7 +160,14 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
   // Data state / 数据状态
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
-  const [clusterStatus, setClusterStatus] = useState<ClusterStatusInfo | null>(null);
+  const [clusterStatus, setClusterStatus] = useState<ClusterStatusInfo | null>(
+    null,
+  );
+  const [upgradeTasks, setUpgradeTasks] = useState<UpgradeTaskSummary[]>([]);
+  const [upgradeTasksLoading, setUpgradeTasksLoading] = useState(false);
+  const [upgradeTasksTotal, setUpgradeTasksTotal] = useState(0);
+  const [upgradeTasksPage, setUpgradeTasksPage] = useState(1);
+  const [upgradeTasksPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
   const [isOperating, setIsOperating] = useState(false);
 
@@ -162,12 +181,19 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
   const [nodeToRemove, setNodeToRemove] = useState<NodeInfo | null>(null);
 
   // Node selection state / 节点选择状态
-  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<number>>(new Set());
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<number>>(
+    new Set(),
+  );
   const [nodeOperating, setNodeOperating] = useState<number | null>(null);
   // Confirmation for batch start/stop/restart (user must confirm)
-  const [confirmBatchOp, setConfirmBatchOp] = useState<'start' | 'stop' | 'restart' | null>(null);
+  const [confirmBatchOp, setConfirmBatchOp] = useState<
+    'start' | 'stop' | 'restart' | null
+  >(null);
   // Confirmation for single node start/stop/restart
-  const [confirmNodeOp, setConfirmNodeOp] = useState<{op: 'start' | 'stop' | 'restart'; node: NodeInfo} | null>(null);
+  const [confirmNodeOp, setConfirmNodeOp] = useState<{
+    op: 'start' | 'stop' | 'restart';
+    node: NodeInfo;
+  } | null>(null);
   const [isLogDialogOpen, setIsLogDialogOpen] = useState(false);
   const [logContent, setLogContent] = useState<string>('');
   const [logLoading, setLogLoading] = useState(false);
@@ -205,15 +231,72 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
         setClusterStatus(statusResult.data);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('cluster.loadError'));
+      toast.error(
+        error instanceof Error ? error.message : t('cluster.loadError'),
+      );
     } finally {
       setLoading(false);
     }
   }, [clusterId, t]);
 
+  /**
+   * Load upgrade task history
+   * 加载升级任务记录
+   */
+  const loadUpgradeTasks = useCallback(
+    async (page: number, pageSize: number) => {
+      setUpgradeTasksLoading(true);
+      try {
+        const result = await services.stUpgrade.listTasksSafe({
+          cluster_id: clusterId,
+          page,
+          page_size: pageSize,
+        });
+        if (!result.success || !result.data) {
+          toast.error(result.error || t('stUpgrade.loadUpgradeRecordsFailed'));
+          return;
+        }
+        setUpgradeTasks(result.data.items);
+        setUpgradeTasksTotal(result.data.total);
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t('stUpgrade.loadUpgradeRecordsFailed'),
+        );
+      } finally {
+        setUpgradeTasksLoading(false);
+      }
+    },
+    [clusterId, t],
+  );
+
   useEffect(() => {
-    loadClusterData();
+    void loadClusterData();
   }, [loadClusterData]);
+
+  useEffect(() => {
+    void loadUpgradeTasks(upgradeTasksPage, upgradeTasksPageSize);
+  }, [loadUpgradeTasks, upgradeTasksPage, upgradeTasksPageSize]);
+
+  const openUpgradeTaskDetail = useCallback(
+    (task: UpgradeTaskSummary) => {
+      router.push(
+        `/clusters/${clusterId}/upgrade/execute?planId=${task.plan_id}&taskId=${task.id}`,
+      );
+    },
+    [clusterId, router],
+  );
+
+  const handleRefresh = useCallback(() => {
+    void loadClusterData();
+    void loadUpgradeTasks(upgradeTasksPage, upgradeTasksPageSize);
+  }, [
+    loadClusterData,
+    loadUpgradeTasks,
+    upgradeTasksPage,
+    upgradeTasksPageSize,
+  ]);
 
   /**
    * Handle start cluster
@@ -230,9 +313,15 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           result.data?.message?.includes('auto-restart') ||
           result.data?.message?.includes('auto-start') ||
           result.data?.node_results?.some(
-            (nr) => nr.message?.includes('auto-restart') || nr.message?.includes('auto-start')
+            (nr) =>
+              nr.message?.includes('auto-restart') ||
+              nr.message?.includes('auto-start'),
           );
-        toast.success(isAutoRestart ? t('cluster.startSuccessAutoRestart') : t('cluster.startSuccess'));
+        toast.success(
+          isAutoRestart
+            ? t('cluster.startSuccessAutoRestart')
+            : t('cluster.startSuccess'),
+        );
         loadClusterData();
       } else {
         toast.error(result.error || t('cluster.startError'));
@@ -276,9 +365,15 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           result.data?.message?.includes('auto-restart') ||
           result.data?.message?.includes('auto-start') ||
           result.data?.node_results?.some(
-            (nr) => nr.message?.includes('auto-restart') || nr.message?.includes('auto-start')
+            (nr) =>
+              nr.message?.includes('auto-restart') ||
+              nr.message?.includes('auto-start'),
           );
-        toast.success(isAutoRestart ? t('cluster.restartSuccessAutoRestart') : t('cluster.restartSuccess'));
+        toast.success(
+          isAutoRestart
+            ? t('cluster.restartSuccessAutoRestart')
+            : t('cluster.restartSuccess'),
+        );
         loadClusterData();
       } else {
         toast.error(result.error || t('cluster.restartError'));
@@ -311,9 +406,14 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
    * 处理移除节点
    */
   const handleRemoveNode = async () => {
-    if (!nodeToRemove) {return;}
+    if (!nodeToRemove) {
+      return;
+    }
 
-    const result = await services.cluster.removeNodeSafe(clusterId, nodeToRemove.id);
+    const result = await services.cluster.removeNodeSafe(
+      clusterId,
+      nodeToRemove.id,
+    );
     if (result.success) {
       toast.success(t('cluster.removeNodeSuccess'));
       loadClusterData();
@@ -406,9 +506,15 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           result.data?.message?.includes('auto-restart') ||
           result.data?.message?.includes('auto-start') ||
           result.data?.node_results?.some(
-            (nr) => nr.message?.includes('auto-restart') || nr.message?.includes('auto-start')
+            (nr) =>
+              nr.message?.includes('auto-restart') ||
+              nr.message?.includes('auto-start'),
           );
-        toast.success(isAutoRestart ? t('cluster.nodeStartSuccessAutoRestart') : t('cluster.nodeStartSuccess'));
+        toast.success(
+          isAutoRestart
+            ? t('cluster.nodeStartSuccessAutoRestart')
+            : t('cluster.nodeStartSuccess'),
+        );
         loadClusterData();
       } else {
         toast.error(result.error || t('cluster.nodeStartError'));
@@ -452,9 +558,15 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           result.data?.message?.includes('auto-restart') ||
           result.data?.message?.includes('auto-start') ||
           result.data?.node_results?.some(
-            (nr) => nr.message?.includes('auto-restart') || nr.message?.includes('auto-start')
+            (nr) =>
+              nr.message?.includes('auto-restart') ||
+              nr.message?.includes('auto-start'),
           );
-        toast.success(isAutoRestart ? t('cluster.nodeRestartSuccessAutoRestart') : t('cluster.nodeRestartSuccess'));
+        toast.success(
+          isAutoRestart
+            ? t('cluster.nodeRestartSuccessAutoRestart')
+            : t('cluster.nodeRestartSuccess'),
+        );
         loadClusterData();
       } else {
         toast.error(result.error || t('cluster.nodeRestartError'));
@@ -490,7 +602,11 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
     setLogLoading(true);
     setLogContent('');
     try {
-      const result = await services.cluster.getNodeLogsSafe(clusterId, nodeId, params);
+      const result = await services.cluster.getNodeLogsSafe(
+        clusterId,
+        nodeId,
+        params,
+      );
       if (result.success && result.data) {
         setLogContent(result.data.logs || t('cluster.noLogs'));
       } else {
@@ -506,13 +622,27 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
    * 使用当前参数刷新日志
    */
   const handleRefreshLogs = () => {
-    if (!logNodeInfo) {return;}
+    if (!logNodeInfo) {
+      return;
+    }
     fetchLogs(logNodeInfo.id, {
       lines: logLines,
       mode: logMode,
       filter: logFilter || undefined,
       date: logDate || undefined,
     });
+  };
+
+  /**
+   * Submit log filters via Enter key
+   * 通过 Enter 键提交日志过滤条件
+   */
+  const handleLogFilterKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') {
+      return;
+    }
+    e.preventDefault();
+    handleRefreshLogs();
   };
 
   /**
@@ -534,13 +664,19 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           result.data?.message?.includes('auto-restart') ||
           result.data?.message?.includes('auto-start') ||
           result.data?.node_results?.some(
-            (nr) => nr.message?.includes('auto-restart') || nr.message?.includes('auto-start')
+            (nr) =>
+              nr.message?.includes('auto-restart') ||
+              nr.message?.includes('auto-start'),
           )
         ) {
           hasAutoRestart = true;
         }
       }
-      toast.success(hasAutoRestart ? t('cluster.batchStartSuccessAutoRestart') : t('cluster.batchStartSuccess'));
+      toast.success(
+        hasAutoRestart
+          ? t('cluster.batchStartSuccessAutoRestart')
+          : t('cluster.batchStartSuccess'),
+      );
       loadClusterData();
     } finally {
       setIsOperating(false);
@@ -581,19 +717,28 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
     try {
       let hasAutoRestart = false;
       for (const nodeId of selectedNodeIds) {
-        const result = await services.cluster.restartNodeSafe(clusterId, nodeId);
+        const result = await services.cluster.restartNodeSafe(
+          clusterId,
+          nodeId,
+        );
         // Check both message and node_results / 检查 message 和 node_results
         if (
           result.data?.message?.includes('auto-restart') ||
           result.data?.message?.includes('auto-start') ||
           result.data?.node_results?.some(
-            (nr) => nr.message?.includes('auto-restart') || nr.message?.includes('auto-start')
+            (nr) =>
+              nr.message?.includes('auto-restart') ||
+              nr.message?.includes('auto-start'),
           )
         ) {
           hasAutoRestart = true;
         }
       }
-      toast.success(hasAutoRestart ? t('cluster.batchRestartSuccessAutoRestart') : t('cluster.batchRestartSuccess'));
+      toast.success(
+        hasAutoRestart
+          ? t('cluster.batchRestartSuccessAutoRestart')
+          : t('cluster.batchRestartSuccess'),
+      );
       loadClusterData();
     } finally {
       setIsOperating(false);
@@ -612,7 +757,11 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
     return (
       <div className='text-center py-12'>
         <p className='text-muted-foreground'>{t('cluster.notFound')}</p>
-        <Button variant='outline' className='mt-4' onClick={() => router.push('/clusters')}>
+        <Button
+          variant='outline'
+          className='mt-4'
+          onClick={() => router.push('/clusters')}
+        >
           <ArrowLeft className='h-4 w-4 mr-2' />
           {t('cluster.backToList')}
         </Button>
@@ -620,10 +769,17 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
     );
   }
 
-  const canStart = cluster.status === ClusterStatus.CREATED || cluster.status === ClusterStatus.STOPPED;
-  
-  
-  const canDelete = cluster.status !== ClusterStatus.RUNNING && cluster.status !== ClusterStatus.DEPLOYING;
+  const canStart =
+    cluster.status === ClusterStatus.CREATED ||
+    cluster.status === ClusterStatus.STOPPED;
+
+  const canDelete =
+    cluster.status !== ClusterStatus.RUNNING &&
+    cluster.status !== ClusterStatus.DEPLOYING;
+  const upgradeTaskTotalPages = Math.max(
+    1,
+    Math.ceil(upgradeTasksTotal / upgradeTasksPageSize),
+  );
 
   const containerVariants = {
     hidden: {opacity: 0},
@@ -651,20 +807,37 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
         variants={itemVariants}
       >
         <div className='flex items-center gap-4'>
-          <Button variant='ghost' size='icon' onClick={() => router.push('/clusters')}>
+          <Button
+            variant='ghost'
+            size='icon'
+            onClick={() => router.push('/clusters')}
+          >
             <ArrowLeft className='h-5 w-5' />
           </Button>
           <div>
-            <h1 className='text-2xl font-bold tracking-tight'>{cluster.name}</h1>
+            <h1 className='text-2xl font-bold tracking-tight'>
+              {cluster.name}
+            </h1>
             {cluster.description && (
-              <p className='text-muted-foreground mt-1'>{cluster.description}</p>
+              <p className='text-muted-foreground mt-1'>
+                {cluster.description}
+              </p>
             )}
           </div>
         </div>
         <div className='flex gap-2'>
-          <Button variant='outline' onClick={loadClusterData}>
+          <Button variant='outline' onClick={handleRefresh}>
             <RefreshCw className='h-4 w-4 mr-2' />
             {t('common.refresh')}
+          </Button>
+          <Button
+            variant='outline'
+            onClick={() =>
+              router.push(`/clusters/${clusterId}/upgrade/prepare`)
+            }
+          >
+            <Activity className='h-4 w-4 mr-2' />
+            {t('stUpgrade.entry')}
           </Button>
           <Button variant='outline' onClick={() => setIsEditDialogOpen(true)}>
             <Pencil className='h-4 w-4 mr-2' />
@@ -695,7 +868,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Badge variant={getStatusBadgeVariant(cluster.status)} className='text-sm'>
+            <Badge
+              variant={getStatusBadgeVariant(cluster.status)}
+              className='text-sm'
+            >
               {t(`cluster.statuses.${cluster.status}`)}
             </Badge>
           </CardContent>
@@ -709,7 +885,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           </CardHeader>
           <CardContent>
             {clusterStatus ? (
-              <Badge variant={getHealthBadgeVariant(clusterStatus.health_status)} className='text-sm'>
+              <Badge
+                variant={getHealthBadgeVariant(clusterStatus.health_status)}
+                className='text-sm'
+              >
                 {t(`cluster.healthStatuses.${clusterStatus.health_status}`)}
               </Badge>
             ) : (
@@ -747,6 +926,117 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
             <Badge variant='outline' className='text-sm'>
               {t(`cluster.modes.${cluster.deployment_mode}`)}
             </Badge>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div variants={itemVariants}>
+        <Card>
+          <CardHeader>
+            <CardTitle className='flex items-center gap-2'>
+              <Activity className='h-5 w-5' />
+              {t('stUpgrade.upgradeRecordsTitle')}
+            </CardTitle>
+            <CardDescription>
+              {t('stUpgrade.upgradeRecordsDescription')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className='space-y-4'>
+            {upgradeTasksLoading ? (
+              <div className='flex items-center justify-center py-10 text-muted-foreground'>
+                <Loader2 className='h-5 w-5 animate-spin' />
+              </div>
+            ) : upgradeTasks.length === 0 ? (
+              <div className='rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground'>
+                {t('stUpgrade.noUpgradeRecords')}
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>{t('stUpgrade.sourceVersion')}</TableHead>
+                      <TableHead>{t('stUpgrade.targetVersion')}</TableHead>
+                      <TableHead>{t('stUpgrade.taskStatus')}</TableHead>
+                      <TableHead>{t('stUpgrade.rollbackStatus')}</TableHead>
+                      <TableHead>{t('stUpgrade.currentStep')}</TableHead>
+                      <TableHead>{t('stUpgrade.createdAt')}</TableHead>
+                      <TableHead className='text-right'>
+                        {t('common.actions')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {upgradeTasks.map((upgradeTask) => (
+                      <TableRow
+                        key={upgradeTask.id}
+                        className='cursor-pointer'
+                        onClick={() => openUpgradeTaskDetail(upgradeTask)}
+                      >
+                        <TableCell className='font-mono text-xs'>
+                          #{upgradeTask.id}
+                        </TableCell>
+                        <TableCell>
+                          {upgradeTask.source_version || '-'}
+                        </TableCell>
+                        <TableCell>
+                          {upgradeTask.target_version || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={getUpgradeStatusBadgeVariant(
+                              upgradeTask.status,
+                            )}
+                          >
+                            {getExecutionStatusLabel(upgradeTask.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={getUpgradeStatusBadgeVariant(
+                              upgradeTask.rollback_status,
+                            )}
+                          >
+                            {getExecutionStatusLabel(
+                              upgradeTask.rollback_status,
+                            )}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className='font-mono text-xs'>
+                          {upgradeTask.current_step || '-'}
+                        </TableCell>
+                        <TableCell className='text-muted-foreground'>
+                          {new Date(upgradeTask.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className='text-right'>
+                          <Button
+                            variant='outline'
+                            size='sm'
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openUpgradeTaskDetail(upgradeTask);
+                            }}
+                          >
+                            {t('stUpgrade.viewUpgradeDetail')}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                <Pagination
+                  currentPage={upgradeTasksPage}
+                  totalPages={upgradeTaskTotalPages}
+                  pageSize={upgradeTasksPageSize}
+                  totalItems={upgradeTasksTotal}
+                  onPageChange={setUpgradeTasksPage}
+                  showPageSizeSelector={false}
+                  showTotalItems={true}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -832,7 +1122,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                 <TableRow>
                   <TableHead className='w-12'>
                     <Checkbox
-                      checked={nodes.length > 0 && selectedNodeIds.size === nodes.length}
+                      checked={
+                        nodes.length > 0 &&
+                        selectedNodeIds.size === nodes.length
+                      }
                       onCheckedChange={toggleAllNodes}
                     />
                   </TableHead>
@@ -849,7 +1142,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
               <TableBody>
                 {nodes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className='text-center py-8 text-muted-foreground'>
+                    <TableCell
+                      colSpan={9}
+                      className='text-center py-8 text-muted-foreground'
+                    >
                       {t('cluster.noNodes')}
                     </TableCell>
                   </TableRow>
@@ -867,10 +1163,14 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                       <TableCell>{node.host_ip || '-'}</TableCell>
                       <TableCell>
                         <Badge variant='outline'>
-                          {t(`cluster.roles.${getRoleTranslationKey(node.role)}`)}
+                          {t(
+                            `cluster.roles.${getRoleTranslationKey(node.role)}`,
+                          )}
                         </Badge>
                       </TableCell>
-                      <TableCell className='font-mono text-sm'>{node.install_dir || '-'}</TableCell>
+                      <TableCell className='font-mono text-sm'>
+                        {node.install_dir || '-'}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={getStatusBadgeVariant(node.status)}>
                           {t(`cluster.nodeStatuses.${node.status}`)}
@@ -882,8 +1182,14 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                           <Button
                             variant='ghost'
                             size='icon'
-                            onClick={() => setConfirmNodeOp({op: 'start', node})}
-                            disabled={nodeOperating === node.id || node.status === NodeStatus.RUNNING || node.status === NodeStatus.OFFLINE}
+                            onClick={() =>
+                              setConfirmNodeOp({op: 'start', node})
+                            }
+                            disabled={
+                              nodeOperating === node.id ||
+                              node.status === NodeStatus.RUNNING ||
+                              node.status === NodeStatus.OFFLINE
+                            }
                             title={t('cluster.start')}
                           >
                             {nodeOperating === node.id ? (
@@ -896,7 +1202,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                             variant='ghost'
                             size='icon'
                             onClick={() => setConfirmNodeOp({op: 'stop', node})}
-                            disabled={nodeOperating === node.id || node.status !== NodeStatus.RUNNING}
+                            disabled={
+                              nodeOperating === node.id ||
+                              node.status !== NodeStatus.RUNNING
+                            }
                             title={t('cluster.stop')}
                           >
                             <Square className='h-4 w-4 text-orange-600' />
@@ -904,8 +1213,13 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                           <Button
                             variant='ghost'
                             size='icon'
-                            onClick={() => setConfirmNodeOp({op: 'restart', node})}
-                            disabled={nodeOperating === node.id || node.status !== NodeStatus.RUNNING}
+                            onClick={() =>
+                              setConfirmNodeOp({op: 'restart', node})
+                            }
+                            disabled={
+                              nodeOperating === node.id ||
+                              node.status !== NodeStatus.RUNNING
+                            }
                             title={t('cluster.restart')}
                           >
                             <RotateCcw className='h-4 w-4 text-blue-600' />
@@ -952,7 +1266,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
 
       {/* Cluster Configs / 集群配置 */}
       <motion.div variants={itemVariants}>
-        <ClusterConfigs clusterId={clusterId} deploymentMode={cluster.deployment_mode} />
+        <ClusterConfigs
+          clusterId={clusterId}
+          deploymentMode={cluster.deployment_mode}
+        />
       </motion.div>
 
       {/* Monitor Config / 监控配置 */}
@@ -974,16 +1291,26 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           <CardContent>
             <div className='grid grid-cols-3 gap-4'>
               <div>
-                <span className='text-sm text-muted-foreground'>{t('cluster.version')}</span>
+                <span className='text-sm text-muted-foreground'>
+                  {t('cluster.version')}
+                </span>
                 <p className='font-medium'>{cluster.version || '-'}</p>
               </div>
               <div>
-                <span className='text-sm text-muted-foreground'>{t('cluster.createdAt')}</span>
-                <p className='font-medium'>{new Date(cluster.created_at).toLocaleString()}</p>
+                <span className='text-sm text-muted-foreground'>
+                  {t('cluster.createdAt')}
+                </span>
+                <p className='font-medium'>
+                  {new Date(cluster.created_at).toLocaleString()}
+                </p>
               </div>
               <div>
-                <span className='text-sm text-muted-foreground'>{t('cluster.updatedAt')}</span>
-                <p className='font-medium'>{new Date(cluster.updated_at).toLocaleString()}</p>
+                <span className='text-sm text-muted-foreground'>
+                  {t('cluster.updatedAt')}
+                </span>
+                <p className='font-medium'>
+                  {new Date(cluster.updated_at).toLocaleString()}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -1038,7 +1365,9 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                     checked={forceDelete}
                     onCheckedChange={(v) => setForceDelete(v === true)}
                   />
-                  <span className='text-sm'>{t('cluster.forceDeleteOption')}</span>
+                  <span className='text-sm'>
+                    {t('cluster.forceDeleteOption')}
+                  </span>
                 </label>
               </div>
             </AlertDialogDescription>
@@ -1053,12 +1382,17 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
       </AlertDialog>
 
       {/* Remove Node Dialog / 移除节点对话框 */}
-      <AlertDialog open={!!nodeToRemove} onOpenChange={() => setNodeToRemove(null)}>
+      <AlertDialog
+        open={!!nodeToRemove}
+        onOpenChange={() => setNodeToRemove(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('cluster.removeNode')}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t('cluster.removeNodeConfirm', {name: nodeToRemove?.host_name || String(nodeToRemove?.id || '')})}
+              {t('cluster.removeNodeConfirm', {
+                name: nodeToRemove?.host_name || String(nodeToRemove?.id || ''),
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1071,18 +1405,32 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
       </AlertDialog>
 
       {/* Batch start/stop/restart confirmation / 批量启动/停止/重启二次确认 */}
-      <AlertDialog open={!!confirmBatchOp} onOpenChange={() => setConfirmBatchOp(null)}>
+      <AlertDialog
+        open={!!confirmBatchOp}
+        onOpenChange={() => setConfirmBatchOp(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmBatchOp === 'start' && t('cluster.batchStartConfirmTitle')}
+              {confirmBatchOp === 'start' &&
+                t('cluster.batchStartConfirmTitle')}
               {confirmBatchOp === 'stop' && t('cluster.batchStopConfirmTitle')}
-              {confirmBatchOp === 'restart' && t('cluster.batchRestartConfirmTitle')}
+              {confirmBatchOp === 'restart' &&
+                t('cluster.batchRestartConfirmTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirmBatchOp === 'start' && t('cluster.batchStartConfirmMessage', {count: selectedNodeIds.size})}
-              {confirmBatchOp === 'stop' && t('cluster.batchStopConfirmMessage', {count: selectedNodeIds.size})}
-              {confirmBatchOp === 'restart' && t('cluster.batchRestartConfirmMessage', {count: selectedNodeIds.size})}
+              {confirmBatchOp === 'start' &&
+                t('cluster.batchStartConfirmMessage', {
+                  count: selectedNodeIds.size,
+                })}
+              {confirmBatchOp === 'stop' &&
+                t('cluster.batchStopConfirmMessage', {
+                  count: selectedNodeIds.size,
+                })}
+              {confirmBatchOp === 'restart' &&
+                t('cluster.batchRestartConfirmMessage', {
+                  count: selectedNodeIds.size,
+                })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1091,7 +1439,8 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
               onClick={async () => {
                 if (confirmBatchOp === 'start') await handleBatchStart();
                 else if (confirmBatchOp === 'stop') await handleBatchStop();
-                else if (confirmBatchOp === 'restart') await handleBatchRestart();
+                else if (confirmBatchOp === 'restart')
+                  await handleBatchRestart();
                 setConfirmBatchOp(null);
               }}
             >
@@ -1104,26 +1453,41 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
       </AlertDialog>
 
       {/* Single node start/stop/restart confirmation / 单节点启动/停止/重启二次确认 */}
-      <AlertDialog open={!!confirmNodeOp} onOpenChange={() => setConfirmNodeOp(null)}>
+      <AlertDialog
+        open={!!confirmNodeOp}
+        onOpenChange={() => setConfirmNodeOp(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmNodeOp?.op === 'start' && t('cluster.nodeStartConfirmTitle')}
-              {confirmNodeOp?.op === 'stop' && t('cluster.nodeStopConfirmTitle')}
-              {confirmNodeOp?.op === 'restart' && t('cluster.nodeRestartConfirmTitle')}
+              {confirmNodeOp?.op === 'start' &&
+                t('cluster.nodeStartConfirmTitle')}
+              {confirmNodeOp?.op === 'stop' &&
+                t('cluster.nodeStopConfirmTitle')}
+              {confirmNodeOp?.op === 'restart' &&
+                t('cluster.nodeRestartConfirmTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {confirmNodeOp &&
                 (confirmNodeOp.op === 'start'
                   ? t('cluster.nodeStartConfirmMessage', {
-                      name: confirmNodeOp.node.host_name || confirmNodeOp.node.host_ip || `#${confirmNodeOp.node.id}`,
+                      name:
+                        confirmNodeOp.node.host_name ||
+                        confirmNodeOp.node.host_ip ||
+                        `#${confirmNodeOp.node.id}`,
                     })
                   : confirmNodeOp.op === 'stop'
                     ? t('cluster.nodeStopConfirmMessage', {
-                        name: confirmNodeOp.node.host_name || confirmNodeOp.node.host_ip || `#${confirmNodeOp.node.id}`,
+                        name:
+                          confirmNodeOp.node.host_name ||
+                          confirmNodeOp.node.host_ip ||
+                          `#${confirmNodeOp.node.id}`,
                       })
                     : t('cluster.nodeRestartConfirmMessage', {
-                        name: confirmNodeOp.node.host_name || confirmNodeOp.node.host_ip || `#${confirmNodeOp.node.id}`,
+                        name:
+                          confirmNodeOp.node.host_name ||
+                          confirmNodeOp.node.host_ip ||
+                          `#${confirmNodeOp.node.id}`,
                       }))}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1132,8 +1496,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
             <AlertDialogAction
               onClick={async () => {
                 if (!confirmNodeOp) return;
-                if (confirmNodeOp.op === 'start') await handleNodeStart(confirmNodeOp.node);
-                else if (confirmNodeOp.op === 'stop') await handleNodeStop(confirmNodeOp.node);
+                if (confirmNodeOp.op === 'start')
+                  await handleNodeStart(confirmNodeOp.node);
+                else if (confirmNodeOp.op === 'stop')
+                  await handleNodeStop(confirmNodeOp.node);
                 else await handleNodeRestart(confirmNodeOp.node);
                 setConfirmNodeOp(null);
               }}
@@ -1148,27 +1514,39 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
 
       {/* View Logs Dialog / 查看日志对话框 */}
       <AlertDialog open={isLogDialogOpen} onOpenChange={setIsLogDialogOpen}>
-        <AlertDialogContent className='max-h-[90vh]' style={{maxWidth: '90vw', width: '1200px'}}>
+        <AlertDialogContent
+          className='max-h-[90vh]'
+          style={{maxWidth: '90vw', width: '1200px'}}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('cluster.viewLogs')} - {logNodeInfo?.host_name} ({t(`cluster.roles.${getRoleTranslationKey(logNodeInfo?.role || '')}`)})
+              {t('cluster.viewLogs')} - {logNodeInfo?.host_name} (
+              {t(
+                `cluster.roles.${getRoleTranslationKey(logNodeInfo?.role || '')}`,
+              )}
+              )
             </AlertDialogTitle>
           </AlertDialogHeader>
           {/* Log query parameters / 日志查询参数 */}
           <div className='flex flex-wrap gap-3 items-end'>
             <div className='flex flex-col gap-1'>
-              <label className='text-xs text-muted-foreground'>{t('cluster.logLines')}</label>
+              <label className='text-xs text-muted-foreground'>
+                {t('cluster.logLines')}
+              </label>
               <input
                 type='number'
                 value={logLines}
                 onChange={(e) => setLogLines(Number(e.target.value) || 100)}
+                onKeyDown={handleLogFilterKeyDown}
                 className='w-20 h-8 px-2 text-sm border rounded-md bg-background text-foreground'
                 min={1}
                 max={10000}
               />
             </div>
             <div className='flex flex-col gap-1'>
-              <label className='text-xs text-muted-foreground'>{t('cluster.logMode')}</label>
+              <label className='text-xs text-muted-foreground'>
+                {t('cluster.logMode')}
+              </label>
               <select
                 value={logMode}
                 onChange={(e) => setLogMode(e.target.value)}
@@ -1180,21 +1558,27 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
               </select>
             </div>
             <div className='flex flex-col gap-1'>
-              <label className='text-xs text-muted-foreground'>{t('cluster.logFilter')}</label>
+              <label className='text-xs text-muted-foreground'>
+                {t('cluster.logFilter')}
+              </label>
               <input
                 type='text'
                 value={logFilter}
                 onChange={(e) => setLogFilter(e.target.value)}
+                onKeyDown={handleLogFilterKeyDown}
                 placeholder='grep pattern'
                 className='w-32 h-8 px-2 text-sm border rounded-md bg-background text-foreground placeholder:text-muted-foreground'
               />
             </div>
             <div className='flex flex-col gap-1'>
-              <label className='text-xs text-muted-foreground'>{t('cluster.logDate')}</label>
+              <label className='text-xs text-muted-foreground'>
+                {t('cluster.logDate')}
+              </label>
               <input
                 type='text'
                 value={logDate}
                 onChange={(e) => setLogDate(e.target.value)}
+                onKeyDown={handleLogFilterKeyDown}
                 placeholder='2025-11-12-1'
                 className='w-36 h-8 px-2 text-sm border rounded-md bg-background text-foreground placeholder:text-muted-foreground'
               />
@@ -1219,7 +1603,9 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                 <Loader2 className='h-6 w-6 animate-spin' />
               </div>
             ) : (
-              <pre className='text-xs font-mono whitespace-pre-wrap'>{logContent}</pre>
+              <pre className='text-xs font-mono whitespace-pre-wrap'>
+                {logContent}
+              </pre>
             )}
           </div>
           <AlertDialogFooter>

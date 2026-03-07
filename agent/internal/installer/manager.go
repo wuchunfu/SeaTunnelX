@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/seatunnel/seatunnelX/agent/internal/logger"
+	seatunnelmeta "github.com/seatunnel/seatunnelX/internal/seatunnel"
 	"gopkg.in/yaml.v3"
 )
 
@@ -864,9 +865,10 @@ type InstallParams struct {
 // DefaultInstallParams 返回默认安装参数
 func DefaultInstallParams() *InstallParams {
 	dynamicSlot := true
+	defaultVersion := seatunnelmeta.DefaultVersion()
 	return &InstallParams{
-		Version:        "2.3.12",
-		InstallDir:     "/opt/seatunnel",
+		Version:        defaultVersion,
+		InstallDir:     seatunnelmeta.DefaultInstallDir(defaultVersion),
 		DeploymentMode: DeploymentModeHybrid,
 		ClusterPort:    5801,
 		WorkerPort:     5802,

@@ -38,6 +38,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/seatunnel/seatunnelX/internal/config"
 	"github.com/seatunnel/seatunnelX/internal/logger"
+	"github.com/seatunnel/seatunnelX/internal/seatunnel"
 )
 
 // Common errors / 常见错误
@@ -135,9 +136,9 @@ type ConfigInitializer interface {
 // HostInfo contains host information for precheck
 // HostInfo 包含预检查所需的主机信息
 type HostInfo struct {
-	ID          uint   `json:"id"`
-	AgentID     string `json:"agent_id"`
-	AgentStatus string `json:"agent_status"`
+	ID          uint       `json:"id"`
+	AgentID     string     `json:"agent_id"`
+	AgentStatus string     `json:"agent_status"`
 	LastSeen    *time.Time `json:"last_seen"`
 }
 
@@ -158,36 +159,9 @@ var MirrorURLs = map[MirrorSource]string{
 	MirrorHuaweiCloud: "https://mirrors.huaweicloud.com/apache/seatunnel",
 }
 
-// FallbackVersions is the fallback version list when online fetch fails
-// FallbackVersions 是在线获取失败时的备用版本列表
-var FallbackVersions = []string{
-	"2.3.12",
-	"2.3.11",
-	"2.3.10",
-	"2.3.9",
-	"2.3.8",
-	"2.3.7",
-	"2.3.6",
-	"2.3.5",
-	"2.3.4",
-	"2.3.3",
-	"2.3.2",
-	"2.3.1",
-	"2.3.0",
-	"2.2.0-beta",
-	"2.1.3",
-	"2.1.2",
-	"2.1.1",
-	"2.1.0",
-}
-
-// RecommendedVersion is the recommended SeaTunnel version
-// RecommendedVersion 是推荐的 SeaTunnel 版本
-const RecommendedVersion = "2.3.12"
-
 // ApacheArchiveURL is the URL to fetch version list from Apache Archive
 // ApacheArchiveURL 是从 Apache Archive 获取版本列表的 URL
-const ApacheArchiveURL = "https://archive.apache.org/dist/seatunnel/"
+const ApacheArchiveURL = seatunnel.ArchiveVersionsURL
 
 // VersionCacheDuration is how long to cache the version list
 // VersionCacheDuration 是版本列表的缓存时间
@@ -343,7 +317,7 @@ func (s *Service) getVersions(ctx context.Context) []string {
 	versions, err := s.fetchVersionsFromApache(ctx)
 	if err != nil {
 		// Use fallback versions on error / 出错时使用备用版本
-		return FallbackVersions
+		return seatunnel.FallbackVersions()
 	}
 
 	// Update cache / 更新缓存
@@ -413,7 +387,7 @@ func (s *Service) fetchVersionsFromApache(ctx context.Context) ([]string, error)
 func (s *Service) RefreshVersions(ctx context.Context) ([]string, error) {
 	versions, err := s.fetchVersionsFromApache(ctx)
 	if err != nil {
-		return FallbackVersions, err
+		return seatunnel.FallbackVersions(), err
 	}
 
 	// Update cache / 更新缓存
@@ -501,7 +475,7 @@ func (s *Service) ListAvailableVersions(ctx context.Context) (*AvailableVersions
 
 	result := &AvailableVersions{
 		Versions:           versions,
-		RecommendedVersion: RecommendedVersion,
+		RecommendedVersion: seatunnel.RecommendedVersion(),
 		LocalPackages:      make([]PackageInfo, 0),
 	}
 
@@ -1487,7 +1461,7 @@ func (s *Service) runInstallation(ctx context.Context, req *InstallationRequest,
 		// 使用请求中的安装目录，默认为 /opt/seatunnel-{version}
 		installDir := req.InstallDir
 		if installDir == "" {
-			installDir = fmt.Sprintf("/opt/seatunnel-%s", req.Version)
+			installDir = seatunnel.DefaultInstallDir(req.Version)
 		}
 		for i, pluginName := range req.Connector.SelectedPlugins {
 			logger.InfoF(ctx, "[Installer] 传输插件 / Transferring plugin: %s (%d/%d)", pluginName, i+1, len(req.Connector.SelectedPlugins))
@@ -1809,7 +1783,7 @@ func buildInstallParams(req *InstallationRequest) map[string]string {
 	// 使用请求中的 install_dir，默认为 /opt/seatunnel-{version}
 	installDir := req.InstallDir
 	if installDir == "" {
-		installDir = fmt.Sprintf("/opt/seatunnel-%s", req.Version)
+		installDir = seatunnel.DefaultInstallDir(req.Version)
 	}
 
 	params := map[string]string{

@@ -1,12 +1,16 @@
 # SeaTunnelX 重启脚本：可选构建 + 可选前端，前端 PM2 名为 seatunnelx-ui
+# - 默认前端使用生产模式启动
+# - 可选通过 -FrontendDev 改为 pnpm run dev，避免前端开发时重复构建
 # 用法：
 #   .\scripts\restart.ps1                    # 默认：构建前后端并启动
 #   .\scripts\restart.ps1 -NoBuild           # 仅重启，不构建
+#   .\scripts\restart.ps1 -FrontendDev       # 前端改用 pnpm run dev 启动（跳过前端 build）
 #   .\scripts\restart.ps1 -NoFrontend        # 仅后端（可配合 -NoBuild 仅重启后端）
 #   .\scripts\restart.ps1 -StopFrontend     # 仅停止前端 (pm2 stop seatunnelx-ui)
 
 param(
     [switch]$NoBuild,      # 不构建，仅重启已有进程/二进制
+    [switch]$FrontendDev,  # 前端使用 pnpm run dev 启动
     [switch]$NoFrontend,   # 不构建、不启动前端
     [switch]$StopFrontend  # 只停止前端并退出
 )
@@ -19,7 +23,78 @@ if (-not (Test-Path (Join-Path $ProjectRoot "go.mod"))) {
 }
 
 Set-Location $ProjectRoot
+$ConfigPath = if ($env:CONFIG_PATH) { $env:CONFIG_PATH } else { Join-Path $ProjectRoot "config.yaml" }
+$AppExternalUrl = if ($env:APP_EXTERNAL_URL) { $env:APP_EXTERNAL_URL } else { "http://127.0.0.1:8000" }
 $PM2_UI = "seatunnelx-ui"
+$FrontendPort = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "80" }
+$BackendBaseUrl = if ($env:NEXT_PUBLIC_BACKEND_BASE_URL) { $env:NEXT_PUBLIC_BACKEND_BASE_URL } else { "http://127.0.0.1:8000" }
+
+function Sync-AppExternalUrl {
+    param(
+        [string]$Path,
+        [string]$ExternalUrl
+    )
+
+    if (-not (Test-Path $Path)) {
+        Write-Host "未找到配置文件 $Path，跳过 external_url 同步." -ForegroundColor Yellow
+        return
+    }
+
+    $lines = Get-Content $Path
+    $appStart = -1
+    $appIndent = ""
+
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^(\s*)app:\s*$') {
+            $appStart = $i
+            $appIndent = $matches[1]
+            break
+        }
+    }
+
+    if ($appStart -lt 0) {
+        return
+    }
+
+    $insertAt = $appStart + 1
+    $found = $false
+    for ($i = $appStart + 1; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+        $trimmed = $line.Trim()
+        if ($trimmed -and -not $trimmed.StartsWith('#')) {
+            $indent = ([regex]::Match($line, '^\s*')).Value
+            if ($indent.Length -le $appIndent.Length) {
+                break
+            }
+        }
+
+        if ($line -match '^\s*external_url:\s*') {
+            $lines[$i] = "$appIndent  external_url: `"$ExternalUrl`""
+            $found = $true
+            break
+        }
+        $insertAt = $i + 1
+    }
+
+    if (-not $found) {
+        $updated = New-Object System.Collections.Generic.List[string]
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $updated.Add($lines[$i])
+            if ($i -eq ($insertAt - 1)) {
+                $updated.Add("$appIndent  external_url: `"$ExternalUrl`"")
+            }
+        }
+        if ($lines.Count -eq 0) {
+            $updated.Add("$appIndent  external_url: `"$ExternalUrl`"")
+        }
+        $lines = $updated.ToArray()
+    }
+
+    Set-Content -Path $Path -Value $lines -Encoding UTF8
+    Write-Host "      已同步 app.external_url = $ExternalUrl" -ForegroundColor Gray
+}
+
+Sync-AppExternalUrl -Path $ConfigPath -ExternalUrl $AppExternalUrl
 
 if ($StopFrontend) {
     Write-Host "停止前端 (pm2 stop $PM2_UI) ..." -ForegroundColor Cyan
@@ -29,7 +104,9 @@ if ($StopFrontend) {
 }
 
 $step = 0
-$total = if ($NoBuild) { 3 } else { 5 }
+$total = 1
+if (-not $NoBuild) { $total += 2 }
+if (-not $NoFrontend) { $total += 1 }
 
 if (-not $NoBuild) {
     $step++; Write-Host "[$step/$total] 构建 seatunnelx ..." -ForegroundColor Cyan
@@ -39,7 +116,7 @@ if (-not $NoBuild) {
 
     $step++; Write-Host "[$step/$total] 构建 seatunnelx-agent ..." -ForegroundColor Cyan
     Set-Location (Join-Path $ProjectRoot "agent")
-    go build -o seatunnelx-agent ./cmd/main.go
+    go build -o seatunnelx-agent ./cmd
     if ($LASTEXITCODE -ne 0) { Set-Location $ProjectRoot; exit $LASTEXITCODE }
     Set-Location $ProjectRoot
     Write-Host "      seatunnelx-agent 构建完成." -ForegroundColor Green
@@ -80,15 +157,30 @@ if (-not $NoFrontend) {
         Write-Host "      未找到 frontend/package.json，跳过前端." -ForegroundColor Yellow
     } else {
         Set-Location $frontendDir
-        if (-not $NoBuild) {
-            pnpm run build
+        if ($FrontendDev) {
+            $env:HOSTNAME = "0.0.0.0"
+            $env:PORT = "$FrontendPort"
+            $env:NEXT_PUBLIC_BACKEND_BASE_URL = $BackendBaseUrl
+            pm2 delete $PM2_UI 2>$null
+            pm2 start "pnpm exec next dev --turbopack --hostname 0.0.0.0 --port $FrontendPort" --name $PM2_UI --update-env
             if ($LASTEXITCODE -ne 0) { Set-Location $ProjectRoot; exit $LASTEXITCODE }
+            pm2 status
+            Set-Location $ProjectRoot
+            Write-Host "      前端开发模式已启动 (PM2: $PM2_UI，端口 $FrontendPort)." -ForegroundColor Green
+        } else {
+            if (-not $NoBuild) {
+                pnpm run build
+                if ($LASTEXITCODE -ne 0) { Set-Location $ProjectRoot; exit $LASTEXITCODE }
+            }
+            $env:PORT = "$FrontendPort"
+            $env:NEXT_PUBLIC_BACKEND_BASE_URL = $BackendBaseUrl
+            pm2 delete $PM2_UI 2>$null
+            pm2 start "pnpm start -- -p $FrontendPort" --name $PM2_UI --update-env
+            if ($LASTEXITCODE -ne 0) { Set-Location $ProjectRoot; exit $LASTEXITCODE }
+            pm2 status
+            Set-Location $ProjectRoot
+            Write-Host "      前端已启动 (PM2: $PM2_UI，端口 $FrontendPort)." -ForegroundColor Green
         }
-        pm2 delete $PM2_UI 2>$null
-        pm2 start "pnpm start -- -p 80" --name $PM2_UI
-        pm2 status
-        Set-Location $ProjectRoot
-        Write-Host "      前端已启动 (PM2: $PM2_UI，端口 80)." -ForegroundColor Green
     }
 } else {
     Write-Host "      跳过前端 (NoFrontend)." -ForegroundColor Gray

@@ -301,12 +301,12 @@ build_agent_binaries() {
   echo "building seatunnelx-agent for linux/amd64 ..."
   (
     cd "$ROOT_DIR/agent"
-    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$out_amd64" ./cmd/main.go
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$out_amd64" ./cmd
   )
   echo "building seatunnelx-agent for linux/arm64 ..."
   (
     cd "$ROOT_DIR/agent"
-    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o "$out_arm64" ./cmd/main.go
+    GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o "$out_arm64" ./cmd
   )
 }
 

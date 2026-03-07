@@ -5,12 +5,18 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {useState, useEffect, useCallback} from 'react';
+import {useTranslations} from 'next-intl';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -18,24 +24,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { toast } from 'sonner';
-import { RefreshCw, Search, Puzzle, Package, HardDrive, Trash2, CheckSquare, Server, Upload, DownloadCloud } from 'lucide-react';
-import { motion } from 'motion/react';
-import { easeOut } from 'motion';
-import { PluginService } from '@/lib/services/plugin';
-import { ClusterService } from '@/lib/services/cluster';
-import type { Plugin, MirrorSource, AvailablePluginsResponse, LocalPlugin, PluginDownloadProgress, InstalledPlugin } from '@/lib/services/plugin';
-import type { ClusterInfo } from '@/lib/services/cluster';
-import { Progress } from '@/components/ui/progress';
-import { PluginGrid } from './PluginGrid';
-import { PluginDetailDialog } from './PluginDetailDialog';
-import { InstallPluginDialog } from './InstallPluginDialog';
-import { BatchInstallDialog } from './BatchInstallDialog';
-import { DependencyConfigDialog } from './DependencyConfigDialog';
-import { Pagination } from '@/components/ui/pagination';
+import {Separator} from '@/components/ui/separator';
+import {Badge} from '@/components/ui/badge';
+import {Checkbox} from '@/components/ui/checkbox';
+import {toast} from 'sonner';
+import {
+  RefreshCw,
+  Search,
+  Puzzle,
+  Package,
+  HardDrive,
+  Trash2,
+  CheckSquare,
+  Server,
+  Upload,
+  DownloadCloud,
+} from 'lucide-react';
+import {motion} from 'motion/react';
+import {easeOut} from 'motion';
+import {PluginService} from '@/lib/services/plugin';
+import {usePackages} from '@/hooks/use-installer';
+import {resolveSeatunnelVersion} from '@/lib/seatunnel-version';
+import {ClusterService} from '@/lib/services/cluster';
+import type {
+  Plugin,
+  MirrorSource,
+  AvailablePluginsResponse,
+  LocalPlugin,
+  PluginDownloadProgress,
+  InstalledPlugin,
+} from '@/lib/services/plugin';
+import type {ClusterInfo} from '@/lib/services/cluster';
+import {Progress} from '@/components/ui/progress';
+import {PluginGrid} from './PluginGrid';
+import {PluginDetailDialog} from './PluginDetailDialog';
+import {InstallPluginDialog} from './InstallPluginDialog';
+import {BatchInstallDialog} from './BatchInstallDialog';
+import {DependencyConfigDialog} from './DependencyConfigDialog';
+import {Pagination} from '@/components/ui/pagination';
 import {
   Table,
   TableBody,
@@ -55,18 +81,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-// Available SeaTunnel versions / 可用的 SeaTunnel 版本
-const AVAILABLE_VERSIONS = [
-  '2.3.12',
-  '2.3.11',
-  '2.3.10',
-  '2.3.9',
-  '2.3.8',
-  '2.3.7',
-  '2.3.6',
-  '2.3.5',
-];
-
 /**
  * Plugin Marketplace Main Component
  * 插件市场主组件
@@ -84,14 +98,21 @@ export function PluginMain() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [selectedMirror, setSelectedMirror] = useState<MirrorSource>('aliyun');
-  const [selectedVersion, setSelectedVersion] = useState<string>('2.3.12');
-  const [activeTab, setActiveTab] = useState<'available' | 'local' | 'custom'>('available');
+  const [selectedVersion, setSelectedVersion] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'available' | 'local' | 'custom'>(
+    'available',
+  );
+  const {packages} = usePackages();
+  const availableVersions = packages?.versions || [];
+  const recommendedVersion = resolveSeatunnelVersion(packages);
 
   // Local plugins state / 本地插件状态
   const [localPlugins, setLocalPlugins] = useState<LocalPlugin[]>([]);
   const [localPluginsLoading, setLocalPluginsLoading] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [pluginToDelete, setPluginToDelete] = useState<LocalPlugin | null>(null);
+  const [pluginToDelete, setPluginToDelete] = useState<LocalPlugin | null>(
+    null,
+  );
 
   // Local plugins pagination state / 本地插件分页状态
   const [localPluginsPage, setLocalPluginsPage] = useState(1);
@@ -104,15 +125,23 @@ export function PluginMain() {
   const [pluginToInstall, setPluginToInstall] = useState<Plugin | null>(null);
 
   // Download state / 下载状态
-  const [downloadingPlugins, setDownloadingPlugins] = useState<Set<string>>(new Set());
-  const [downloadedPlugins, setDownloadedPlugins] = useState<Set<string>>(new Set());
+  const [downloadingPlugins, setDownloadingPlugins] = useState<Set<string>>(
+    new Set(),
+  );
+  const [downloadedPlugins, setDownloadedPlugins] = useState<Set<string>>(
+    new Set(),
+  );
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
   // Active downloads state / 活动下载状态
-  const [activeDownloads, setActiveDownloads] = useState<PluginDownloadProgress[]>([]);
+  const [activeDownloads, setActiveDownloads] = useState<
+    PluginDownloadProgress[]
+  >([]);
 
   // Batch selection state / 批量选择状态
-  const [selectedLocalPlugins, setSelectedLocalPlugins] = useState<Set<string>>(new Set());
+  const [selectedLocalPlugins, setSelectedLocalPlugins] = useState<Set<string>>(
+    new Set(),
+  );
   const [isBatchInstallOpen, setIsBatchInstallOpen] = useState(false);
 
   // Dependency config state / 依赖配置状态
@@ -121,7 +150,9 @@ export function PluginMain() {
 
   // Plugin installation status per cluster / 每个集群的插件安装状态
   // Map: pluginName -> { clusterId -> InstalledPlugin }
-  const [pluginClusterStatus, setPluginClusterStatus] = useState<Map<string, Map<number, InstalledPlugin>>>(new Map());
+  const [pluginClusterStatus, setPluginClusterStatus] = useState<
+    Map<string, Map<number, InstalledPlugin>>
+  >(new Map());
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
 
   /**
@@ -131,38 +162,42 @@ export function PluginMain() {
   const loadPlugins = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     // Show loading toast for first load (cache miss may take up to 60s)
     // 首次加载时显示提示（缓存未命中可能需要最多60秒）
     const loadingToast = toast.loading(t('plugin.loadingFromMaven'), {
       description: t('plugin.loadingFromMavenDesc'),
     });
-    
+
     try {
-      const result: AvailablePluginsResponse = await PluginService.listAvailablePlugins(
-        selectedVersion || undefined,
-        selectedMirror
-      );
-      
+      const result: AvailablePluginsResponse =
+        await PluginService.listAvailablePlugins(
+          selectedVersion || undefined,
+          selectedMirror,
+        );
+
       toast.dismiss(loadingToast);
-      
+
       let filteredPlugins = result.plugins || [];
-      
+
       // Apply category filter / 应用分类过滤
       if (filterCategory !== 'all') {
-        filteredPlugins = filteredPlugins.filter(p => p.category === filterCategory);
+        filteredPlugins = filteredPlugins.filter(
+          (p) => p.category === filterCategory,
+        );
       }
-      
+
       // Apply search filter / 应用搜索过滤
       if (searchKeyword) {
         const keyword = searchKeyword.toLowerCase();
-        filteredPlugins = filteredPlugins.filter(p => 
-          p.name.toLowerCase().includes(keyword) ||
-          p.display_name.toLowerCase().includes(keyword) ||
-          p.description.toLowerCase().includes(keyword)
+        filteredPlugins = filteredPlugins.filter(
+          (p) =>
+            p.name.toLowerCase().includes(keyword) ||
+            p.display_name.toLowerCase().includes(keyword) ||
+            p.description.toLowerCase().includes(keyword),
         );
       }
-      
+
       setPlugins(filteredPlugins);
       setTotal(result.total || filteredPlugins.length);
       if (result.version && !selectedVersion) {
@@ -170,7 +205,8 @@ export function PluginMain() {
       }
     } catch (err) {
       toast.dismiss(loadingToast);
-      const errorMsg = err instanceof Error ? err.message : t('plugin.loadError');
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.loadError');
       setError(errorMsg);
       toast.error(errorMsg);
       setPlugins([]);
@@ -191,28 +227,34 @@ export function PluginMain() {
       const [localResult, downloadsResult, clustersResult] = await Promise.all([
         PluginService.listLocalPlugins(),
         PluginService.listActiveDownloads(),
-        ClusterService.getClusters({ current: 1, size: 100 })
+        ClusterService.getClusters({current: 1, size: 100}),
       ]);
-      
+
       setLocalPlugins(localResult || []);
       setActiveDownloads(downloadsResult || []);
-      
+
       // Filter available clusters / 过滤可用集群
       const availableClusters = (clustersResult?.clusters || []).filter(
-        (c: ClusterInfo) => c.status === 'running' || c.status === 'stopped'
+        (c: ClusterInfo) => c.status === 'running' || c.status === 'stopped',
       );
       setClusters(availableClusters);
-      
+
       // Update downloadingPlugins set / 更新下载中集合
-      const downloading = new Set(downloadsResult?.filter(d => d.status === 'downloading').map(d => d.plugin_name) || []);
+      const downloading = new Set(
+        downloadsResult
+          ?.filter((d) => d.status === 'downloading')
+          .map((d) => d.plugin_name) || [],
+      );
       setDownloadingPlugins(downloading);
-      
+
       // Load installed plugins for each cluster / 加载每个集群的已安装插件
       const statusMap = new Map<string, Map<number, InstalledPlugin>>();
       await Promise.all(
         availableClusters.map(async (cluster: ClusterInfo) => {
           try {
-            const installedPlugins = await PluginService.listInstalledPlugins(cluster.id);
+            const installedPlugins = await PluginService.listInstalledPlugins(
+              cluster.id,
+            );
             for (const plugin of installedPlugins) {
               if (!statusMap.has(plugin.plugin_name)) {
                 statusMap.set(plugin.plugin_name, new Map());
@@ -222,7 +264,7 @@ export function PluginMain() {
           } catch {
             // Ignore errors / 忽略错误
           }
-        })
+        }),
       );
       setPluginClusterStatus(statusMap);
     } catch (err) {
@@ -237,6 +279,12 @@ export function PluginMain() {
     loadPlugins();
   }, [loadPlugins]);
 
+  useEffect(() => {
+    if (!selectedVersion && recommendedVersion) {
+      setSelectedVersion(recommendedVersion);
+    }
+  }, [selectedVersion, recommendedVersion]);
+
   // Load local plugins when switching to local tab / 切换到本地插件标签时加载
   useEffect(() => {
     if (activeTab === 'local') {
@@ -246,7 +294,10 @@ export function PluginMain() {
 
   // Poll for active downloads when there are downloading plugins / 有下载中的插件时轮询
   useEffect(() => {
-    if (activeTab !== 'local' || activeDownloads.filter(d => d.status === 'downloading').length === 0) {
+    if (
+      activeTab !== 'local' ||
+      activeDownloads.filter((d) => d.status === 'downloading').length === 0
+    ) {
       return;
     }
 
@@ -282,20 +333,26 @@ export function PluginMain() {
    * 处理删除本地插件
    */
   const handleDeleteLocalPlugin = async () => {
-    if (!pluginToDelete) {return;}
-    
+    if (!pluginToDelete) {
+      return;
+    }
+
     try {
-      await PluginService.deleteLocalPlugin(pluginToDelete.name, pluginToDelete.version);
+      await PluginService.deleteLocalPlugin(
+        pluginToDelete.name,
+        pluginToDelete.version,
+      );
       toast.success(t('plugin.deleteSuccess'));
       loadLocalPlugins();
       // Also remove from downloadedPlugins set / 同时从已下载集合中移除
-      setDownloadedPlugins(prev => {
+      setDownloadedPlugins((prev) => {
         const next = new Set(prev);
         next.delete(pluginToDelete.name);
         return next;
       });
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t('plugin.deleteFailed');
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.deleteFailed');
       toast.error(errorMsg);
     } finally {
       setDeleteDialogOpen(false);
@@ -308,7 +365,9 @@ export function PluginMain() {
    * 格式化文件大小
    */
   const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) {return '0 B';}
+    if (bytes === 0) {
+      return '0 B';
+    }
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -320,7 +379,7 @@ export function PluginMain() {
    * 获取过滤后的本地插件
    */
   const getFilteredLocalPlugins = useCallback(() => {
-    return localPlugins.filter(plugin => {
+    return localPlugins.filter((plugin) => {
       if (searchKeyword) {
         const keyword = searchKeyword.toLowerCase();
         if (!plugin.name.toLowerCase().includes(keyword)) {
@@ -369,7 +428,9 @@ export function PluginMain() {
   const handleSelectAllLocalPlugins = (checked: boolean) => {
     if (checked) {
       const filteredPlugins = getFilteredLocalPlugins();
-      const allKeys = new Set(filteredPlugins.map(p => `${p.name}:${p.version}`));
+      const allKeys = new Set(
+        filteredPlugins.map((p) => `${p.name}:${p.version}`),
+      );
       setSelectedLocalPlugins(allKeys);
     } else {
       setSelectedLocalPlugins(new Set());
@@ -382,7 +443,7 @@ export function PluginMain() {
    */
   const handleSelectLocalPlugin = (plugin: LocalPlugin, checked: boolean) => {
     const key = `${plugin.name}:${plugin.version}`;
-    setSelectedLocalPlugins(prev => {
+    setSelectedLocalPlugins((prev) => {
       const next = new Set(prev);
       if (checked) {
         next.add(key);
@@ -399,8 +460,8 @@ export function PluginMain() {
    */
   const getSelectedPluginsForBatchInstall = (): Plugin[] => {
     return localPlugins
-      .filter(p => selectedLocalPlugins.has(`${p.name}:${p.version}`))
-      .map(p => ({
+      .filter((p) => selectedLocalPlugins.has(`${p.name}:${p.version}`))
+      .map((p) => ({
         name: p.name,
         display_name: p.name,
         category: p.category,
@@ -445,30 +506,35 @@ export function PluginMain() {
   const handleDownloadPlugin = async (plugin: Plugin) => {
     try {
       // Add to downloading set / 添加到下载中集合
-      setDownloadingPlugins(prev => new Set(prev).add(plugin.name));
-      
+      setDownloadingPlugins((prev) => new Set(prev).add(plugin.name));
+
       // Call download API / 调用下载 API
-      await PluginService.downloadPlugin(plugin.name, selectedVersion, selectedMirror);
-      
+      await PluginService.downloadPlugin(
+        plugin.name,
+        selectedVersion,
+        selectedMirror,
+      );
+
       // Show queued message / 显示已提交队列提示
       toast.success(t('plugin.downloadStarted'));
-      
+
       // Remove from downloading set (download is async in backend)
       // 从下载中集合移除（后端异步下载）
-      setDownloadingPlugins(prev => {
+      setDownloadingPlugins((prev) => {
         const next = new Set(prev);
         next.delete(plugin.name);
         return next;
       });
     } catch (err) {
       // Remove from downloading set / 从下载中集合移除
-      setDownloadingPlugins(prev => {
+      setDownloadingPlugins((prev) => {
         const next = new Set(prev);
         next.delete(plugin.name);
         return next;
       });
-      
-      const errorMsg = err instanceof Error ? err.message : t('plugin.downloadFailed');
+
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.downloadFailed');
       toast.error(errorMsg);
     }
   };
@@ -480,17 +546,23 @@ export function PluginMain() {
   const handleDownloadAllPlugins = async () => {
     try {
       setIsDownloadingAll(true);
-      toast.info(t('plugin.downloadAllStarted', { count: total }));
-      
-      const result = await PluginService.downloadAllPlugins(selectedVersion, selectedMirror);
-      
-      toast.success(t('plugin.downloadAllSuccess', { 
-        total: result.total,
-        downloaded: result.downloaded,
-        skipped: result.skipped 
-      }));
+      toast.info(t('plugin.downloadAllStarted', {count: total}));
+
+      const result = await PluginService.downloadAllPlugins(
+        selectedVersion,
+        selectedMirror,
+      );
+
+      toast.success(
+        t('plugin.downloadAllSuccess', {
+          total: result.total,
+          downloaded: result.downloaded,
+          skipped: result.skipped,
+        }),
+      );
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t('plugin.downloadAllFailed');
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.downloadAllFailed');
       toast.error(errorMsg);
     } finally {
       setIsDownloadingAll(false);
@@ -501,7 +573,7 @@ export function PluginMain() {
   // 不再需要按分类统计，因为所有插件都是连接器
 
   const containerVariants = {
-    hidden: { opacity: 0 },
+    hidden: {opacity: 0},
     visible: {
       opacity: 1,
       transition: {
@@ -513,48 +585,54 @@ export function PluginMain() {
   };
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
+    hidden: {opacity: 0, y: 20},
     visible: {
       opacity: 1,
       y: 0,
-      transition: { duration: 0.6, ease: easeOut },
+      transition: {duration: 0.6, ease: easeOut},
     },
   };
 
   return (
     <motion.div
-      className="space-y-6"
-      initial="hidden"
-      animate="visible"
+      className='space-y-6'
+      initial='hidden'
+      animate='visible'
       variants={containerVariants}
     >
       {/* Header / 标题 */}
       <motion.div
-        className="flex items-center justify-between"
+        className='flex items-center justify-between'
         variants={itemVariants}
       >
-        <div className="flex items-center gap-2">
-          <Puzzle className="h-6 w-6" />
+        <div className='flex items-center gap-2'>
+          <Puzzle className='h-6 w-6' />
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
+            <h1 className='text-2xl font-bold tracking-tight'>
               {t('plugin.marketplace')}
             </h1>
-            <p className="text-muted-foreground mt-1">
+            <p className='text-muted-foreground mt-1'>
               {t('plugin.marketplaceDesc')}
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button 
-            variant="default" 
-            onClick={handleDownloadAllPlugins} 
+        <div className='flex gap-2'>
+          <Button
+            variant='default'
+            onClick={handleDownloadAllPlugins}
             disabled={loading || isDownloadingAll || total === 0}
           >
-            <DownloadCloud className={`h-4 w-4 mr-2 ${isDownloadingAll ? 'animate-pulse' : ''}`} />
-            {isDownloadingAll ? t('plugin.downloadingAll') : t('plugin.downloadAll')}
+            <DownloadCloud
+              className={`h-4 w-4 mr-2 ${isDownloadingAll ? 'animate-pulse' : ''}`}
+            />
+            {isDownloadingAll
+              ? t('plugin.downloadingAll')
+              : t('plugin.downloadAll')}
           </Button>
-          <Button variant="outline" onClick={handleRefresh} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant='outline' onClick={handleRefresh} disabled={loading}>
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`}
+            />
             {t('common.refresh')}
           </Button>
         </div>
@@ -565,33 +643,33 @@ export function PluginMain() {
       {/* Stats card / 统计卡片 */}
       <motion.div variants={itemVariants}>
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Puzzle className="h-4 w-4" />
+          <CardHeader className='pb-2'>
+            <CardTitle className='text-sm font-medium text-muted-foreground flex items-center gap-2'>
+              <Puzzle className='h-4 w-4' />
               {t('plugin.totalPlugins')}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{total}</div>
+            <div className='text-2xl font-bold text-blue-600'>{total}</div>
           </CardContent>
         </Card>
       </motion.div>
 
       {/* Error display / 错误显示 */}
       {error && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <p className="text-destructive">{error}</p>
+        <Card className='border-destructive'>
+          <CardContent className='pt-6'>
+            <p className='text-destructive'>{error}</p>
           </CardContent>
         </Card>
       )}
 
       {/* Filters / 过滤器 */}
       <motion.div
-        className="flex flex-wrap gap-4 items-end"
+        className='flex flex-wrap gap-4 items-end'
         variants={itemVariants}
       >
-        <div className="flex-1 min-w-[200px] max-w-sm">
+        <div className='flex-1 min-w-[200px] max-w-sm'>
           <Input
             placeholder={t('plugin.searchPlaceholder')}
             value={searchKeyword}
@@ -602,11 +680,16 @@ export function PluginMain() {
 
         {/* Version selector / 版本选择器 */}
         <Select value={selectedVersion} onValueChange={setSelectedVersion}>
-          <SelectTrigger className="w-[130px]">
+          <SelectTrigger className='w-[130px]'>
             <SelectValue placeholder={t('plugin.version')} />
           </SelectTrigger>
           <SelectContent>
-            {AVAILABLE_VERSIONS.map((version) => (
+            {(availableVersions.length > 0
+              ? availableVersions
+              : recommendedVersion
+                ? [recommendedVersion]
+                : []
+            ).map((version) => (
               <SelectItem key={version} value={version}>
                 v{version}
               </SelectItem>
@@ -615,71 +698,94 @@ export function PluginMain() {
         </Select>
 
         <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-[150px]">
+          <SelectTrigger className='w-[150px]'>
             <SelectValue placeholder={t('plugin.category.all')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">{t('plugin.category.all')}</SelectItem>
-            <SelectItem value="connector">{t('plugin.category.connector')}</SelectItem>
+            <SelectItem value='all'>{t('plugin.category.all')}</SelectItem>
+            <SelectItem value='connector'>
+              {t('plugin.category.connector')}
+            </SelectItem>
           </SelectContent>
         </Select>
 
-        <Select value={selectedMirror} onValueChange={(v) => setSelectedMirror(v as MirrorSource)}>
-          <SelectTrigger className="w-[150px]">
+        <Select
+          value={selectedMirror}
+          onValueChange={(v) => setSelectedMirror(v as MirrorSource)}
+        >
+          <SelectTrigger className='w-[150px]'>
             <SelectValue placeholder={t('plugin.mirror')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="aliyun">{t('installer.mirrors.aliyun')}</SelectItem>
-            <SelectItem value="huaweicloud">{t('installer.mirrors.huaweicloud')}</SelectItem>
-            <SelectItem value="apache">{t('installer.mirrors.apache')}</SelectItem>
+            <SelectItem value='aliyun'>
+              {t('installer.mirrors.aliyun')}
+            </SelectItem>
+            <SelectItem value='huaweicloud'>
+              {t('installer.mirrors.huaweicloud')}
+            </SelectItem>
+            <SelectItem value='apache'>
+              {t('installer.mirrors.apache')}
+            </SelectItem>
           </SelectContent>
         </Select>
 
-        <Button variant="outline" onClick={handleSearch}>
-          <Search className="h-4 w-4 mr-2" />
+        <Button variant='outline' onClick={handleSearch}>
+          <Search className='h-4 w-4 mr-2' />
           {t('common.search')}
         </Button>
 
-        <Button variant="ghost" onClick={handleClearFilters}>
+        <Button variant='ghost' onClick={handleClearFilters}>
           {t('common.clearFilters')}
         </Button>
       </motion.div>
 
       {/* Plugin tabs / 插件标签页 */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'available' | 'local' | 'custom')}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) =>
+          setActiveTab(v as 'available' | 'local' | 'custom')
+        }
+      >
         <TabsList>
-          <TabsTrigger value="available" className="flex items-center gap-2">
-            <Package className="h-4 w-4" />
+          <TabsTrigger value='available' className='flex items-center gap-2'>
+            <Package className='h-4 w-4' />
             {t('plugin.available')}
           </TabsTrigger>
-          <TabsTrigger value="local" className="flex items-center gap-2">
-            <HardDrive className="h-4 w-4" />
+          <TabsTrigger value='local' className='flex items-center gap-2'>
+            <HardDrive className='h-4 w-4' />
             {t('plugin.localPlugins')}
-            {(getFilteredLocalPlugins().length > 0 || activeDownloads.filter(d => d.status === 'downloading').length > 0) && (
-              <Badge variant="secondary" className="ml-1">
+            {(getFilteredLocalPlugins().length > 0 ||
+              activeDownloads.filter((d) => d.status === 'downloading').length >
+                0) && (
+              <Badge variant='secondary' className='ml-1'>
                 {getFilteredLocalPlugins().length}
-                {activeDownloads.filter(d => d.status === 'downloading').length > 0 && (
-                  <span className="ml-1 text-blue-500">+{activeDownloads.filter(d => d.status === 'downloading').length}</span>
+                {activeDownloads.filter((d) => d.status === 'downloading')
+                  .length > 0 && (
+                  <span className='ml-1 text-blue-500'>
+                    +
+                    {
+                      activeDownloads.filter((d) => d.status === 'downloading')
+                        .length
+                    }
+                  </span>
                 )}
               </Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="custom" className="flex items-center gap-2">
-            <Upload className="h-4 w-4" />
+          <TabsTrigger value='custom' className='flex items-center gap-2'>
+            <Upload className='h-4 w-4' />
             {t('plugin.custom')}
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="available" className="mt-4">
+        <TabsContent value='available' className='mt-4'>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className='flex items-center gap-2'>
                 {t('plugin.available')}
-                <Badge variant="secondary">v{selectedVersion}</Badge>
+                <Badge variant='secondary'>v{selectedVersion}</Badge>
               </CardTitle>
-              <CardDescription>
-                {t('plugin.availableDesc')}
-              </CardDescription>
+              <CardDescription>{t('plugin.availableDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
               <PluginGrid
@@ -700,13 +806,15 @@ export function PluginMain() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="local" className="mt-4">
+        <TabsContent value='local' className='mt-4'>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className='flex flex-row items-center justify-between'>
               <div>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className='flex items-center gap-2'>
                   {t('plugin.localPlugins')}
-                  <Badge variant="secondary">{getFilteredLocalPlugins().length}</Badge>
+                  <Badge variant='secondary'>
+                    {getFilteredLocalPlugins().length}
+                  </Badge>
                 </CardTitle>
                 <CardDescription>
                   {t('plugin.localPluginsDesc')}
@@ -714,215 +822,262 @@ export function PluginMain() {
               </div>
               {/* Batch actions / 批量操作 */}
               {selectedLocalPlugins.size > 0 && (
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">
-                    {t('plugin.selectedCount', { count: selectedLocalPlugins.size })}
+                <div className='flex items-center gap-2'>
+                  <Badge variant='secondary'>
+                    {t('plugin.selectedCount', {
+                      count: selectedLocalPlugins.size,
+                    })}
                   </Badge>
-                  <Button
-                    size="sm"
-                    onClick={() => setIsBatchInstallOpen(true)}
-                  >
-                    <CheckSquare className="h-4 w-4 mr-2" />
+                  <Button size='sm' onClick={() => setIsBatchInstallOpen(true)}>
+                    <CheckSquare className='h-4 w-4 mr-2' />
                     {t('plugin.batchInstall')}
                   </Button>
                 </div>
               )}
             </CardHeader>
             <CardContent>
-              {localPluginsLoading && localPlugins.length === 0 && activeDownloads.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <RefreshCw className="h-8 w-8 mx-auto animate-spin mb-4" />
+              {localPluginsLoading &&
+              localPlugins.length === 0 &&
+              activeDownloads.length === 0 ? (
+                <div className='text-center py-8 text-muted-foreground'>
+                  <RefreshCw className='h-8 w-8 mx-auto animate-spin mb-4' />
                   <p>{t('common.loading')}</p>
                 </div>
               ) : localPlugins.length === 0 && activeDownloads.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <HardDrive className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <div className='text-center py-8 text-muted-foreground'>
+                  <HardDrive className='h-12 w-12 mx-auto mb-4 opacity-50' />
                   <p>{t('plugin.noDownloadedPlugins')}</p>
-                  <p className="text-sm mt-2">{t('plugin.downloadFromAvailable')}</p>
+                  <p className='text-sm mt-2'>
+                    {t('plugin.downloadFromAvailable')}
+                  </p>
                 </div>
               ) : (
                 <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[50px]">
-                        <Checkbox
-                          checked={
-                            getFilteredLocalPlugins().length > 0 &&
-                            getFilteredLocalPlugins().every(p => selectedLocalPlugins.has(`${p.name}:${p.version}`))
-                          }
-                          onCheckedChange={handleSelectAllLocalPlugins}
-                        />
-                      </TableHead>
-                      <TableHead>{t('plugin.name')}</TableHead>
-                      <TableHead>{t('plugin.category.label')}</TableHead>
-                      <TableHead>{t('plugin.version')}</TableHead>
-                      <TableHead>{t('plugin.installedClusters')}</TableHead>
-                      <TableHead>{t('plugin.fileSize')}</TableHead>
-                      <TableHead className="text-right">{t('common.actions')}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {/* Active downloads / 活动下载 */}
-                    {activeDownloads.filter(d => d.status === 'downloading').map((download) => (
-                      <TableRow key={`downloading-${download.plugin_name}-${download.version}`} className="bg-blue-50 dark:bg-blue-950">
-                        <TableCell>
-                          <Checkbox disabled />
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />
-                            {download.plugin_name}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{t('plugin.downloading')}</Badge>
-                        </TableCell>
-                        <TableCell>v{download.version}</TableCell>
-                        <TableCell>
-                          <span className="text-muted-foreground text-sm">-</span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-sm">
-                              <span>{download.current_step || t('plugin.downloading')}</span>
-                              <span>{download.progress}%</span>
-                            </div>
-                            <Progress value={download.progress} className="h-2" />
-                            {download.total_bytes && download.total_bytes > 0 && (
-                              <div className="text-xs text-muted-foreground">
-                                {formatFileSize(download.downloaded_bytes || 0)} / {formatFileSize(download.total_bytes)}
-                                {download.speed && download.speed > 0 && (
-                                  <span className="ml-2">({formatFileSize(download.speed)}/s)</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="secondary">{t('plugin.downloading')}</Badge>
-                        </TableCell>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className='w-[50px]'>
+                          <Checkbox
+                            checked={
+                              getFilteredLocalPlugins().length > 0 &&
+                              getFilteredLocalPlugins().every((p) =>
+                                selectedLocalPlugins.has(
+                                  `${p.name}:${p.version}`,
+                                ),
+                              )
+                            }
+                            onCheckedChange={handleSelectAllLocalPlugins}
+                          />
+                        </TableHead>
+                        <TableHead>{t('plugin.name')}</TableHead>
+                        <TableHead>{t('plugin.category.label')}</TableHead>
+                        <TableHead>{t('plugin.version')}</TableHead>
+                        <TableHead>{t('plugin.installedClusters')}</TableHead>
+                        <TableHead>{t('plugin.fileSize')}</TableHead>
+                        <TableHead className='text-right'>
+                          {t('common.actions')}
+                        </TableHead>
                       </TableRow>
-                    ))}
-                    {/* Filtered local plugins / 过滤后的本地插件 */}
-                    {getPaginatedLocalPlugins().map((plugin) => {
-                      // Get cluster installation status for this plugin / 获取此插件的集群安装状态
-                      const clusterStatusMap = pluginClusterStatus.get(plugin.name);
-                      const installedClusters = clusterStatusMap 
-                        ? clusters.filter(c => clusterStatusMap.has(c.id))
-                        : [];
-                      
-                      return (
-                        <TableRow key={`${plugin.name}-${plugin.version}`}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedLocalPlugins.has(`${plugin.name}:${plugin.version}`)}
-                              onCheckedChange={(checked) => handleSelectLocalPlugin(plugin, checked as boolean)}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{plugin.name}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {plugin.category === 'connector' ? t('plugin.category.connector') : plugin.category}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>v{plugin.version}</TableCell>
-                          <TableCell>
-                            {installedClusters.length === 0 ? (
-                              <span className="text-muted-foreground text-sm">{t('plugin.notInstalled')}</span>
-                            ) : (
-                              <div className="flex flex-wrap gap-1">
-                                {installedClusters.map(cluster => (
+                    </TableHeader>
+                    <TableBody>
+                      {/* Active downloads / 活动下载 */}
+                      {activeDownloads
+                        .filter((d) => d.status === 'downloading')
+                        .map((download) => (
+                          <TableRow
+                            key={`downloading-${download.plugin_name}-${download.version}`}
+                            className='bg-blue-50 dark:bg-blue-950'
+                          >
+                            <TableCell>
+                              <Checkbox disabled />
+                            </TableCell>
+                            <TableCell className='font-medium'>
+                              <div className='flex items-center gap-2'>
+                                <RefreshCw className='h-4 w-4 animate-spin text-blue-500' />
+                                {download.plugin_name}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant='outline'>
+                                {t('plugin.downloading')}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>v{download.version}</TableCell>
+                            <TableCell>
+                              <span className='text-muted-foreground text-sm'>
+                                -
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className='space-y-1'>
+                                <div className='flex items-center justify-between text-sm'>
+                                  <span>
+                                    {download.current_step ||
+                                      t('plugin.downloading')}
+                                  </span>
+                                  <span>{download.progress}%</span>
+                                </div>
+                                <Progress
+                                  value={download.progress}
+                                  className='h-2'
+                                />
+                                {download.total_bytes &&
+                                  download.total_bytes > 0 && (
+                                    <div className='text-xs text-muted-foreground'>
+                                      {formatFileSize(
+                                        download.downloaded_bytes || 0,
+                                      )}{' '}
+                                      / {formatFileSize(download.total_bytes)}
+                                      {download.speed && download.speed > 0 && (
+                                        <span className='ml-2'>
+                                          ({formatFileSize(download.speed)}/s)
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                              </div>
+                            </TableCell>
+                            <TableCell className='text-right'>
+                              <Badge variant='secondary'>
+                                {t('plugin.downloading')}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      {/* Filtered local plugins / 过滤后的本地插件 */}
+                      {getPaginatedLocalPlugins().map((plugin) => {
+                        // Get cluster installation status for this plugin / 获取此插件的集群安装状态
+                        const clusterStatusMap = pluginClusterStatus.get(
+                          plugin.name,
+                        );
+                        const installedClusters = clusterStatusMap
+                          ? clusters.filter((c) => clusterStatusMap.has(c.id))
+                          : [];
+
+                        return (
+                          <TableRow key={`${plugin.name}-${plugin.version}`}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedLocalPlugins.has(
+                                  `${plugin.name}:${plugin.version}`,
+                                )}
+                                onCheckedChange={(checked) =>
+                                  handleSelectLocalPlugin(
+                                    plugin,
+                                    checked as boolean,
+                                  )
+                                }
+                              />
+                            </TableCell>
+                            <TableCell className='font-medium'>
+                              {plugin.name}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant='outline'>
+                                {plugin.category === 'connector'
+                                  ? t('plugin.category.connector')
+                                  : plugin.category}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>v{plugin.version}</TableCell>
+                            <TableCell>
+                              {installedClusters.length === 0 ? (
+                                <span className='text-muted-foreground text-sm'>
+                                  {t('plugin.notInstalled')}
+                                </span>
+                              ) : (
+                                <div className='flex flex-wrap gap-1'>
+                                  {installedClusters.map((cluster) => (
                                     <Badge
                                       key={cluster.id}
-                                      variant="default"
-                                      className="text-xs"
+                                      variant='default'
+                                      className='text-xs'
                                     >
                                       {cluster.name}
                                     </Badge>
                                   ))}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>{formatFileSize(plugin.size)}</TableCell>
-                          <TableCell className="text-right space-x-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const pluginForInstall: Plugin = {
-                                  name: plugin.name,
-                                  display_name: plugin.name,
-                                  category: plugin.category,
-                                  version: plugin.version,
-                                  description: '',
-                                  group_id: 'org.apache.seatunnel',
-                                  artifact_id: `connector-${plugin.name}`,
-                                };
-                                setPluginToInstall(pluginForInstall);
-                                setIsInstallOpen(true);
-                              }}
-                            >
-                              <Server className="h-4 w-4 mr-1" />
-                              {t('plugin.managePlugin')}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => {
-                                setPluginToDelete(plugin);
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-                {/* Local plugins pagination / 本地插件分页 */}
-                {getFilteredLocalPlugins().length > 0 && (
-                  <div className="mt-4">
-                    <Pagination
-                      currentPage={localPluginsPage}
-                      totalPages={getLocalPluginsTotalPages()}
-                      pageSize={localPluginsPageSize}
-                      totalItems={getFilteredLocalPlugins().length}
-                      onPageChange={setLocalPluginsPage}
-                      onPageSizeChange={(size) => {
-                        setLocalPluginsPageSize(size);
-                        setLocalPluginsPage(1);
-                      }}
-                      pageSizeOptions={[10, 20, 50, 100]}
-                    />
-                  </div>
-                )}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>{formatFileSize(plugin.size)}</TableCell>
+                            <TableCell className='text-right space-x-1'>
+                              <Button
+                                variant='outline'
+                                size='sm'
+                                onClick={() => {
+                                  const pluginForInstall: Plugin = {
+                                    name: plugin.name,
+                                    display_name: plugin.name,
+                                    category: plugin.category,
+                                    version: plugin.version,
+                                    description: '',
+                                    group_id: 'org.apache.seatunnel',
+                                    artifact_id: `connector-${plugin.name}`,
+                                  };
+                                  setPluginToInstall(pluginForInstall);
+                                  setIsInstallOpen(true);
+                                }}
+                              >
+                                <Server className='h-4 w-4 mr-1' />
+                                {t('plugin.managePlugin')}
+                              </Button>
+                              <Button
+                                variant='ghost'
+                                size='sm'
+                                className='text-destructive hover:text-destructive'
+                                onClick={() => {
+                                  setPluginToDelete(plugin);
+                                  setDeleteDialogOpen(true);
+                                }}
+                              >
+                                <Trash2 className='h-4 w-4' />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  {/* Local plugins pagination / 本地插件分页 */}
+                  {getFilteredLocalPlugins().length > 0 && (
+                    <div className='mt-4'>
+                      <Pagination
+                        currentPage={localPluginsPage}
+                        totalPages={getLocalPluginsTotalPages()}
+                        pageSize={localPluginsPageSize}
+                        totalItems={getFilteredLocalPlugins().length}
+                        onPageChange={setLocalPluginsPage}
+                        onPageSizeChange={(size) => {
+                          setLocalPluginsPageSize(size);
+                          setLocalPluginsPage(1);
+                        }}
+                        pageSizeOptions={[10, 20, 50, 100]}
+                      />
+                    </div>
+                  )}
                 </>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="custom" className="mt-4">
+        <TabsContent value='custom' className='mt-4'>
           <Card>
             <CardHeader>
               <CardTitle>{t('plugin.custom')}</CardTitle>
-              <CardDescription>
-                {t('plugin.customDesc')}
-              </CardDescription>
+              <CardDescription>{t('plugin.customDesc')}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8">
-                <Upload className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground mb-4">{t('plugin.uploadCustomPlugin')}</p>
-                <Button variant="outline" disabled>
-                  <Upload className="h-4 w-4 mr-2" />
+              <div className='text-center py-8'>
+                <Upload className='h-12 w-12 mx-auto text-muted-foreground mb-4' />
+                <p className='text-muted-foreground mb-4'>
+                  {t('plugin.uploadCustomPlugin')}
+                </p>
+                <Button variant='outline' disabled>
+                  <Upload className='h-4 w-4 mr-2' />
                   {t('plugin.uploadPlugin')}
                 </Button>
-                <p className="text-xs text-muted-foreground mt-4">
+                <p className='text-xs text-muted-foreground mt-4'>
                   {t('plugin.customPluginNote')}
                 </p>
               </div>
@@ -954,16 +1109,20 @@ export function PluginMain() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('plugin.deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t('plugin.deleteConfirmTitle')}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {t('plugin.deleteConfirmDesc', { name: pluginToDelete?.name || '' })}
+              {t('plugin.deleteConfirmDesc', {
+                name: pluginToDelete?.name || '',
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteLocalPlugin}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className='bg-destructive text-destructive-foreground hover:bg-destructive/90'
             >
               {t('common.delete')}
             </AlertDialogAction>

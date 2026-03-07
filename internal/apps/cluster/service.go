@@ -1044,11 +1044,15 @@ func (s *Service) executeOperation(ctx context.Context, clusterID uint, operatio
 				// Send command to agent if sender is available
 				// 如果发送器可用，向 Agent 发送命令
 				if s.agentSender != nil && hostInfo.AgentID != "" {
+					installDir := node.InstallDir
+					if installDir == "" {
+						installDir = cluster.InstallDir
+					}
 					params := map[string]string{
 						"cluster_id":  fmt.Sprintf("%d", clusterID),
 						"node_id":     fmt.Sprintf("%d", node.ID),
 						"role":        string(node.Role),
-						"install_dir": cluster.InstallDir,
+						"install_dir": installDir,
 					}
 
 					success, message, err := s.agentSender.SendCommand(ctx, hostInfo.AgentID, string(operation), params)
@@ -1088,10 +1092,13 @@ func (s *Service) executeOperation(ctx context.Context, clusterID uint, operatio
 			switch operation {
 			case OperationStart:
 				_ = s.repo.UpdateNodeStatus(ctx, node.ID, NodeStatusRunning)
+				s.detectAndUpdateNodeProcess(ctx, &node, node.HostID)
 			case OperationStop:
 				_ = s.repo.UpdateNodeStatus(ctx, node.ID, NodeStatusStopped)
+				_ = s.repo.UpdateNodeProcess(ctx, node.ID, 0, "stopped")
 			case OperationRestart:
 				_ = s.repo.UpdateNodeStatus(ctx, node.ID, NodeStatusRunning)
+				s.detectAndUpdateNodeProcess(ctx, &node, node.HostID)
 			}
 		} else {
 			_ = s.repo.UpdateNodeStatus(ctx, node.ID, NodeStatusError)

@@ -48,6 +48,7 @@ import (
 	"github.com/seatunnel/seatunnelX/internal/apps/oauth"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
 	"github.com/seatunnel/seatunnelX/internal/apps/project"
+	"github.com/seatunnel/seatunnelX/internal/apps/stupgrade"
 	"github.com/seatunnel/seatunnelX/internal/apps/task"
 	"github.com/seatunnel/seatunnelX/internal/config"
 	"github.com/seatunnel/seatunnelX/internal/db"
@@ -656,6 +657,38 @@ func Serve() {
 
 			// Config management routes 配置管理路由
 			appconfig.RegisterRoutes(apiV1Router, configHandler)
+
+			// SeaTunnel upgrade routes / SeaTunnel 升级路由
+			stUpgradeRepo := stupgrade.NewRepository(db.DB(context.Background()))
+			stUpgradeService := stupgrade.NewService(stUpgradeRepo)
+			stUpgradeService.SetClusterProvider(clusterService)
+			stUpgradeService.SetHostProvider(hostService)
+			stUpgradeService.SetPackageProvider(installerService)
+			stUpgradeService.SetPluginProvider(pluginService)
+			stUpgradeService.SetConfigProvider(configService)
+			stUpgradeService.SetClusterOperator(clusterService)
+			stUpgradeService.SetPackageTransferer(installerService)
+			if agentManager != nil {
+				stUpgradeService.SetAgentCommandSender(&installerAgentManagerAdapter{
+					manager:     agentManager,
+					hostService: hostService,
+				})
+			}
+			stUpgradeHandler := stupgrade.NewHandler(stUpgradeService)
+
+			stUpgradeRouter := apiV1Router.Group("/st-upgrade")
+			stUpgradeRouter.Use(auth.LoginRequired())
+			{
+				stUpgradeRouter.POST("/precheck", stUpgradeHandler.RunPrecheck)
+				stUpgradeRouter.POST("/plan", stUpgradeHandler.CreatePlan)
+				stUpgradeRouter.GET("/plans/:id", stUpgradeHandler.GetPlan)
+				stUpgradeRouter.POST("/execute", stUpgradeHandler.ExecutePlan)
+				stUpgradeRouter.GET("/tasks", stUpgradeHandler.ListTasks)
+				stUpgradeRouter.GET("/tasks/:id", stUpgradeHandler.GetTask)
+				stUpgradeRouter.GET("/tasks/:id/steps", stUpgradeHandler.ListTaskSteps)
+				stUpgradeRouter.GET("/tasks/:id/logs", stUpgradeHandler.ListTaskLogs)
+				stUpgradeRouter.GET("/tasks/:id/events/stream", stUpgradeHandler.StreamTaskEvents)
+			}
 
 			// Installation routes on hosts 主机安装路由
 			// POST /api/v1/hosts/:id/precheck - 运行预检查

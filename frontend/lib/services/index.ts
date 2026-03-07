@@ -11,6 +11,7 @@ import {ConfigService} from './config/index';
 import * as MonitorService from './monitor/index';
 import {MonitoringService} from './monitoring/index';
 import * as DiscoveryService from './discovery/index';
+import {StUpgradeService} from './st-upgrade/index';
 
 /**
  * 服务层架构说明：
@@ -153,6 +154,12 @@ const services = {
    * Requirements: 1.2, 1.9, 9.3, 9.4
    */
   discovery: DiscoveryService,
+
+  /**
+   * SeaTunnel 升级服务
+   * SeaTunnel upgrade service
+   */
+  stUpgrade: StUpgradeService,
 };
 
 export default services;

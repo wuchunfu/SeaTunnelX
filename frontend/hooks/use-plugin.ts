@@ -5,8 +5,8 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { PluginService } from '@/lib/services/plugin';
+import {useState, useEffect, useCallback} from 'react';
+import {PluginService} from '@/lib/services/plugin';
 import type {
   Plugin,
   InstalledPlugin,
@@ -38,8 +38,8 @@ interface UseAvailablePluginsReturn {
  * @param initialMirror - Initial mirror source / 初始镜像源
  */
 export function useAvailablePlugins(
-  initialVersion: string = '2.3.12',
-  initialMirror: MirrorSource = 'aliyun'
+  initialVersion: string = '',
+  initialMirror: MirrorSource = 'aliyun',
 ): UseAvailablePluginsReturn {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [total, setTotal] = useState(0);
@@ -52,7 +52,10 @@ export function useAvailablePlugins(
     try {
       setLoading(true);
       setError(null);
-      const response = await PluginService.listAvailablePlugins(version, mirror);
+      const response = await PluginService.listAvailablePlugins(
+        version,
+        mirror,
+      );
       setPlugins(response.plugins || []);
       setTotal(response.total || 0);
     } catch (err) {
@@ -71,25 +74,29 @@ export function useAvailablePlugins(
   // Filter plugins by category / 按分类过滤插件
   const filterByCategory = useCallback(
     (category: PluginCategory | null): Plugin[] => {
-      if (!category) return plugins;
+      if (!category) {
+        return plugins;
+      }
       return plugins.filter((p) => p.category === category);
     },
-    [plugins]
+    [plugins],
   );
 
   // Search plugins by keyword / 按关键词搜索插件
   const searchPlugins = useCallback(
     (keyword: string): Plugin[] => {
-      if (!keyword.trim()) return plugins;
+      if (!keyword.trim()) {
+        return plugins;
+      }
       const lowerKeyword = keyword.toLowerCase();
       return plugins.filter(
         (p) =>
           p.name.toLowerCase().includes(lowerKeyword) ||
           p.display_name.toLowerCase().includes(lowerKeyword) ||
-          p.description?.toLowerCase().includes(lowerKeyword)
+          p.description?.toLowerCase().includes(lowerKeyword),
       );
     },
-    [plugins]
+    [plugins],
   );
 
   return {
@@ -115,7 +122,9 @@ interface UseInstalledPluginsReturn {
   error: string | null;
   refresh: () => Promise<void>;
   getPluginByName: (name: string) => InstalledPlugin | undefined;
-  filterByStatus: (status: InstalledPlugin['status'] | null) => InstalledPlugin[];
+  filterByStatus: (
+    status: InstalledPlugin['status'] | null,
+  ) => InstalledPlugin[];
 }
 
 /**
@@ -123,7 +132,9 @@ interface UseInstalledPluginsReturn {
  * 获取集群上已安装插件的 Hook
  * @param clusterId - Cluster ID / 集群 ID
  */
-export function useInstalledPlugins(clusterId: number | null): UseInstalledPluginsReturn {
+export function useInstalledPlugins(
+  clusterId: number | null,
+): UseInstalledPluginsReturn {
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +151,11 @@ export function useInstalledPlugins(clusterId: number | null): UseInstalledPlugi
       const data = await PluginService.listInstalledPlugins(clusterId);
       setPlugins(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch installed plugins');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to fetch installed plugins',
+      );
       setPlugins([]);
     } finally {
       setLoading(false);
@@ -156,16 +171,18 @@ export function useInstalledPlugins(clusterId: number | null): UseInstalledPlugi
     (name: string): InstalledPlugin | undefined => {
       return plugins.find((p) => p.plugin_name === name);
     },
-    [plugins]
+    [plugins],
   );
 
   // Filter plugins by status / 按状态过滤插件
   const filterByStatus = useCallback(
     (status: InstalledPlugin['status'] | null): InstalledPlugin[] => {
-      if (!status) return plugins;
+      if (!status) {
+        return plugins;
+      }
       return plugins.filter((p) => p.status === status);
     },
-    [plugins]
+    [plugins],
   );
 
   return {
@@ -184,7 +201,11 @@ interface UsePluginInstallReturn {
   installing: boolean;
   installStatus: PluginInstallStatus | null;
   error: string | null;
-  install: (pluginName: string, version: string, mirror?: MirrorSource) => Promise<InstalledPlugin>;
+  install: (
+    pluginName: string,
+    version: string,
+    mirror?: MirrorSource,
+  ) => Promise<InstalledPlugin>;
   uninstall: (pluginName: string) => Promise<void>;
   enable: (pluginName: string) => Promise<InstalledPlugin>;
   disable: (pluginName: string) => Promise<InstalledPlugin>;
@@ -199,15 +220,20 @@ interface UsePluginInstallReturn {
  */
 export function usePluginInstall(
   clusterId: number | null,
-  onSuccess?: () => void
+  onSuccess?: () => void,
 ): UsePluginInstallReturn {
   const [installing, setInstalling] = useState(false);
-  const [installStatus, setInstallStatus] = useState<PluginInstallStatus | null>(null);
+  const [installStatus, setInstallStatus] =
+    useState<PluginInstallStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Install plugin / 安装插件
   const install = useCallback(
-    async (pluginName: string, version: string, mirror?: MirrorSource): Promise<InstalledPlugin> => {
+    async (
+      pluginName: string,
+      version: string,
+      mirror?: MirrorSource,
+    ): Promise<InstalledPlugin> => {
       if (!clusterId) {
         throw new Error('Cluster ID is required');
       }
@@ -222,7 +248,12 @@ export function usePluginInstall(
           message: 'Starting installation...',
         });
 
-        const result = await PluginService.installPlugin(clusterId, pluginName, version, mirror);
+        const result = await PluginService.installPlugin(
+          clusterId,
+          pluginName,
+          version,
+          mirror,
+        );
 
         setInstallStatus({
           plugin_name: pluginName,
@@ -234,7 +265,8 @@ export function usePluginInstall(
         onSuccess?.();
         return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Installation failed';
+        const message =
+          err instanceof Error ? err.message : 'Installation failed';
         setError(message);
         setInstallStatus({
           plugin_name: pluginName,
@@ -247,7 +279,7 @@ export function usePluginInstall(
         setInstalling(false);
       }
     },
-    [clusterId, onSuccess]
+    [clusterId, onSuccess],
   );
 
   // Uninstall plugin / 卸载插件
@@ -270,7 +302,7 @@ export function usePluginInstall(
         setInstalling(false);
       }
     },
-    [clusterId, onSuccess]
+    [clusterId, onSuccess],
   );
 
   // Enable plugin / 启用插件
@@ -294,7 +326,7 @@ export function usePluginInstall(
         setInstalling(false);
       }
     },
-    [clusterId, onSuccess]
+    [clusterId, onSuccess],
   );
 
   // Disable plugin / 禁用插件
@@ -318,7 +350,7 @@ export function usePluginInstall(
         setInstalling(false);
       }
     },
-    [clusterId, onSuccess]
+    [clusterId, onSuccess],
   );
 
   // Reset state / 重置状态
@@ -359,21 +391,25 @@ export function usePluginDetail(): UsePluginDetailReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetch = useCallback(async (name: string, version?: string): Promise<Plugin> => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await PluginService.getPluginInfo(name, version);
-      setPlugin(data);
-      return data;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch plugin details';
-      setError(message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetch = useCallback(
+    async (name: string, version?: string): Promise<Plugin> => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await PluginService.getPluginInfo(name, version);
+        setPlugin(data);
+        return data;
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'Failed to fetch plugin details';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   const reset = useCallback(() => {
     setPlugin(null);
@@ -433,8 +469,8 @@ interface UsePluginMarketplaceReturn {
  */
 export function usePluginMarketplace(
   clusterId: number | null,
-  initialVersion: string = '2.3.12',
-  initialMirror: MirrorSource = 'aliyun'
+  initialVersion: string = '',
+  initialMirror: MirrorSource = 'aliyun',
 ): UsePluginMarketplaceReturn {
   // Available plugins state / 可用插件状态
   const {
@@ -478,7 +514,7 @@ export function usePluginMarketplace(
     async (pluginName: string): Promise<InstalledPlugin> => {
       return install(pluginName, version, mirror);
     },
-    [install, version, mirror]
+    [install, version, mirror],
   );
 
   // Check if plugin is installed / 检查插件是否已安装
@@ -486,7 +522,7 @@ export function usePluginMarketplace(
     (pluginName: string): boolean => {
       return installedPlugins.some((p) => p.plugin_name === pluginName);
     },
-    [installedPlugins]
+    [installedPlugins],
   );
 
   return {
