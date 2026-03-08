@@ -272,7 +272,7 @@ func (r *Repository) GetNotificationChannelByID(ctx context.Context, id uint) (*
 // CreateNotificationChannel creates a channel.
 // CreateNotificationChannel 创建通知渠道。
 func (r *Repository) CreateNotificationChannel(ctx context.Context, channel *NotificationChannel) error {
-	return r.db.WithContext(ctx).Create(channel).Error
+	return r.db.WithContext(ctx).Select("*").Create(channel).Error
 }
 
 // SaveNotificationChannel updates a channel.

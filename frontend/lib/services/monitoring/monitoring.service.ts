@@ -21,6 +21,8 @@ import type {
   MonitoringOverviewData,
   NotificationChannel,
   NotificationChannelListData,
+  NotificationDeliveryFilterParams,
+  NotificationDeliveryListData,
   NotificationChannelTestResult,
   NotificationRoute,
   NotificationRouteListData,
@@ -250,6 +252,19 @@ export class MonitoringService extends BaseService {
     return this.post<NotificationChannelTestResult>(
       `/notification-channels/${id}/test`,
       {},
+    );
+  }
+
+  /**
+   * List notification delivery history.
+   * 获取通知投递历史。
+   */
+  static async listNotificationDeliveries(
+    params?: NotificationDeliveryFilterParams,
+  ): Promise<NotificationDeliveryListData> {
+    return this.get<NotificationDeliveryListData>(
+      '/notification-deliveries',
+      params as Record<string, unknown> | undefined,
     );
   }
 
@@ -667,6 +682,27 @@ export class MonitoringService extends BaseService {
           error instanceof Error
             ? error.message
             : 'Failed to test notification channel',
+      };
+    }
+  }
+
+  static async listNotificationDeliveriesSafe(
+    params?: NotificationDeliveryFilterParams,
+  ): Promise<{
+    success: boolean;
+    data?: NotificationDeliveryListData;
+    error?: string;
+  }> {
+    try {
+      const data = await this.listNotificationDeliveries(params);
+      return {success: true, data};
+    } catch (error) {
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to list notification deliveries',
       };
     }
   }

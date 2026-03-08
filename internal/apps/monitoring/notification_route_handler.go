@@ -20,6 +20,8 @@ package monitoring
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -36,6 +38,91 @@ func (h *Handler) TestNotificationChannel(c *gin.Context) {
 	data, err := h.service.TestNotificationChannel(c.Request.Context(), uint(channelID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, Response{ErrorMsg: "Failed to test notification channel: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, Response{Data: data})
+}
+
+// ListNotificationDeliveries handles GET /api/v1/monitoring/notification-deliveries
+// ListNotificationDeliveries 处理通知投递历史列表接口。
+func (h *Handler) ListNotificationDeliveries(c *gin.Context) {
+	filter := &NotificationDeliveryFilter{}
+	if channelIDStr := strings.TrimSpace(c.Query("channel_id")); channelIDStr != "" {
+		channelID, err := strconv.ParseUint(channelIDStr, 10, 32)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid channel_id"})
+			return
+		}
+		filter.ChannelID = uint(channelID)
+	}
+	if status := strings.TrimSpace(c.Query("status")); status != "" {
+		filter.Status = NotificationDeliveryStatus(strings.ToLower(status))
+		switch filter.Status {
+		case NotificationDeliveryStatusPending,
+			NotificationDeliveryStatusSending,
+			NotificationDeliveryStatusSent,
+			NotificationDeliveryStatusFailed,
+			NotificationDeliveryStatusRetrying,
+			NotificationDeliveryStatusCanceled:
+		default:
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid status"})
+			return
+		}
+	}
+	if eventType := strings.TrimSpace(c.Query("event_type")); eventType != "" {
+		filter.EventType = NotificationDeliveryEventType(strings.ToLower(eventType))
+		switch filter.EventType {
+		case NotificationDeliveryEventTypeFiring,
+			NotificationDeliveryEventTypeResolved,
+			NotificationDeliveryEventTypeTest:
+		default:
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid event_type"})
+			return
+		}
+	}
+	if clusterID := strings.TrimSpace(c.Query("cluster_id")); clusterID != "" {
+		filter.ClusterID = clusterID
+	}
+	if startTimeStr := strings.TrimSpace(c.Query("start_time")); startTimeStr != "" {
+		startTime, err := time.Parse(time.RFC3339, startTimeStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid start_time, expected RFC3339"})
+			return
+		}
+		filter.StartTime = &startTime
+	}
+	if endTimeStr := strings.TrimSpace(c.Query("end_time")); endTimeStr != "" {
+		endTime, err := time.Parse(time.RFC3339, endTimeStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid end_time, expected RFC3339"})
+			return
+		}
+		filter.EndTime = &endTime
+	}
+	if filter.StartTime != nil && filter.EndTime != nil && filter.StartTime.After(*filter.EndTime) {
+		c.JSON(http.StatusBadRequest, Response{ErrorMsg: "start_time must be earlier than end_time"})
+		return
+	}
+	if pageStr := strings.TrimSpace(c.Query("page")); pageStr != "" {
+		page, err := strconv.Atoi(pageStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid page"})
+			return
+		}
+		filter.Page = page
+	}
+	if pageSizeStr := strings.TrimSpace(c.Query("page_size")); pageSizeStr != "" {
+		pageSize, err := strconv.Atoi(pageSizeStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, Response{ErrorMsg: "invalid page_size"})
+			return
+		}
+		filter.PageSize = pageSize
+	}
+
+	data, err := h.service.ListNotificationDeliveries(c.Request.Context(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, Response{ErrorMsg: "Failed to list notification deliveries: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, Response{Data: data})

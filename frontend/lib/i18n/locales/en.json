@@ -1507,7 +1507,8 @@
       "dashboard": "Dashboard",
       "alerts": "Alerts",
       "rules": "Rules",
-      "integrations": "Notifications"
+      "integrations": "Notifications",
+      "history": "History"
     },
     "loading": "Loading...",
     "degradedClusters": "Degraded Clusters",
@@ -1517,6 +1518,48 @@
       "title": "Platform Health Summary",
       "loadError": "Failed to load platform health summary",
       "unavailable": "Platform health is unavailable"
+    },
+    "history": {
+      "entry": "Notification History",
+      "title": "Notification History",
+      "subtitle": "Review alert delivery results and failure reasons.",
+      "channelFilter": "Filter by channel",
+      "statusFilter": "Filter by status",
+      "eventTypeFilter": "Filter by event type",
+      "clusterFilter": "Filter by cluster",
+      "allChannels": "All Channels",
+      "allStatuses": "All Status",
+      "allEventTypes": "All Events",
+      "allClusters": "All Clusters",
+      "cluster": "Cluster",
+      "alertName": "Alert Name",
+      "channel": "Channel",
+      "eventType": "Event Type",
+      "status": "Delivery Status",
+      "attempts": "Attempts",
+      "lastError": "Last Error",
+      "sentAt": "Sent At",
+      "createdAt": "Created At",
+      "empty": "No notification history",
+      "loadError": "Failed to load notification history",
+      "clearTimeFilter": "Clear Time",
+      "pageSize": "Page Size",
+      "prevPage": "Previous",
+      "nextPage": "Next",
+      "pageInfo": "Page {current} / {total}",
+      "eventTypes": {
+        "firing": "Firing",
+        "resolved": "Resolved",
+        "test": "Test"
+      },
+      "statuses": {
+        "pending": "Pending",
+        "sending": "Sending",
+        "sent": "Sent",
+        "failed": "Failed",
+        "retrying": "Retrying",
+        "canceled": "Canceled"
+      }
     }
   },
   "discovery": {

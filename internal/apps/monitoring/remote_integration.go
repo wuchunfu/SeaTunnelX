@@ -125,6 +125,9 @@ func (s *Service) HandleAlertmanagerWebhook(ctx context.Context, payload *Alertm
 			result.Errors = append(result.Errors, fmt.Sprintf("alert[%d] upsert failed: %v", idx, err))
 			continue
 		}
+		if err := s.deliverRemoteAlertNotifications(ctx, record); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("alert[%d] delivery failed: %v", idx, err))
+		}
 		result.Stored++
 	}
 	if len(result.Errors) == 0 {

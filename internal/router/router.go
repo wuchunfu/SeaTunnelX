@@ -349,6 +349,7 @@ func Serve() {
 				monitoringRouter.PUT("/notification-channels/:id", monitoringHandler.UpdateNotificationChannel)
 				monitoringRouter.DELETE("/notification-channels/:id", monitoringHandler.DeleteNotificationChannel)
 				monitoringRouter.POST("/notification-channels/:id/test", monitoringHandler.TestNotificationChannel)
+				monitoringRouter.GET("/notification-deliveries", monitoringHandler.ListNotificationDeliveries)
 				monitoringRouter.GET("/notification-routes", monitoringHandler.ListNotificationRoutes)
 				monitoringRouter.POST("/notification-routes", monitoringHandler.CreateNotificationRoute)
 				monitoringRouter.PUT("/notification-routes/:id", monitoringHandler.UpdateNotificationRoute)

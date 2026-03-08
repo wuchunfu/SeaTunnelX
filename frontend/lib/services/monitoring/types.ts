@@ -412,6 +412,54 @@ export interface NotificationRouteListData {
   routes: NotificationRoute[];
 }
 
+export type NotificationDeliveryEventType = 'firing' | 'resolved' | 'test';
+export type NotificationDeliveryStatus =
+  | 'pending'
+  | 'sending'
+  | 'sent'
+  | 'failed'
+  | 'retrying'
+  | 'canceled';
+
+export interface NotificationDelivery {
+  id: number;
+  alert_id: string;
+  source_type: string;
+  source_key: string;
+  cluster_id?: string;
+  cluster_name?: string;
+  alert_name?: string;
+  channel_id: number;
+  channel_name?: string;
+  event_type: NotificationDeliveryEventType | string;
+  status: NotificationDeliveryStatus | string;
+  attempt_count: number;
+  last_error?: string;
+  response_status_code?: number;
+  sent_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationDeliveryListData {
+  generated_at: string;
+  page: number;
+  page_size: number;
+  total: number;
+  deliveries: NotificationDelivery[];
+}
+
+export interface NotificationDeliveryFilterParams {
+  channel_id?: number;
+  status?: NotificationDeliveryStatus;
+  event_type?: NotificationDeliveryEventType;
+  cluster_id?: string;
+  start_time?: string;
+  end_time?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export interface UpsertNotificationRouteRequest {
   name: string;
   enabled?: boolean;

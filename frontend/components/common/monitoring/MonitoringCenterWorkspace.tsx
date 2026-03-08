@@ -8,8 +8,9 @@ import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {MonitoringAlertsCenter} from './MonitoringAlertsCenter';
 import {MonitoringRulesPanel} from './MonitoringRulesPanel';
 import {MonitoringIntegrationsPanel} from './MonitoringIntegrationsPanel';
+import {MonitoringNotificationHistoryPanel} from './MonitoringNotificationHistoryPanel';
 
-type MonitoringTab = 'alerts' | 'rules' | 'integrations';
+type MonitoringTab = 'alerts' | 'rules' | 'integrations' | 'history';
 
 function resolveTab(tab: string | null): MonitoringTab {
   if (tab === 'alerts') {
@@ -20,6 +21,9 @@ function resolveTab(tab: string | null): MonitoringTab {
   }
   if (tab === 'integrations' || tab === 'notifications') {
     return 'integrations';
+  }
+  if (tab === 'history') {
+    return 'history';
   }
   // 默认聚焦告警中心，而非总览看板。
   return 'alerts';
@@ -53,12 +57,13 @@ export function MonitoringCenterWorkspace() {
         value={activeTab}
         onValueChange={(value) => setActiveTab(value as MonitoringTab)}
       >
-        <TabsList className='grid w-full grid-cols-3 gap-1 md:grid-cols-3'>
+        <TabsList className='grid w-full grid-cols-2 gap-1 md:grid-cols-4'>
           <TabsTrigger value='alerts'>{t('tabs.alerts')}</TabsTrigger>
           <TabsTrigger value='rules'>{t('tabs.rules')}</TabsTrigger>
           <TabsTrigger value='integrations'>
             {t('tabs.integrations')}
           </TabsTrigger>
+          <TabsTrigger value='history'>{t('tabs.history')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value='alerts' className='mt-4'>
@@ -71,6 +76,10 @@ export function MonitoringCenterWorkspace() {
 
         <TabsContent value='integrations' className='mt-4'>
           <MonitoringIntegrationsPanel />
+        </TabsContent>
+
+        <TabsContent value='history' className='mt-4'>
+          <MonitoringNotificationHistoryPanel />
         </TabsContent>
       </Tabs>
     </div>

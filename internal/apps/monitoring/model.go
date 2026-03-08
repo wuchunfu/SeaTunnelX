@@ -509,6 +509,47 @@ type NotificationChannelTestResult struct {
 	ResponseBody string     `json:"response_body,omitempty"`
 }
 
+// NotificationDeliveryEventType represents delivery lifecycle event type.
+// NotificationDeliveryEventType 表示通知投递事件类型。
+type NotificationDeliveryEventType string
+
+const (
+	// NotificationDeliveryEventTypeFiring indicates a firing alert notification.
+	// NotificationDeliveryEventTypeFiring 表示触发通知。
+	NotificationDeliveryEventTypeFiring NotificationDeliveryEventType = "firing"
+	// NotificationDeliveryEventTypeResolved indicates a resolved alert notification.
+	// NotificationDeliveryEventTypeResolved 表示恢复通知。
+	NotificationDeliveryEventTypeResolved NotificationDeliveryEventType = "resolved"
+	// NotificationDeliveryEventTypeTest indicates a manual test notification.
+	// NotificationDeliveryEventTypeTest 表示手动测试通知。
+	NotificationDeliveryEventTypeTest NotificationDeliveryEventType = "test"
+)
+
+// NotificationDeliveryStatus represents current delivery execution state.
+// NotificationDeliveryStatus 表示当前通知投递状态。
+type NotificationDeliveryStatus string
+
+const (
+	// NotificationDeliveryStatusPending indicates delivery is pending.
+	// NotificationDeliveryStatusPending 表示投递待执行。
+	NotificationDeliveryStatusPending NotificationDeliveryStatus = "pending"
+	// NotificationDeliveryStatusSending indicates delivery is being sent.
+	// NotificationDeliveryStatusSending 表示投递发送中。
+	NotificationDeliveryStatusSending NotificationDeliveryStatus = "sending"
+	// NotificationDeliveryStatusSent indicates delivery succeeded.
+	// NotificationDeliveryStatusSent 表示投递成功。
+	NotificationDeliveryStatusSent NotificationDeliveryStatus = "sent"
+	// NotificationDeliveryStatusFailed indicates delivery failed.
+	// NotificationDeliveryStatusFailed 表示投递失败。
+	NotificationDeliveryStatusFailed NotificationDeliveryStatus = "failed"
+	// NotificationDeliveryStatusRetrying indicates delivery is retrying.
+	// NotificationDeliveryStatusRetrying 表示投递重试中。
+	NotificationDeliveryStatusRetrying NotificationDeliveryStatus = "retrying"
+	// NotificationDeliveryStatusCanceled indicates delivery is canceled.
+	// NotificationDeliveryStatusCanceled 表示投递已取消。
+	NotificationDeliveryStatusCanceled NotificationDeliveryStatus = "canceled"
+)
+
 // NotificationRouteDTO is frontend DTO for notification routes.
 // NotificationRouteDTO 是前端使用的通知路由 DTO。
 type NotificationRouteDTO struct {
@@ -533,6 +574,51 @@ type NotificationRouteListData struct {
 	GeneratedAt time.Time               `json:"generated_at"`
 	Total       int                     `json:"total"`
 	Routes      []*NotificationRouteDTO `json:"routes"`
+}
+
+// NotificationDeliveryFilter represents notification history query filters.
+// NotificationDeliveryFilter 表示通知历史查询过滤条件。
+type NotificationDeliveryFilter struct {
+	ChannelID uint                          `json:"channel_id"`
+	Status    NotificationDeliveryStatus    `json:"status"`
+	EventType NotificationDeliveryEventType `json:"event_type"`
+	ClusterID string                        `json:"cluster_id"`
+	StartTime *time.Time                    `json:"start_time"`
+	EndTime   *time.Time                    `json:"end_time"`
+	Page      int                           `json:"page"`
+	PageSize  int                           `json:"page_size"`
+}
+
+// NotificationDeliveryDTO is frontend DTO for notification history entries.
+// NotificationDeliveryDTO 是前端使用的通知历史 DTO。
+type NotificationDeliveryDTO struct {
+	ID                 uint       `json:"id"`
+	AlertID            string     `json:"alert_id"`
+	SourceType         string     `json:"source_type"`
+	SourceKey          string     `json:"source_key"`
+	ClusterID          string     `json:"cluster_id,omitempty"`
+	ClusterName        string     `json:"cluster_name,omitempty"`
+	AlertName          string     `json:"alert_name,omitempty"`
+	ChannelID          uint       `json:"channel_id"`
+	ChannelName        string     `json:"channel_name,omitempty"`
+	EventType          string     `json:"event_type"`
+	Status             string     `json:"status"`
+	AttemptCount       int        `json:"attempt_count"`
+	LastError          string     `json:"last_error,omitempty"`
+	ResponseStatusCode int        `json:"response_status_code,omitempty"`
+	SentAt             *time.Time `json:"sent_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+// NotificationDeliveryListData represents notification history list payload.
+// NotificationDeliveryListData 表示通知历史列表响应数据。
+type NotificationDeliveryListData struct {
+	GeneratedAt time.Time                  `json:"generated_at"`
+	Page        int                        `json:"page"`
+	PageSize    int                        `json:"page_size"`
+	Total       int64                      `json:"total"`
+	Deliveries  []*NotificationDeliveryDTO `json:"deliveries"`
 }
 
 // UpsertNotificationRouteRequest represents create/update route payload.

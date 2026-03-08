@@ -114,7 +114,7 @@ type NotificationChannel struct {
 	ID          uint                    `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name        string                  `json:"name" gorm:"size:120;not null;index"`
 	Type        NotificationChannelType `json:"type" gorm:"size:30;not null;index"`
-	Enabled     bool                    `json:"enabled" gorm:"default:true"`
+	Enabled     bool                    `json:"enabled"`
 	Endpoint    string                  `json:"endpoint" gorm:"size:500"`
 	Secret      string                  `json:"secret" gorm:"size:500"`
 	Description string                  `json:"description" gorm:"type:text"`
@@ -133,15 +133,15 @@ func (NotificationChannel) TableName() string {
 type NotificationRoute struct {
 	ID                 uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name               string    `json:"name" gorm:"size:120;not null;index"`
-	Enabled            bool      `json:"enabled" gorm:"default:true"`
+	Enabled            bool      `json:"enabled"`
 	SourceType         string    `json:"source_type" gorm:"size:40;index"`
 	ClusterID          string    `json:"cluster_id" gorm:"size:64;index"`
 	Severity           string    `json:"severity" gorm:"size:20;index"`
 	RuleKey            string    `json:"rule_key" gorm:"size:80;index"`
 	ChannelID          uint      `json:"channel_id" gorm:"not null;index"`
-	SendResolved       bool      `json:"send_resolved" gorm:"default:true"`
-	MuteIfAcknowledged bool      `json:"mute_if_acknowledged" gorm:"default:true"`
-	MuteIfSilenced     bool      `json:"mute_if_silenced" gorm:"default:true"`
+	SendResolved       bool      `json:"send_resolved"`
+	MuteIfAcknowledged bool      `json:"mute_if_acknowledged"`
+	MuteIfSilenced     bool      `json:"mute_if_silenced"`
 	CreatedAt          time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt          time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }
@@ -158,9 +158,13 @@ type NotificationDelivery struct {
 	ID                  uint       `json:"id" gorm:"primaryKey;autoIncrement"`
 	AlertID             string     `json:"alert_id" gorm:"size:255;index"`
 	SourceType          string     `json:"source_type" gorm:"size:40;index"`
-	SourceKey           string     `json:"source_key" gorm:"size:255;index"`
-	ChannelID           uint       `json:"channel_id" gorm:"not null;index"`
-	EventType           string     `json:"event_type" gorm:"size:20;not null;index"`
+	SourceKey           string     `json:"source_key" gorm:"size:255;index;uniqueIndex:ux_monitoring_delivery_source_channel_event,priority:1"`
+	ClusterID           string     `json:"cluster_id" gorm:"size:64;index"`
+	ClusterName         string     `json:"cluster_name" gorm:"size:255;index"`
+	AlertName           string     `json:"alert_name" gorm:"size:255;index"`
+	ChannelID           uint       `json:"channel_id" gorm:"not null;index;uniqueIndex:ux_monitoring_delivery_source_channel_event,priority:2"`
+	ChannelName         string     `json:"channel_name" gorm:"size:120"`
+	EventType           string     `json:"event_type" gorm:"size:20;not null;index;uniqueIndex:ux_monitoring_delivery_source_channel_event,priority:3"`
 	Status              string     `json:"status" gorm:"size:20;not null;index"`
 	AttemptCount        int        `json:"attempt_count" gorm:"default:0"`
 	LastError           string     `json:"last_error" gorm:"type:text"`

@@ -1507,7 +1507,8 @@
       "dashboard": "监控看板",
       "alerts": "告警中心",
       "rules": "告警规则",
-      "integrations": "通知渠道"
+      "integrations": "通知渠道",
+      "history": "通知历史"
     },
     "loading": "加载中...",
     "degradedClusters": "降级集群",
@@ -1517,6 +1518,48 @@
       "title": "平台健康摘要",
       "loadError": "加载平台健康摘要失败",
       "unavailable": "暂无平台健康数据"
+    },
+    "history": {
+      "entry": "通知历史",
+      "title": "通知历史",
+      "subtitle": "查看告警通知发送结果与失败原因。",
+      "channelFilter": "按渠道筛选",
+      "statusFilter": "按状态筛选",
+      "eventTypeFilter": "按事件类型筛选",
+      "clusterFilter": "按集群筛选",
+      "allChannels": "全部渠道",
+      "allStatuses": "全部状态",
+      "allEventTypes": "全部事件",
+      "allClusters": "全部集群",
+      "cluster": "集群",
+      "alertName": "告警名称",
+      "channel": "通知渠道",
+      "eventType": "事件类型",
+      "status": "投递状态",
+      "attempts": "尝试次数",
+      "lastError": "最近错误",
+      "sentAt": "发送时间",
+      "createdAt": "创建时间",
+      "empty": "暂无通知历史",
+      "loadError": "加载通知历史失败",
+      "clearTimeFilter": "清除时间",
+      "pageSize": "每页条数",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "pageInfo": "第 {current} / {total} 页",
+      "eventTypes": {
+        "firing": "触发",
+        "resolved": "恢复",
+        "test": "测试"
+      },
+      "statuses": {
+        "pending": "待发送",
+        "sending": "发送中",
+        "sent": "已发送",
+        "failed": "失败",
+        "retrying": "重试中",
+        "canceled": "已取消"
+      }
     }
   },
   "discovery": {

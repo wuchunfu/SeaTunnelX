@@ -18,13 +18,9 @@
 package monitoring
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -201,9 +197,11 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id uint) (*Notifi
 		AlertID:      fmt.Sprintf("test-channel-%d", channel.ID),
 		SourceType:   "system_test",
 		SourceKey:    fmt.Sprintf("test:channel:%d:%d", channel.ID, time.Now().UTC().UnixNano()),
+		AlertName:    "SeaTunnelX notification test",
 		ChannelID:    channel.ID,
-		EventType:    "test",
-		Status:       "sending",
+		ChannelName:  strings.TrimSpace(channel.Name),
+		EventType:    string(NotificationDeliveryEventTypeTest),
+		Status:       string(NotificationDeliveryStatusSending),
 		AttemptCount: 1,
 	}
 	if err := s.repo.CreateNotificationDelivery(ctx, delivery); err != nil {
@@ -218,7 +216,7 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id uint) (*Notifi
 		delivery.SentAt = attempt.SentAt
 	}
 	if sendErr != nil {
-		delivery.Status = "failed"
+		delivery.Status = string(NotificationDeliveryStatusFailed)
 		delivery.LastError = sendErr.Error()
 		if err := s.repo.SaveNotificationDelivery(ctx, delivery); err != nil {
 			return nil, err
@@ -234,7 +232,7 @@ func (s *Service) TestNotificationChannel(ctx context.Context, id uint) (*Notifi
 		}, nil
 	}
 
-	delivery.Status = "sent"
+	delivery.Status = string(NotificationDeliveryStatusSent)
 	if err := s.repo.SaveNotificationDelivery(ctx, delivery); err != nil {
 		return nil, err
 	}
@@ -270,54 +268,11 @@ func toNotificationRouteDTO(route *NotificationRoute) *NotificationRouteDTO {
 }
 
 func sendTestNotification(ctx context.Context, channel *NotificationChannel) (*notificationSendAttempt, error) {
-	if channel == nil {
-		return nil, fmt.Errorf("notification channel not found")
-	}
-	if strings.TrimSpace(channel.Endpoint) == "" {
-		return nil, fmt.Errorf("channel endpoint is empty")
-	}
-
 	payload, err := buildTestPayload(channel)
 	if err != nil {
 		return nil, err
 	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSpace(channel.Endpoint), bytes.NewReader(payloadBytes))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return &notificationSendAttempt{
-			RequestPayload: string(payloadBytes),
-		}, err
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-	body := string(bodyBytes)
-	if len(body) > 1000 {
-		body = body[:1000]
-	}
-	now := time.Now().UTC()
-	attempt := &notificationSendAttempt{
-		RequestPayload: string(payloadBytes),
-		StatusCode:     resp.StatusCode,
-		ResponseBody:   body,
-		SentAt:         &now,
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return attempt, fmt.Errorf("http status %d", resp.StatusCode)
-	}
-	return attempt, nil
+	return sendNotification(ctx, channel, payload)
 }
 
 func buildTestPayload(channel *NotificationChannel) (map[string]interface{}, error) {
