@@ -1,64 +1,29 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# simple_license_check.sh - 支持多目录排除版本
+set -euo pipefail
 
-LICENSE_FILE="LICENSE"
-FAILED_FILES=()
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
 
-# 要排除的目录列表
-EXCLUDE_DIRS=("vendor" "docs" ".git" "node_modules" "build")
+cd "$REPO_ROOT"
 
-# 检查 LICENSE 文件是否存在
-if [ ! -f "$LICENSE_FILE" ]; then
-    echo "错误: LICENSE 文件不存在"
-    exit 1
+if [[ $# -eq 0 ]]; then
+  echo "[license] checking staged changes by default"
+  exec python3 scripts/check_license.py
 fi
 
-echo "检查 Go 文件是否包含 LICENSE 内容..."
-
-# 构建 find 命令的排除参数
-exclude_args=""
-for dir in "${EXCLUDE_DIRS[@]}"; do
-    exclude_args="$exclude_args -not -path \"./$dir/*\""
-done
-
-# 查找所有 Go 文件（排除指定目录和测试文件）
-eval "find . -name \"*.go\" $exclude_args -not -name \"*_test.go\"" | while read file; do
-    echo -n "检查 $file ... "
-
-    # 检查文件前20行是否包含 license 相关关键词
-    if head -n 20 "$file" | grep -qi "license\|copyright\|©"; then
-        echo "✓"
-    else
-        echo "✗ 缺少 license"
-        FAILED_FILES+=("$file")
-    fi
-done
-
-# 重新统计（因为管道会创建子shell）
-FAILED_COUNT=0
-echo
-echo "最终检查结果："
-
-eval "find . -name \"*.go\" $exclude_args -not -name \"*_test.go\"" | while read file; do
-    if ! head -n 20 "$file" | grep -qi "license\|copyright\|©"; then
-        echo "❌ $file 缺少 license"
-        ((FAILED_COUNT++))
-    fi
-done
-
-# 统计失败的文件数量
-TOTAL_FAILED=$(eval "find . -name \"*.go\" $exclude_args -not -name \"*_test.go\"" | \
-               while read file; do
-                   if ! head -n 20 "$file" | grep -qi "license\|copyright\|©"; then
-                       echo "$file"
-                   fi
-               done | wc -l)
-
-if [ "$TOTAL_FAILED" -eq 0 ]; then
-    echo "✅ 所有文件都包含 license 头部"
-    exit 0
-else
-    echo "❌ 共有 $TOTAL_FAILED 个文件缺少 license 头部"
-    exit 1
-fi
+exec python3 scripts/check_license.py "$@"

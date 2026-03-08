@@ -7,6 +7,9 @@ tidy:
 check_license:
 	scripts/license.sh
 
+add_apache_license:
+	python3 scripts/add_apache_license.py --git-added --staged
+
 proto:
 	scripts/proto.sh
 
