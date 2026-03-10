@@ -29,6 +29,7 @@ type configModel struct {
 	GRPC           GRPCConfig           `mapstructure:"grpc"`
 	Log            logConfig            `mapstructure:"log"`
 	Telemetry      TelemetryConfig      `mapstructure:"telemetry"`
+	Observability  ObservabilityConfig  `mapstructure:"observability"`
 	Schedule       scheduleConfig       `mapstructure:"schedule"`
 	Worker         workerConfig         `mapstructure:"worker"`
 	ClickHouse     clickHouseConfig     `mapstructure:"clickhouse"`
@@ -241,6 +242,50 @@ type TelemetryConfig struct {
 	// Endpoint is the OTLP collector endpoint (default: localhost:4317)
 	// Endpoint 是 OTLP 收集器端点（默认：localhost:4317）
 	Endpoint string `mapstructure:"endpoint"`
+}
+
+// ObservabilityConfig 可观测性配置（Prometheus/Grafana/Alertmanager 集成）
+type ObservabilityConfig struct {
+	// Enabled indicates whether observability integration is enabled.
+	// Enabled 表示是否启用可观测性集成。
+	Enabled bool `mapstructure:"enabled"`
+
+	Prometheus      ObservabilityPrometheusConfig      `mapstructure:"prometheus"`
+	Alertmanager    ObservabilityAlertmanagerConfig    `mapstructure:"alertmanager"`
+	Grafana         ObservabilityGrafanaConfig         `mapstructure:"grafana"`
+	SeatunnelMetric ObservabilitySeatunnelMetricConfig `mapstructure:"seatunnel_metrics"`
+}
+
+// ObservabilityPrometheusConfig Prometheus 集成配置
+type ObservabilityPrometheusConfig struct {
+	URL string `mapstructure:"url"`
+
+	// HTTPSDPath is the fixed HTTP SD endpoint path exposed by SeaTunnelX.
+	// HTTPSDPath 是 SeaTunnelX 暴露的 Prometheus HTTP SD 路径。
+	HTTPSDPath string `mapstructure:"http_sd_path"`
+}
+
+// ObservabilityAlertmanagerConfig Alertmanager 集成配置
+type ObservabilityAlertmanagerConfig struct {
+	URL string `mapstructure:"url"`
+
+	// WebhookPath is the fixed Alertmanager webhook path exposed by SeaTunnelX.
+	// WebhookPath 是 SeaTunnelX 暴露的 Alertmanager Webhook 路径。
+	WebhookPath string `mapstructure:"webhook_path"`
+}
+
+// ObservabilityGrafanaConfig Grafana 集成配置
+type ObservabilityGrafanaConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+// ObservabilitySeatunnelMetricConfig SeaTunnel metrics 探测配置
+type ObservabilitySeatunnelMetricConfig struct {
+	Path string `mapstructure:"path"`
+
+	// ProbeTimeoutSeconds is the timeout for probing one metrics endpoint.
+	// ProbeTimeoutSeconds 是单个 metrics 端点探测超时时间（秒）。
+	ProbeTimeoutSeconds int `mapstructure:"probe_timeout_seconds"`
 }
 
 // scheduleConfig 定时任务配置

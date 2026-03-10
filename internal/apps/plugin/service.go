@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/seatunnel/seatunnelX/internal/logger"
+	"github.com/seatunnel/seatunnelX/internal/seatunnel"
 )
 
 // Common service errors / 常见服务错误
@@ -48,13 +49,13 @@ var (
 // SeaTunnel Maven 仓库和文档 URL
 const (
 	// Maven repository URL for fetching connector list / Maven 仓库 URL，用于获取连接器列表
-	MavenRepoBaseURL     = "https://repo.maven.apache.org/maven2/org/apache/seatunnel"
+	MavenRepoBaseURL = "https://repo.maven.apache.org/maven2/org/apache/seatunnel"
 	// SeaTunnel documentation URL for connector docs / SeaTunnel 文档 URL，用于连接器文档
 	SeaTunnelDocsBaseURL = "https://seatunnel.apache.org/zh-CN/docs"
 	// Cache duration / 缓存时间
-	PluginCacheDuration  = 24 * time.Hour
+	PluginCacheDuration = 24 * time.Hour
 	// HTTP request timeout for fetching plugin list / 获取插件列表的 HTTP 请求超时
-	PluginFetchTimeout   = 60 * time.Second
+	PluginFetchTimeout = 60 * time.Second
 )
 
 // skipModuleList contains modules to skip when fetching connectors from Maven.
@@ -110,6 +111,7 @@ type Service struct {
 	repo          *Repository
 	clusterGetter ClusterGetter
 	downloader    *Downloader
+	pluginFetcher func(ctx context.Context, version string) ([]Plugin, error)
 
 	// agentCommandSender is used to send commands to agents for plugin installation
 	// agentCommandSender 用于向 Agent 发送命令进行插件安装
@@ -136,31 +138,45 @@ type Service struct {
 // NewService creates a new Service instance.
 // NewService 创建一个新的 Service 实例。
 func NewService(repo *Repository) *Service {
-	return &Service{
+	service := &Service{
 		repo:             repo,
 		downloader:       NewDownloader("./lib/plugins"),
 		cachedPlugins:    make(map[string][]Plugin),
 		pluginsCacheTime: make(map[string]time.Time),
 		installProgress:  make(map[string]*PluginInstallStatus),
 	}
+	service.pluginFetcher = service.fetchPluginsFromDocs
+	return service
 }
 
 // NewServiceWithDownloader creates a new Service instance with a custom downloader.
 // NewServiceWithDownloader 创建一个带有自定义下载器的新 Service 实例。
 func NewServiceWithDownloader(repo *Repository, pluginsDir string) *Service {
-	return &Service{
+	service := &Service{
 		repo:             repo,
 		downloader:       NewDownloader(pluginsDir),
 		cachedPlugins:    make(map[string][]Plugin),
 		pluginsCacheTime: make(map[string]time.Time),
 		installProgress:  make(map[string]*PluginInstallStatus),
 	}
+	service.pluginFetcher = service.fetchPluginsFromDocs
+	return service
 }
 
 // SetClusterGetter sets the cluster getter for version validation.
 // SetClusterGetter 设置集群获取器用于版本校验。
 func (s *Service) SetClusterGetter(getter ClusterGetter) {
 	s.clusterGetter = getter
+}
+
+// SetPluginFetcher sets the plugin list fetcher, mainly used in tests.
+// SetPluginFetcher 设置插件列表获取函数，主要用于测试。
+func (s *Service) SetPluginFetcher(fetcher func(ctx context.Context, version string) ([]Plugin, error)) {
+	if fetcher == nil {
+		s.pluginFetcher = s.fetchPluginsFromDocs
+		return
+	}
+	s.pluginFetcher = fetcher
 }
 
 // ==================== Available Plugins 可用插件 ====================
@@ -171,7 +187,7 @@ func (s *Service) SetClusterGetter(getter ClusterGetter) {
 // 支持多仓库源（apache/aliyun/huaweicloud）。
 func (s *Service) ListAvailablePlugins(ctx context.Context, version string, mirror MirrorSource) (*AvailablePluginsResponse, error) {
 	if version == "" {
-		version = "2.3.12" // Default version / 默认版本
+		version = seatunnel.DefaultVersion() // Default version / 默认版本
 	}
 
 	if mirror == "" {
@@ -185,37 +201,43 @@ func (s *Service) ListAvailablePlugins(ctx context.Context, version string, mirr
 
 	// Get plugins (from cache, online, or fallback)
 	// 获取插件（从缓存、在线或备用列表）
-	plugins := s.getPlugins(ctx, version)
+	plugins, source, cacheHit := s.getPlugins(ctx, version)
 
 	return &AvailablePluginsResponse{
-		Plugins: plugins,
-		Total:   len(plugins),
-		Version: version,
-		Mirror:  string(mirror),
+		Plugins:  plugins,
+		Total:    len(plugins),
+		Version:  version,
+		Mirror:   string(mirror),
+		Source:   source,
+		CacheHit: cacheHit,
 	}, nil
 }
 
 // getPlugins returns the plugin list, using cache if valid, otherwise fetching from Maven.
 // getPlugins 返回插件列表，如果缓存有效则使用缓存，否则从 Maven 获取。
-func (s *Service) getPlugins(ctx context.Context, version string) []Plugin {
+func (s *Service) getPlugins(ctx context.Context, version string) ([]Plugin, PluginListSource, bool) {
 	s.pluginsMu.RLock()
 	// Check if cache is valid / 检查缓存是否有效
 	if plugins, ok := s.cachedPlugins[version]; ok {
 		if cacheTime, exists := s.pluginsCacheTime[version]; exists {
 			if time.Since(cacheTime) < PluginCacheDuration {
 				s.pluginsMu.RUnlock()
-				return plugins
+				return plugins, PluginListSourceCache, true
 			}
 		}
 	}
 	s.pluginsMu.RUnlock()
 
 	// Fetch from Maven repository / 从 Maven 仓库获取
-	plugins, err := s.fetchPluginsFromDocs(ctx, version)
+	fetcher := s.pluginFetcher
+	if fetcher == nil {
+		fetcher = s.fetchPluginsFromDocs
+	}
+	plugins, err := fetcher(ctx, version)
 	if err != nil {
 		// Return empty list on error / 出错时返回空列表
 		fmt.Printf("[Plugin] Failed to fetch plugins from Maven: %v\n", err)
-		return []Plugin{}
+		return []Plugin{}, PluginListSourceRemote, false
 	}
 
 	// Update cache / 更新缓存
@@ -224,7 +246,7 @@ func (s *Service) getPlugins(ctx context.Context, version string) []Plugin {
 	s.pluginsCacheTime[version] = time.Now()
 	s.pluginsMu.Unlock()
 
-	return plugins
+	return plugins, PluginListSourceRemote, false
 }
 
 // fetchPluginsFromDocs fetches plugin list from Maven repository.
@@ -333,7 +355,7 @@ func (s *Service) fetchConnectorsFromMaven(ctx context.Context, version string) 
 // checkConnectorVersion 检查连接器在 Maven 中是否有指定版本。
 func (s *Service) checkConnectorVersion(ctx context.Context, artifactID, version string) (bool, error) {
 	url := fmt.Sprintf("%s/%s/", MavenRepoBaseURL, artifactID)
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -372,7 +394,7 @@ func (s *Service) createPluginFromArtifactID(artifactID, version string) Plugin 
 	// Extract plugin name from artifact ID / 从 artifact ID 提取插件名称
 	// connector-jdbc -> jdbc, connector-cdc-mysql -> cdc-mysql
 	name := strings.TrimPrefix(artifactID, "connector-")
-	
+
 	// Generate display name: title case with dashes replaced by spaces
 	// 生成显示名称：首字母大写，横杠替换为空格
 	displayName := strings.Title(strings.ReplaceAll(name, "-", " "))
@@ -388,8 +410,6 @@ func (s *Service) createPluginFromArtifactID(artifactID, version string) Plugin 
 		DocURL:      fmt.Sprintf("%s/%s/connector-v2", SeaTunnelDocsBaseURL, version),
 	}
 }
-
-
 
 // getArtifactID returns the Maven artifact ID for a plugin name.
 // getArtifactID 返回插件名称对应的 Maven artifact ID。
@@ -420,7 +440,7 @@ func (s *Service) RefreshPlugins(ctx context.Context, version string) ([]Plugin,
 // GetPluginInfo 返回特定插件的详细信息。
 func (s *Service) GetPluginInfo(ctx context.Context, name string, version string) (*Plugin, error) {
 	if version == "" {
-		version = "2.3.12"
+		version = seatunnel.DefaultVersion()
 	}
 
 	// Normalize name to lowercase for comparison / 将名称转换为小写进行比较
@@ -439,7 +459,7 @@ func (s *Service) GetPluginInfo(ctx context.Context, name string, version string
 	s.pluginsMu.RUnlock()
 
 	// If not found in cache, try to fetch from Maven / 如果缓存中没有，尝试从 Maven 获取
-	fetchedPlugins := s.getPlugins(ctx, version)
+	fetchedPlugins, _, _ := s.getPlugins(ctx, version)
 	for _, p := range fetchedPlugins {
 		if strings.ToLower(p.Name) == normalizedName {
 			return &p, nil
@@ -562,7 +582,7 @@ func (s *Service) DisablePlugin(ctx context.Context, clusterID uint, pluginName 
 // DownloadPlugin 下载插件到 Control Plane 本地存储。
 func (s *Service) DownloadPlugin(ctx context.Context, name, version string, mirror MirrorSource) (*DownloadProgress, error) {
 	if version == "" {
-		version = "2.3.12" // Default version / 默认版本
+		version = seatunnel.DefaultVersion() // Default version / 默认版本
 	}
 
 	if mirror == "" {
@@ -659,26 +679,26 @@ func (s *Service) ListLocalPlugins() ([]LocalPlugin, error) {
 // DownloadAllPluginsProgress represents the progress of downloading all plugins.
 // DownloadAllPluginsProgress 表示下载所有插件的进度。
 type DownloadAllPluginsProgress struct {
-	Total      int    `json:"total"`       // 总插件数 / Total plugins
-	Downloaded int    `json:"downloaded"`  // 已下载数 / Downloaded count
-	Failed     int    `json:"failed"`      // 失败数 / Failed count
-	Skipped    int    `json:"skipped"`     // 跳过数（已存在）/ Skipped count (already exists)
-	Status     string `json:"status"`      // 状态 / Status
-	Message    string `json:"message"`     // 消息 / Message
+	Total      int    `json:"total"`      // 总插件数 / Total plugins
+	Downloaded int    `json:"downloaded"` // 已下载数 / Downloaded count
+	Failed     int    `json:"failed"`     // 失败数 / Failed count
+	Skipped    int    `json:"skipped"`    // 跳过数（已存在）/ Skipped count (already exists)
+	Status     string `json:"status"`     // 状态 / Status
+	Message    string `json:"message"`    // 消息 / Message
 }
 
 // DownloadAllPlugins downloads all available plugins for a version.
 // DownloadAllPlugins 下载指定版本的所有可用插件。
 func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror MirrorSource) (*DownloadAllPluginsProgress, error) {
 	if version == "" {
-		version = "2.3.12"
+		version = seatunnel.DefaultVersion()
 	}
 	if mirror == "" {
 		mirror = MirrorSourceApache
 	}
 
 	// Get all available plugins / 获取所有可用插件
-	plugins := s.getPlugins(ctx, version)
+	plugins, _, _ := s.getPlugins(ctx, version)
 	if len(plugins) == 0 {
 		return nil, fmt.Errorf("no plugins found for version %s / 未找到版本 %s 的插件", version, version)
 	}
@@ -694,7 +714,7 @@ func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror
 		downloadCtx := context.Background()
 		for i := range plugins {
 			plugin := &plugins[i]
-			
+
 			// Check if already downloaded / 检查是否已下载
 			if s.downloader.IsConnectorDownloaded(plugin.Name, version) {
 				progress.Skipped++

@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 'use client';
 
 /**
@@ -248,7 +265,7 @@ export function ClusterMain() {
 
       <Separator />
 
-      {/* Filters / 过滤器 */}
+      {/* Filters / 过滤器 - 左对齐 */}
       <motion.div
         className='flex flex-wrap gap-4 items-end'
         variants={itemVariants}
@@ -322,7 +339,7 @@ export function ClusterMain() {
             {t('cluster.noClusters')}
           </div>
         ) : (
-          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+          <div className='grid grid-cols-[repeat(auto-fill,minmax(400px,400px))] gap-5'>
             {clusters.map((cluster) => (
               <ClusterCard
                 key={cluster.id}

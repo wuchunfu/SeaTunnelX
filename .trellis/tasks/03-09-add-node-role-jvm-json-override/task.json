@@ -1,0 +1,57 @@
+{
+  "id": "add-node-role-jvm-json-override",
+  "name": "add-node-role-jvm-json-override",
+  "title": "redesign add-node role selection and node-level JVM override",
+  "description": "Fix Add Node UX/data model: hybrid mode should be fixed to master/worker, separated mode should support same-host dual roles, and node-level JVM customization should adopt scheme B via JSON overrides.",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": "cluster",
+  "priority": "P1",
+  "creator": "openai-agent",
+  "assignee": "openai-agent",
+  "createdAt": "2026-03-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "analysis/alerting-notification-gap",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "frontend/components/common/cluster/AddNodeDialog.tsx",
+    "frontend/components/common/cluster/EditNodeDialog.tsx",
+    "frontend/lib/services/cluster/types.ts",
+    "frontend/lib/i18n/locales/zh.json",
+    "frontend/lib/i18n/locales/en.json",
+    "internal/apps/cluster/model.go",
+    "internal/apps/cluster/service.go",
+    "internal/apps/cluster/repository.go",
+    "internal/apps/cluster/handler.go",
+    "internal/db/migrator/migrator.go",
+    "internal/apps/installer/types.go",
+    "internal/apps/installer/service.go"
+  ],
+  "notes": "方案 B 已确认：节点级自定义配置采用 JSON overrides，优先落 JVM override。",
+  "meta": {}
+}

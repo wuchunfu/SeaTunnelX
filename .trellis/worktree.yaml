@@ -1,0 +1,62 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Worktree Configuration for Multi-Agent Pipeline
+# Used for worktree initialization in multi-agent workflows
+#
+# All paths are relative to project root
+
+#-------------------------------------------------------------------------------
+# Paths
+#-------------------------------------------------------------------------------
+
+# Worktree storage directory (relative to project root)
+worktree_dir: ../trellis-worktrees
+
+#-------------------------------------------------------------------------------
+# Files to Copy
+#-------------------------------------------------------------------------------
+
+# Files to copy to each worktree (each worktree needs independent copy)
+# These files contain sensitive info or need worktree-independent config
+copy:
+  # Environment variables (uncomment and customize as needed)
+  # - .env
+  # - .env.local
+  # Workflow config
+  - .trellis/.developer
+
+#-------------------------------------------------------------------------------
+# Post-Create Hooks
+#-------------------------------------------------------------------------------
+
+# Commands to run after creating worktree
+# Executed in worktree directory, in order, abort on failure
+post_create:
+  # Install dependencies (uncomment based on your package manager)
+  # - npm install
+  # - pnpm install --frozen-lockfile
+  # - yarn install --frozen-lockfile
+
+#-------------------------------------------------------------------------------
+# Check Agent Verification (Ralph Loop)
+#-------------------------------------------------------------------------------
+
+# Commands to verify code quality before allowing check agent to finish
+# If configured, Ralph Loop will run these commands - all must pass to allow completion
+# If not configured or empty, trusts agent's completion markers
+verify:
+  # - pnpm lint
+  # - pnpm typecheck

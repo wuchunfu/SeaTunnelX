@@ -1,7 +1,26 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
+  // Generate deployable Node server bundle in .next/standalone
+  output: 'standalone',
   eslint: {
     // 只在构建时跳过 ESLint，开发时照常在编辑器里提示
     ignoreDuringBuilds: true,
@@ -10,7 +29,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_BACKEND_BASE_URL || 'http://localhost:8000'}/api/:path*`,
+        destination: `${process.env.NEXT_PUBLIC_BACKEND_BASE_URL || 'http://127.0.0.1:8000'}/api/:path*`,
       },
     ];
   },
@@ -29,7 +48,7 @@ const nextConfig: NextConfig = {
             key: 'Access-Control-Allow-Origin',
             value:
               process.env.NEXT_PUBLIC_FRONTEND_BASE_URL ||
-              'http://localhost:3000',
+              'http://38.55.133.202:80',
           },
           {
             key: 'Access-Control-Allow-Methods',

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * MIT License
  *
  * Copyright (c) 2025 linux.do
@@ -25,13 +25,15 @@
 package router
 
 import (
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/seatunnel/seatunnelX/internal/logger"
 	"github.com/seatunnel/seatunnelX/internal/otel_trace"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"strconv"
-	"time"
 )
 
 func loggerMiddleware() gin.HandlerFunc {
@@ -44,7 +46,8 @@ func loggerMiddleware() gin.HandlerFunc {
 		start := time.Now()
 
 		// 记录请求路径和 Query
-		path := c.Request.URL.Path
+		requestPath := c.Request.URL.Path
+		path := requestPath
 		raw := c.Request.URL.RawQuery
 		if raw != "" {
 			path = path + "?" + raw
@@ -57,19 +60,39 @@ func loggerMiddleware() gin.HandlerFunc {
 		end := time.Now()
 		latency := end.Sub(start)
 
-		// 打印日志
-		logger.InfoF(
-			ctx,
-			"[LoggerMiddleware] %s %s\nStartTime: %s\nEndTime: %s\nLatency: %d\nClientIP: %s\nResponse: %d %d",
-			c.Request.Method,
-			path,
-			start.Format(time.RFC3339),
-			end.Format(time.RFC3339),
-			latency.Milliseconds(),
-			c.ClientIP(),
-			c.Writer.Status(),
-			c.Writer.Size(),
-		)
+		// 打印日志（Grafana Live WS 和 Prometheus datasource query 属于高频噪音请求，默认不打印）
+		switch {
+		case isGrafanaLiveWSPath(requestPath):
+			// no-op
+		case isGrafanaPrometheusQueryPath(requestPath):
+			// no-op
+		case isGrafanaStaticAssetPath(requestPath):
+			logger.DebugF(
+				ctx,
+				"[LoggerMiddleware] %s %s\nStartTime: %s\nEndTime: %s\nLatency: %d\nClientIP: %s\nResponse: %d %d",
+				c.Request.Method,
+				path,
+				start.Format(time.RFC3339),
+				end.Format(time.RFC3339),
+				latency.Milliseconds(),
+				c.ClientIP(),
+				c.Writer.Status(),
+				c.Writer.Size(),
+			)
+		default:
+			logger.InfoF(
+				ctx,
+				"[LoggerMiddleware] %s %s\nStartTime: %s\nEndTime: %s\nLatency: %d\nClientIP: %s\nResponse: %d %d",
+				c.Request.Method,
+				path,
+				start.Format(time.RFC3339),
+				end.Format(time.RFC3339),
+				latency.Milliseconds(),
+				c.ClientIP(),
+				c.Writer.Status(),
+				c.Writer.Size(),
+			)
+		}
 
 		// 设置 Span 状态
 		if c.Writer.Status() >= 400 {
@@ -77,4 +100,22 @@ func loggerMiddleware() gin.HandlerFunc {
 			span.SetStatus(codes.Error, strconv.Itoa(c.Writer.Status()))
 		}
 	}
+}
+
+func isGrafanaLiveWSPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/monitoring/proxy/grafana/api/live/ws")
+}
+
+func isGrafanaStaticAssetPath(path string) bool {
+	if !strings.HasPrefix(path, "/api/v1/monitoring/proxy/grafana/") {
+		return false
+	}
+	// 仅对静态资源降级日志级别，便于保留核心 API 行为日志。
+	return strings.Contains(path, "/public/")
+}
+
+func isGrafanaPrometheusQueryPath(path string) bool {
+	// Grafana -> Prometheus datasource 查询，通过 SeatunnelX 代理到 /api/ds/query
+	// 这些请求频率较高且内容重复，默认不打印以减少日志噪音。
+	return strings.HasPrefix(path, "/api/v1/monitoring/proxy/grafana/api/ds/query")
 }

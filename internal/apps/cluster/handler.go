@@ -24,6 +24,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/seatunnel/seatunnelX/internal/apps/audit"
@@ -34,8 +35,26 @@ import (
 // Handler provides HTTP handlers for cluster management operations.
 // Handler 提供集群管理操作的 HTTP 处理器。
 type Handler struct {
-	service   *Service
-	auditRepo *audit.Repository
+	service             *Service
+	auditRepo           *audit.Repository
+	onOperationExecuted func(context.Context, *OperationEvent) error
+}
+
+// OperationEvent represents one cluster operation notification hook payload.
+// OperationEvent 表示一条集群操作通知钩子载荷。
+type OperationEvent struct {
+	ClusterID   uint
+	ClusterName string
+	NodeID      uint
+	HostID      uint
+	HostName    string
+	HostIP      string
+	Role        string
+	Operation   OperationType
+	Success     bool
+	Message     string
+	Operator    string
+	Trigger     string
 }
 
 // NewHandler creates a new Handler instance.
@@ -43,6 +62,57 @@ type Handler struct {
 // auditRepo may be nil; audit logging is skipped when nil.
 func NewHandler(service *Service, auditRepo *audit.Repository) *Handler {
 	return &Handler{service: service, auditRepo: auditRepo}
+}
+
+// SetOnOperationExecuted sets an optional hook invoked after a cluster operation HTTP request succeeds.
+// SetOnOperationExecuted 设置集群操作 HTTP 请求成功后的可选回调。
+func (h *Handler) SetOnOperationExecuted(fn func(context.Context, *OperationEvent) error) {
+	h.onOperationExecuted = fn
+}
+
+func (h *Handler) notifyOperationExecuted(ctx context.Context, event *OperationEvent) {
+	if h == nil || h.onOperationExecuted == nil || event == nil {
+		return
+	}
+	if err := h.onOperationExecuted(ctx, event); err != nil {
+		logger.WarnF(ctx, "[Cluster] operation event hook failed: cluster_id=%d, operation=%s, err=%v", event.ClusterID, event.Operation, err)
+	}
+}
+
+func (h *Handler) buildNodeOperationEvent(ctx context.Context, clusterID uint, nodeID uint, operation OperationType, result *OperationResult, operator string) *OperationEvent {
+	if h == nil || h.service == nil {
+		return nil
+	}
+
+	clusterName, _ := h.service.GetClusterNodeDisplayInfo(ctx, clusterID, nodeID)
+	event := &OperationEvent{
+		ClusterID:   clusterID,
+		ClusterName: clusterName,
+		NodeID:      nodeID,
+		Operation:   operation,
+		Success:     result != nil && result.Success,
+		Operator:    strings.TrimSpace(operator),
+		Trigger:     "manual_api",
+	}
+	if result != nil {
+		event.Message = strings.TrimSpace(result.Message)
+	}
+
+	nodes, err := h.service.GetNodes(ctx, clusterID)
+	if err != nil {
+		return event
+	}
+	for _, node := range nodes {
+		if node == nil || node.ID != nodeID {
+			continue
+		}
+		event.HostID = node.HostID
+		event.HostName = strings.TrimSpace(node.HostName)
+		event.HostIP = strings.TrimSpace(node.HostIP)
+		event.Role = strings.TrimSpace(string(node.Role))
+		break
+	}
+	return event
 }
 
 // ==================== Request/Response Types 请求/响应类型 ====================
@@ -560,6 +630,15 @@ func (h *Handler) RestartCluster(c *gin.Context) {
 	_ = audit.RecordFromGin(c, h.auditRepo, auth.GetUserIDFromContext(c), auth.GetUsernameFromContext(c),
 		"restart", "cluster", audit.UintID(uint(clusterID)), clusterName, audit.AuditDetails{"trigger": "manual"})
 	logger.InfoF(c.Request.Context(), "[Cluster] 重启集群: cluster_id=%d, success=%v", clusterID, result.Success)
+	h.notifyOperationExecuted(c.Request.Context(), &OperationEvent{
+		ClusterID:   uint(clusterID),
+		ClusterName: clusterName,
+		Operation:   OperationRestart,
+		Success:     result.Success,
+		Message:     result.Message,
+		Operator:    auth.GetUsernameFromContext(c),
+		Trigger:     "manual_api",
+	})
 	c.JSON(http.StatusOK, ClusterOperationResponse{Data: result})
 }
 
@@ -741,6 +820,14 @@ func (h *Handler) StopNode(c *gin.Context) {
 	_ = audit.RecordFromGin(c, h.auditRepo, auth.GetUserIDFromContext(c), auth.GetUsernameFromContext(c),
 		"stop_node", "cluster_node", resID, resourceName, audit.AuditDetails{"trigger": "manual"})
 	logger.InfoF(c.Request.Context(), "[Cluster] 停止节点: cluster_id=%d, node_id=%d, success=%v", clusterID, nodeID, result.Success)
+	h.notifyOperationExecuted(c.Request.Context(), h.buildNodeOperationEvent(
+		c.Request.Context(),
+		uint(clusterID),
+		uint(nodeID),
+		OperationStop,
+		result,
+		auth.GetUsernameFromContext(c),
+	))
 	c.JSON(http.StatusOK, ClusterOperationResponse{Data: result})
 }
 
@@ -775,6 +862,14 @@ func (h *Handler) RestartNode(c *gin.Context) {
 	_ = audit.RecordFromGin(c, h.auditRepo, auth.GetUserIDFromContext(c), auth.GetUsernameFromContext(c),
 		"restart_node", "cluster_node", resID, resourceName, audit.AuditDetails{"trigger": "manual"})
 	logger.InfoF(c.Request.Context(), "[Cluster] 重启节点: cluster_id=%d, node_id=%d, success=%v", clusterID, nodeID, result.Success)
+	h.notifyOperationExecuted(c.Request.Context(), h.buildNodeOperationEvent(
+		c.Request.Context(),
+		uint(clusterID),
+		uint(nodeID),
+		OperationRestart,
+		result,
+		auth.GetUsernameFromContext(c),
+	))
 	c.JSON(http.StatusOK, ClusterOperationResponse{Data: result})
 }
 

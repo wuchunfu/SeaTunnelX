@@ -23,6 +23,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/seatunnel/seatunnelX/internal/seatunnel"
 )
 
 // TestFetchVersionsFromApache tests fetching versions from Apache Archive
@@ -76,7 +78,7 @@ func TestFetchVersionsFromApache(t *testing.T) {
 		// 我们无法直接测试 fetchVersionsFromApache 因为它使用硬编码的 URL
 		// 所以测试函数中使用的正则表达式模式
 
-		service := NewService(t.TempDir())
+		service := NewService(t.TempDir(), nil)
 		ctx := context.Background()
 
 		// Test that getVersions returns fallback versions when cache is empty
@@ -167,7 +169,7 @@ func TestParseVersionPart(t *testing.T) {
 // TestVersionCache tests version caching behavior
 // TestVersionCache 测试版本缓存行为
 func TestVersionCache(t *testing.T) {
-	service := NewService(t.TempDir())
+	service := NewService(t.TempDir(), nil)
 	ctx := context.Background()
 
 	// Set cached versions manually / 手动设置缓存版本
@@ -190,27 +192,28 @@ func TestVersionCache(t *testing.T) {
 // TestFallbackVersions 测试当获取失败时使用备用版本
 func TestFallbackVersions(t *testing.T) {
 	// Verify FallbackVersions is not empty / 验证 FallbackVersions 不为空
-	if len(FallbackVersions) == 0 {
+	fallbackVersions := seatunnel.FallbackVersions()
+	if len(fallbackVersions) == 0 {
 		t.Error("FallbackVersions should not be empty")
 	}
 
 	// Verify recommended version is in fallback list / 验证推荐版本在备用列表中
 	found := false
-	for _, v := range FallbackVersions {
-		if v == RecommendedVersion {
+	for _, v := range fallbackVersions {
+		if v == seatunnel.RecommendedVersion() {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("RecommendedVersion %s should be in FallbackVersions", RecommendedVersion)
+		t.Errorf("RecommendedVersion %s should be in FallbackVersions", seatunnel.RecommendedVersion())
 	}
 }
 
 // TestRefreshVersions tests the RefreshVersions method
 // TestRefreshVersions 测试 RefreshVersions 方法
 func TestRefreshVersions(t *testing.T) {
-	service := NewService(t.TempDir())
+	service := NewService(t.TempDir(), nil)
 	ctx := context.Background()
 
 	// RefreshVersions should return versions (either from Apache or fallback)
@@ -239,7 +242,7 @@ func TestFetchVersionsFromApacheIntegration(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	service := NewService(t.TempDir())
+	service := NewService(t.TempDir(), nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /**
  * Installer Hooks
  * 安装管理 Hooks
@@ -5,8 +22,8 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { installerService } from '@/lib/services/installer';
+import {useState, useEffect, useCallback, useRef} from 'react';
+import {installerService} from '@/lib/services/installer';
 import type {
   AvailableVersions,
   PackageInfo,
@@ -14,7 +31,6 @@ import type {
   PrecheckRequest,
   InstallationStatus,
   InstallationRequest,
-  InstallStep,
   DeploymentMode,
   NodeRole,
   InstallMode,
@@ -34,7 +50,10 @@ interface UsePackagesReturn {
   refresh: () => Promise<void>;
   uploadPackage: (file: File, version: string) => Promise<PackageInfo>;
   deletePackage: (version: string) => Promise<void>;
-  startDownload: (version: string, mirror?: MirrorSource) => Promise<DownloadTask>;
+  startDownload: (
+    version: string,
+    mirror?: MirrorSource,
+  ) => Promise<DownloadTask>;
   downloads: DownloadTask[];
   refreshDownloads: () => Promise<void>;
   refreshVersions: () => Promise<void>;
@@ -70,21 +89,21 @@ export function usePackages(): UsePackagesReturn {
     try {
       const data = await installerService.listDownloads();
       setDownloads(data);
-      
+
       // Check if any download is in progress / 检查是否有下载正在进行
       const hasActiveDownload = data.some(
-        (d) => d.status === 'downloading' || d.status === 'pending'
+        (d) => d.status === 'downloading' || d.status === 'pending',
       );
-      
+
       // Start or stop polling based on active downloads / 根据活动下载启动或停止轮询
       if (hasActiveDownload && !pollingRef.current) {
         pollingRef.current = setInterval(async () => {
           const updated = await installerService.listDownloads();
           setDownloads(updated);
-          
+
           // Check if download completed, refresh packages / 检查下载是否完成，刷新安装包列表
           const stillActive = updated.some(
-            (d) => d.status === 'downloading' || d.status === 'pending'
+            (d) => d.status === 'downloading' || d.status === 'pending',
           );
           if (!stillActive) {
             if (pollingRef.current) {
@@ -99,7 +118,7 @@ export function usePackages(): UsePackagesReturn {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
-    } catch (err) {
+    } catch {
       // Ignore errors for download list / 忽略下载列表的错误
     }
   }, [fetchPackages]);
@@ -107,7 +126,7 @@ export function usePackages(): UsePackagesReturn {
   useEffect(() => {
     fetchPackages();
     fetchDownloads();
-    
+
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
@@ -115,22 +134,31 @@ export function usePackages(): UsePackagesReturn {
     };
   }, [fetchPackages, fetchDownloads]);
 
-  const uploadPackage = useCallback(async (file: File, version: string) => {
-    const result = await installerService.uploadPackage(file, version);
-    await fetchPackages(); // Refresh list after upload
-    return result;
-  }, [fetchPackages]);
+  const uploadPackage = useCallback(
+    async (file: File, version: string) => {
+      const result = await installerService.uploadPackage(file, version);
+      await fetchPackages(); // Refresh list after upload
+      return result;
+    },
+    [fetchPackages],
+  );
 
-  const deletePackage = useCallback(async (version: string) => {
-    await installerService.deletePackage(version);
-    await fetchPackages(); // Refresh list after delete
-  }, [fetchPackages]);
+  const deletePackage = useCallback(
+    async (version: string) => {
+      await installerService.deletePackage(version);
+      await fetchPackages(); // Refresh list after delete
+    },
+    [fetchPackages],
+  );
 
-  const startDownload = useCallback(async (version: string, mirror?: MirrorSource) => {
-    const task = await installerService.startDownload(version, mirror);
-    await fetchDownloads(); // Start polling
-    return task;
-  }, [fetchDownloads]);
+  const startDownload = useCallback(
+    async (version: string, mirror?: MirrorSource) => {
+      const task = await installerService.startDownload(version, mirror);
+      await fetchDownloads(); // Start polling
+      return task;
+    },
+    [fetchDownloads],
+  );
 
   const refreshVersions = useCallback(async () => {
     try {
@@ -148,7 +176,9 @@ export function usePackages(): UsePackagesReturn {
         setError(result.warning);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to refresh versions');
+      setError(
+        err instanceof Error ? err.message : 'Failed to refresh versions',
+      );
     } finally {
       setRefreshingVersions(false);
     }
@@ -188,21 +218,24 @@ export function usePrecheck(hostId: number | string): UsePrecheckReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const runPrecheck = useCallback(async (options?: PrecheckRequest) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await installerService.runPrecheck(hostId, options);
-      setResult(data);
-      return data;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Precheck failed';
-      setError(message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [hostId]);
+  const runPrecheck = useCallback(
+    async (options?: PrecheckRequest) => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await installerService.runPrecheck(hostId, options);
+        setResult(data);
+        return data;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Precheck failed';
+        setError(message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [hostId],
+  );
 
   const reset = useCallback(() => {
     setResult(null);
@@ -224,7 +257,9 @@ interface UseInstallationReturn {
   status: InstallationStatus | null;
   loading: boolean;
   error: string | null;
-  startInstallation: (request: Omit<InstallationRequest, 'host_id'>) => Promise<InstallationStatus>;
+  startInstallation: (
+    request: Omit<InstallationRequest, 'host_id'>,
+  ) => Promise<InstallationStatus>;
   retryStep: (step: string) => Promise<InstallationStatus>;
   cancelInstallation: () => Promise<InstallationStatus>;
   refresh: () => Promise<InstallationStatus | null>;
@@ -237,7 +272,7 @@ interface UseInstallationReturn {
  */
 export function useInstallation(
   hostId: number | string,
-  pollInterval: number = 2000
+  pollInterval: number = 2000,
 ): UseInstallationReturn {
   const [status, setStatus] = useState<InstallationStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -295,14 +330,15 @@ export function useInstallation(
         setStatus(data);
         return data;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Installation failed';
+        const message =
+          err instanceof Error ? err.message : 'Installation failed';
         setError(message);
         throw err;
       } finally {
         setLoading(false);
       }
     },
-    [hostId]
+    [hostId],
   );
 
   const retryStep = useCallback(
@@ -321,7 +357,7 @@ export function useInstallation(
         setLoading(false);
       }
     },
-    [hostId]
+    [hostId],
   );
 
   const cancelInstallation = useCallback(async () => {
@@ -381,7 +417,7 @@ interface UseInstallWizardReturn {
 }
 
 const defaultConfig: InstallWizardConfig = {
-  version: '2.3.12',
+  version: '',
   installMode: 'online',
   mirror: 'aliyun',
   packagePath: '',
@@ -413,7 +449,7 @@ export function useInstallWizard(): UseInstallWizardReturn {
   const [config, setConfig] = useState<InstallWizardConfig>(defaultConfig);
 
   const updateConfig = useCallback((updates: Partial<InstallWizardConfig>) => {
-    setConfig((prev) => ({ ...prev, ...updates }));
+    setConfig((prev) => ({...prev, ...updates}));
   }, []);
 
   const resetWizard = useCallback(() => {
@@ -426,8 +462,12 @@ export function useInstallWizard(): UseInstallWizardReturn {
       case 'precheck':
         return true; // Can always proceed from precheck (even with warnings)
       case 'config':
-        if (!config.version) return false;
-        if (config.installMode === 'offline' && !config.packagePath) return false;
+        if (!config.version) {
+          return false;
+        }
+        if (config.installMode === 'offline' && !config.packagePath) {
+          return false;
+        }
         return true;
       case 'install':
         return false; // Cannot proceed during installation
@@ -438,18 +478,24 @@ export function useInstallWizard(): UseInstallWizardReturn {
     }
   })();
 
-  const buildInstallRequest = useCallback((): Omit<InstallationRequest, 'host_id'> => {
+  const buildInstallRequest = useCallback((): Omit<
+    InstallationRequest,
+    'host_id'
+  > => {
     return {
       cluster_id: config.clusterId || undefined,
       version: config.version,
       install_mode: config.installMode,
       mirror: config.installMode === 'online' ? config.mirror : undefined,
-      package_path: config.installMode === 'offline' ? config.packagePath : undefined,
+      package_path:
+        config.installMode === 'offline' ? config.packagePath : undefined,
       deployment_mode: config.deploymentMode,
       node_role: config.nodeRole,
       jvm: config.jvm,
       checkpoint: config.checkpoint,
-      connector: config.connector.install_connectors ? config.connector : undefined,
+      connector: config.connector.install_connectors
+        ? config.connector
+        : undefined,
     };
   }, [config]);
 

@@ -1,0 +1,51 @@
+{
+  "id": "abnormal-auto-recovery-task",
+  "name": "abnormal-auto-recovery-task",
+  "title": "design abnormal auto recovery feature and task flow",
+  "description": "Define the abnormal auto recovery feature as a Trellis planning task, including product interaction, backend policy/task model, and Doris Manager style step/log visibility requirements.",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "cluster",
+  "priority": "P1",
+  "creator": "openai-agent",
+  "assignee": "openai-agent",
+  "createdAt": "2026-03-10",
+  "completedAt": "2026-03-10",
+  "branch": null,
+  "base_branch": "analysis/alerting-notification-gap",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/st-upgrade-mvp-design.md",
+    "docs/observability-remote-design.md",
+    "frontend/lib/i18n/locales/zh.json",
+    "frontend/lib/i18n/locales/en.json",
+    "internal/apps/cluster",
+    "internal/pkg"
+  ],
+  "notes": "用户已明确：这里的 task 指 Trellis 任务，而不是业务域内的 recovery task。",
+  "meta": {}
+}

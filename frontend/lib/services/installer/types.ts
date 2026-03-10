@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 /**
  * SeaTunnel Installer Types
  * SeaTunnel 安装管理类型定义
@@ -176,6 +193,7 @@ export interface InstallationRequest {
   master_addresses?: string[]; // Master node addresses for cluster configuration / 集群配置的 master 节点地址
   worker_addresses?: string[]; // Worker node addresses for separated mode / 分离模式的 worker 节点地址
   cluster_port?: number; // Cluster communication port / 集群通信端口
+  worker_port?: number; // Worker hazelcast port / Worker Hazelcast 端口
   http_port?: number; // HTTP API port / HTTP API 端口
   jvm?: JVMConfig;
   checkpoint?: CheckpointConfig;

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * MIT License
  *
  * Copyright (c) 2025 linux.do
@@ -37,8 +37,10 @@ import (
 	appconfig "github.com/seatunnel/seatunnelX/internal/apps/config"
 	"github.com/seatunnel/seatunnelX/internal/apps/host"
 	"github.com/seatunnel/seatunnelX/internal/apps/monitor"
+	monitoringapp "github.com/seatunnel/seatunnelX/internal/apps/monitoring"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
 	"github.com/seatunnel/seatunnelX/internal/apps/project"
+	"github.com/seatunnel/seatunnelX/internal/apps/stupgrade"
 	"github.com/seatunnel/seatunnelX/internal/config"
 	"github.com/seatunnel/seatunnelX/internal/db"
 	"gorm.io/gorm"
@@ -69,18 +71,41 @@ func Migrate() {
 		&project.ProjectItem{}, // 项目条目表 / Project item table
 		&project.ProjectTag{},  // 项目标签表 / Project tag table
 		&project.ProjectReport{},
-		&audit.CommandLog{},              // 命令日志表 / Command log table
-		&audit.AuditLog{},                // 审计日志表 / Audit log table
-		&plugin.InstalledPlugin{},        // 已安装插件表 / Installed plugin table
-		&plugin.PluginDependencyConfig{}, // 插件依赖配置表 / Plugin dependency config table
-		&appconfig.Config{},              // 配置文件表 / Config file table
-		&appconfig.ConfigVersion{},       // 配置版本表 / Config version table
-		&monitor.MonitorConfig{},         // 监控配置表 / Monitor config table (Requirements: 5.2)
-		&monitor.ProcessEvent{},          // 进程事件表 / Process event table (Requirements: 6.1)
+		&audit.CommandLog{},                   // 命令日志表 / Command log table
+		&audit.AuditLog{},                     // 审计日志表 / Audit log table
+		&plugin.InstalledPlugin{},             // 已安装插件表 / Installed plugin table
+		&plugin.PluginDependencyConfig{},      // 插件依赖配置表 / Plugin dependency config table
+		&appconfig.Config{},                   // 配置文件表 / Config file table
+		&appconfig.ConfigVersion{},            // 配置版本表 / Config version table
+		&monitor.MonitorConfig{},              // 监控配置表 / Monitor config table (Requirements: 5.2)
+		&monitor.ProcessEvent{},               // 进程事件表 / Process event table (Requirements: 6.1)
+		&monitoringapp.AlertRule{},            // 监控告警规则表 / Monitoring alert rule table
+		&monitoringapp.AlertPolicy{},          // 统一告警策略表 / Unified alert policy table
+		&monitoringapp.AlertEventState{},      // 告警事件状态表 / Alert event state table
+		&monitoringapp.AlertState{},           // 统一告警状态表 / Unified alert state table
+		&monitoringapp.NotificationChannel{},  // 通知渠道表 / Notification channel table
+		&monitoringapp.NotificationRoute{},    // 通知路由表 / Notification route table
+		&monitoringapp.NotificationDelivery{}, // 通知投递记录表 / Notification delivery table
+		&monitoringapp.RemoteAlertRecord{},    // 远程告警记录表 / Remote alert record table
+		&stupgrade.UpgradePlanRecord{},        // SeaTunnel 升级计划表 / SeaTunnel upgrade plan table
+		&stupgrade.UpgradeTask{},              // SeaTunnel 升级任务表 / SeaTunnel upgrade task table
+		&stupgrade.UpgradeTaskStep{},          // SeaTunnel 升级步骤表 / SeaTunnel upgrade step table
+		&stupgrade.UpgradeNodeExecution{},     // SeaTunnel 升级节点执行表 / SeaTunnel upgrade node execution table
+		&stupgrade.UpgradeStepLog{},           // SeaTunnel 升级日志表 / SeaTunnel upgrade log table
 	); err != nil {
 		log.Fatalf("[Database] auto migrate failed: %v\n", err)
 	}
 	log.Printf("[Database] auto migrate success\n")
+
+	upgradeMigrator := db.GetDB(context.Background()).Migrator()
+	if upgradeMigrator.HasIndex(&stupgrade.UpgradeTaskStep{}, "idx_st_upgrade_task_step_code") {
+		if err := upgradeMigrator.DropIndex(&stupgrade.UpgradeTaskStep{}, "idx_st_upgrade_task_step_code"); err != nil {
+			log.Printf("[Database] failed to recreate st upgrade task step index: %v\n", err)
+		}
+	}
+	if err := upgradeMigrator.CreateIndex(&stupgrade.UpgradeTaskStep{}, "idx_st_upgrade_task_step_code"); err != nil {
+		log.Printf("[Database] failed to create st upgrade task step index: %v\n", err)
+	}
 
 	// 初始化默认管理员用户
 	if err := initDefaultAdminUser(); err != nil {

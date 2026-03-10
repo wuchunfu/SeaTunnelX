@@ -1,3 +1,20 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import {AuthService} from './auth/index';
 import {ProjectService} from './project/index';
 import {DashboardService} from './dashboard/index';
@@ -9,7 +26,9 @@ import {installerService} from './installer/index';
 import {pluginService} from './plugin/index';
 import {ConfigService} from './config/index';
 import * as MonitorService from './monitor/index';
+import {MonitoringService} from './monitoring/index';
 import * as DiscoveryService from './discovery/index';
+import {StUpgradeService} from './st-upgrade/index';
 
 /**
  * 服务层架构说明：
@@ -141,11 +160,23 @@ const services = {
   monitor: MonitorService,
 
   /**
+   * 监控中心服务
+   * Monitoring center service
+   */
+  monitoring: MonitoringService,
+
+  /**
    * 集群发现服务
    * Cluster discovery service
    * Requirements: 1.2, 1.9, 9.3, 9.4
    */
   discovery: DiscoveryService,
+
+  /**
+   * SeaTunnel 升级服务
+   * SeaTunnel upgrade service
+   */
+  stUpgrade: StUpgradeService,
 };
 
 export default services;

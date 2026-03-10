@@ -1,3 +1,18 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Seatunnel 一站式运维管理平台配置
 # 复制为 config.yaml 使用
 
@@ -191,6 +206,36 @@ telemetry:
   # OTLP 收集器端点（默认 localhost:4317）
   # OTLP collector endpoint (default: localhost:4317)
   endpoint: "localhost:4317"
+
+# 可观测配置（三件套集成）
+# Observability configuration (Prometheus/Grafana/Alertmanager integration)
+observability:
+  # 总开关：关闭后不暴露远程集成接口（HTTP SD / Webhook）
+  # Master switch: when false, remote integration endpoints are disabled
+  enabled: true
+
+  prometheus:
+    # Prometheus Web/Query 地址（用于健康检查与控制台跳转）
+    # Prometheus Web/Query URL (for health checks and console links)
+    url: "http://127.0.0.1:9090"
+    # SeaTunnelX 对外暴露的 HTTP SD 路径
+    # HTTP SD path exposed by SeaTunnelX
+    http_sd_path: "/api/v1/monitoring/prometheus/discovery"
+
+  alertmanager:
+    url: "http://127.0.0.1:9093"
+    # SeaTunnelX 对外暴露的 Alertmanager Webhook 路径
+    # Alertmanager webhook path exposed by SeaTunnelX
+    webhook_path: "/api/v1/monitoring/alertmanager/webhook"
+
+  grafana:
+    url: "http://127.0.0.1:3000"
+
+  seatunnel_metrics:
+    # SeaTunnel metrics path，用于探测是否开启指标推送
+    # SeaTunnel metrics path, used to verify metrics is really enabled
+    path: "/hazelcast/rest/instance/metrics"
+    probe_timeout_seconds: 2
 
 # 定时任务配置
 schedule:

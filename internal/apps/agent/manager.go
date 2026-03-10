@@ -507,6 +507,10 @@ func (m *Manager) HandleHeartbeat(ctx context.Context, req *pb.HeartbeatRequest)
 		return ErrAgentNotFound
 	}
 
+	// Heartbeat proves the Agent is reachable again; recover status from offline/disconnected.
+	// 心跳表明 Agent 已重新可达；将状态从 offline/disconnected 恢复为 connected。
+	conn.SetStatus(AgentStatusConnected)
+
 	// Update heartbeat timestamp
 	// 更新心跳时间戳
 	conn.UpdateHeartbeat()
@@ -539,6 +543,9 @@ func (m *Manager) SetAgentStream(agentID string, stream grpc.BidiStreamingServer
 		return ErrAgentNotFound
 	}
 
+	// A valid command stream means the Agent is connected and can accept commands again.
+	// 有效的命令流意味着 Agent 已重新连接并可再次接收命令。
+	conn.SetStatus(AgentStatusConnected)
 	conn.SetStream(stream)
 	return nil
 }

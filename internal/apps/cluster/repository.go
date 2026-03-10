@@ -348,17 +348,7 @@ func (r *Repository) UpdateNodeStatus(ctx context.Context, nodeID uint, status N
 
 // UpdateNodeProcess updates the process information for a cluster node.
 func (r *Repository) UpdateNodeProcess(ctx context.Context, nodeID uint, pid int, processStatus string) error {
-	result := r.db.WithContext(ctx).Model(&ClusterNode{}).Where("id = ?", nodeID).Updates(map[string]interface{}{
-		"process_pid":    pid,
-		"process_status": processStatus,
-	})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrNodeNotFound
-	}
-	return nil
+	return r.UpdateNodeProcessStatus(ctx, nodeID, pid, processStatus)
 }
 
 // UpdateNode updates a cluster node's configuration.
@@ -395,7 +385,6 @@ func (r *Repository) GetClustersWithHostID(ctx context.Context, hostID uint) ([]
 	}
 	return clusters, nil
 }
-
 
 // GetNodeByHostAndInstallDirAndRole retrieves a cluster node by host ID, install directory and role.
 // GetNodeByHostAndInstallDirAndRole 根据主机 ID、安装目录和角色获取集群节点。

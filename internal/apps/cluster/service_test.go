@@ -33,6 +33,34 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+type mockAgentCommand struct {
+	agentID     string
+	commandType string
+	params      map[string]string
+}
+
+type mockOperationAgentSender struct {
+	commands []mockAgentCommand
+}
+
+func (m *mockOperationAgentSender) SendCommand(ctx context.Context, agentID string, commandType string, params map[string]string) (bool, string, error) {
+	copied := make(map[string]string, len(params))
+	for key, value := range params {
+		copied[key] = value
+	}
+	m.commands = append(m.commands, mockAgentCommand{
+		agentID:     agentID,
+		commandType: commandType,
+		params:      copied,
+	})
+
+	if commandType == "check_process" {
+		return true, "SeaTunnel process found: PID=4321, role=hybrid", nil
+	}
+
+	return true, "ok", nil
+}
+
 // MockHostProvider implements HostProvider for testing
 // MockHostProvider 实现用于测试的 HostProvider 接口
 type MockHostProvider struct {
@@ -718,5 +746,84 @@ func TestClusterServiceDeleteConstraint(t *testing.T) {
 	_, err = svc.Get(ctx, cluster.ID)
 	if err != nil {
 		t.Errorf("Cluster should still exist after failed deletion")
+	}
+}
+
+func TestClusterServiceStartUsesNodeInstallDirAndRefreshesProcess(t *testing.T) {
+	db, cleanup := setupServiceTestDB(t)
+	defer cleanup()
+
+	repo := NewRepository(db)
+	mockHostProvider := NewMockHostProvider()
+	now := time.Now()
+	mockHostProvider.AddHost(&HostInfo{
+		ID:            1,
+		Name:          "host-1",
+		HostType:      "bare_metal",
+		IPAddress:     "127.0.0.1",
+		AgentID:       "agent-1",
+		AgentStatus:   "installed",
+		LastHeartbeat: &now,
+	})
+
+	svc := NewService(repo, mockHostProvider, nil)
+	agentSender := &mockOperationAgentSender{}
+	svc.SetAgentCommandSender(agentSender)
+	ctx := context.Background()
+
+	cluster, err := svc.Create(ctx, &CreateClusterRequest{
+		Name:           "upgrade-cluster",
+		DeploymentMode: DeploymentModeHybrid,
+		Version:        "2.3.11",
+		InstallDir:     "/opt/seatunnel-2.3.11",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	node, err := svc.AddNode(ctx, cluster.ID, &AddNodeRequest{
+		HostID:        1,
+		Role:          NodeRoleMasterWorker,
+		InstallDir:    "/opt/seatunnel-2.3.12",
+		HazelcastPort: 5801,
+		APIPort:       8080,
+		WorkerPort:    5802,
+		SkipPrecheck:  true,
+	})
+	if err != nil {
+		t.Fatalf("AddNode returned error: %v", err)
+	}
+
+	result, err := svc.Start(ctx, cluster.ID)
+	if err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+	if result == nil || !result.Success {
+		t.Fatalf("expected successful start result, got %+v", result)
+	}
+
+	foundStartCommand := false
+	for _, command := range agentSender.commands {
+		if command.commandType != string(OperationStart) {
+			continue
+		}
+		foundStartCommand = true
+		if got := command.params["install_dir"]; got != "/opt/seatunnel-2.3.12" {
+			t.Fatalf("expected cluster start to use node install dir, got %q", got)
+		}
+	}
+	if !foundStartCommand {
+		t.Fatalf("expected start command to be sent, got %+v", agentSender.commands)
+	}
+
+	updatedNode, err := repo.GetNodeByID(ctx, node.ID)
+	if err != nil {
+		t.Fatalf("GetNodeByID returned error: %v", err)
+	}
+	if updatedNode.ProcessPID != 4321 {
+		t.Fatalf("expected process PID to be refreshed to 4321, got %d", updatedNode.ProcessPID)
+	}
+	if updatedNode.Status != NodeStatusRunning {
+		t.Fatalf("expected node status running after PID refresh, got %q", updatedNode.Status)
 	}
 }

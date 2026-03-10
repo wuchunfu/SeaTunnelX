@@ -43,7 +43,8 @@ import (
 	"strings"
 	"time"
 
-	agentlogger "github.com/seatunnel/seatunnelX/agent/internal/logger"
+	"github.com/seatunnel/seatunnelX/agent/internal/logger"
+	seatunnelmeta "github.com/seatunnel/seatunnelX/internal/seatunnel"
 	"gopkg.in/yaml.v3"
 )
 
@@ -273,12 +274,12 @@ type CheckpointConfig struct {
 	KerberosKeytabFilePath string `json:"kerberos_keytab_file_path,omitempty"`
 
 	// HDFS HA mode configuration / HDFS HA 模式配置
-	HDFSHAEnabled                bool   `json:"hdfs_ha_enabled,omitempty"`
-	HDFSNameServices             string `json:"hdfs_name_services,omitempty"`              // e.g., "usdp-bing"
-	HDFSHANamenodes              string `json:"hdfs_ha_namenodes,omitempty"`               // e.g., "nn1,nn2"
-	HDFSNamenodeRPCAddress1      string `json:"hdfs_namenode_rpc_address_1,omitempty"`     // e.g., "usdp-bing-nn1:8020"
-	HDFSNamenodeRPCAddress2      string `json:"hdfs_namenode_rpc_address_2,omitempty"`     // e.g., "usdp-bing-nn2:8020"
-	HDFSFailoverProxyProvider    string `json:"hdfs_failover_proxy_provider,omitempty"`    // default: org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider
+	HDFSHAEnabled             bool   `json:"hdfs_ha_enabled,omitempty"`
+	HDFSNameServices          string `json:"hdfs_name_services,omitempty"`           // e.g., "usdp-bing"
+	HDFSHANamenodes           string `json:"hdfs_ha_namenodes,omitempty"`            // e.g., "nn1,nn2"
+	HDFSNamenodeRPCAddress1   string `json:"hdfs_namenode_rpc_address_1,omitempty"`  // e.g., "usdp-bing-nn1:8020"
+	HDFSNamenodeRPCAddress2   string `json:"hdfs_namenode_rpc_address_2,omitempty"`  // e.g., "usdp-bing-nn2:8020"
+	HDFSFailoverProxyProvider string `json:"hdfs_failover_proxy_provider,omitempty"` // default: org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider
 
 	// OSS/S3 configuration / OSS/S3 配置
 	StorageEndpoint  string `json:"storage_endpoint,omitempty"`
@@ -864,9 +865,10 @@ type InstallParams struct {
 // DefaultInstallParams 返回默认安装参数
 func DefaultInstallParams() *InstallParams {
 	dynamicSlot := true
+	defaultVersion := seatunnelmeta.DefaultVersion()
 	return &InstallParams{
-		Version:        "2.3.12",
-		InstallDir:     "/opt/seatunnel",
+		Version:        defaultVersion,
+		InstallDir:     seatunnelmeta.DefaultInstallDir(defaultVersion),
 		DeploymentMode: DeploymentModeHybrid,
 		ClusterPort:    5801,
 		WorkerPort:     5802,
@@ -1139,7 +1141,7 @@ func NewInstallerManagerWithClient(client *http.Client) *InstallerManager {
 // - Retry failed steps / 重试失败的步骤
 // - Skip optional steps / 跳过可选步骤
 func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *InstallParams, reporter ProgressReporter) (*InstallResult, error) {
-	agentlogger.Infof("[InstallStepByStep] Starting installation...")
+	logger.InfoF(ctx, "[InstallStepByStep] Starting installation...")
 	if reporter == nil {
 		reporter = &NoOpProgressReporter{}
 	}
@@ -1160,7 +1162,7 @@ func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *Instal
 		}, err
 	}
 
-	agentlogger.Infof("[InstallStepByStep] JVM config: %+v", params.JVM)
+	logger.InfoF(ctx, "[InstallStepByStep] JVM config: %+v", params.JVM)
 
 	// Execute each step / 执行每个步骤
 	// Note: Precheck should be done separately via Prechecker before calling this
@@ -1189,10 +1191,10 @@ func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *Instal
 		default:
 		}
 
-		agentlogger.Infof("[InstallStepByStep] Executing step: %s", s.step)
+		logger.InfoF(ctx, "[InstallStepByStep] Executing step: %s", s.step)
 		reporter.ReportStepStart(s.step)
 		if err := s.execute(); err != nil {
-			agentlogger.Errorf("[InstallStepByStep] Step %s failed: %v", s.step, err)
+			logger.ErrorF(ctx, "[InstallStepByStep] Step %s failed: %v", s.step, err)
 			reporter.ReportStepFailed(s.step, err)
 			result.Success = false
 			result.FailedStep = s.step
@@ -1200,7 +1202,7 @@ func (m *InstallerManager) InstallStepByStep(ctx context.Context, params *Instal
 			result.Message = fmt.Sprintf("Step %s failed: %v / 步骤 %s 失败：%v", s.step, err, s.step, err)
 			return result, err
 		}
-		agentlogger.Infof("[InstallStepByStep] Step %s completed", s.step)
+		logger.InfoF(ctx, "[InstallStepByStep] Step %s completed", s.step)
 		reporter.ReportStepComplete(s.step)
 	}
 
@@ -1449,20 +1451,21 @@ func (m *InstallerManager) executeStepConfigureCheckpoint(params *InstallParams,
 // executeStepConfigureJVM configures JVM settings
 // executeStepConfigureJVM 配置 JVM 设置
 func (m *InstallerManager) executeStepConfigureJVM(params *InstallParams, reporter ProgressReporter) error {
+	ctx := context.Background()
 	if params.JVM == nil {
-		agentlogger.Infof("[JVM] JVM config is nil, skipping configuration")
+		logger.InfoF(ctx, "[JVM] JVM config is nil, skipping configuration")
 		reporter.Report(InstallStepConfigureJVM, 100, "JVM configuration skipped (using defaults) / 跳过 JVM 配置（使用默认值）")
 		return nil
 	}
 
-	agentlogger.Infof("[JVM] Configuring JVM with: hybrid=%d, master=%d, worker=%d, mode=%s",
+	logger.InfoF(ctx, "[JVM] Configuring JVM with: hybrid=%d, master=%d, worker=%d, mode=%s",
 		params.JVM.HybridHeapSize, params.JVM.MasterHeapSize, params.JVM.WorkerHeapSize, params.DeploymentMode)
 	reporter.Report(InstallStepConfigureJVM, 0, "Configuring JVM... / 配置 JVM...")
 	if err := m.configureJVM(params); err != nil {
-		agentlogger.Errorf("[JVM] Configuration failed: %v", err)
+		logger.ErrorF(ctx, "[JVM] Configuration failed: %v", err)
 		return err
 	}
-	agentlogger.Infof("[JVM] Configuration completed successfully")
+	logger.InfoF(ctx, "[JVM] Configuration completed successfully")
 	reporter.Report(InstallStepConfigureJVM, 100, "JVM configured / JVM 配置完成")
 	return nil
 }
@@ -1742,38 +1745,39 @@ func (m *InstallerManager) configureCheckpointStorage(params *InstallParams) err
 // configureJVM configures JVM options
 // configureJVM 配置 JVM 选项
 func (m *InstallerManager) configureJVM(params *InstallParams) error {
+	ctx := context.Background()
 	if params.JVM == nil {
-		agentlogger.Infof("[configureJVM] JVM config is nil, skipping")
+		logger.InfoF(ctx, "[configureJVM] JVM config is nil, skipping")
 		return nil
 	}
 
 	configDir := filepath.Join(params.InstallDir, "config")
-	agentlogger.Infof("[configureJVM] Config dir: %s, DeploymentMode: %s", configDir, params.DeploymentMode)
+	logger.InfoF(ctx, "[configureJVM] Config dir: %s, DeploymentMode: %s", configDir, params.DeploymentMode)
 
 	// Configure based on deployment mode / 根据部署模式配置
 	if params.DeploymentMode == DeploymentModeHybrid {
 		// Hybrid mode: configure jvm_options / 混合模式：配置 jvm_options
 		jvmOptionsPath := filepath.Join(configDir, "jvm_options")
-		agentlogger.Infof("[configureJVM] Hybrid mode: modifying %s with heap=%dGB", jvmOptionsPath, params.JVM.HybridHeapSize)
+		logger.InfoF(ctx, "[configureJVM] Hybrid mode: modifying %s with heap=%dGB", jvmOptionsPath, params.JVM.HybridHeapSize)
 		if err := m.modifyJVMOptions(jvmOptionsPath, params.JVM.HybridHeapSize); err != nil {
-			agentlogger.Errorf("[configureJVM] Error modifying %s: %v", jvmOptionsPath, err)
+			logger.ErrorF(ctx, "[configureJVM] Error modifying %s: %v", jvmOptionsPath, err)
 			return err
 		}
-		agentlogger.Infof("[configureJVM] Successfully modified %s", jvmOptionsPath)
+		logger.InfoF(ctx, "[configureJVM] Successfully modified %s", jvmOptionsPath)
 	} else {
 		// Separated mode: configure jvm_master_options and jvm_worker_options
 		// 分离模式：配置 jvm_master_options 和 jvm_worker_options
 		masterOptionsPath := filepath.Join(configDir, "jvm_master_options")
-		agentlogger.Infof("[configureJVM] Separated mode: modifying %s with heap=%dGB", masterOptionsPath, params.JVM.MasterHeapSize)
+		logger.InfoF(ctx, "[configureJVM] Separated mode: modifying %s with heap=%dGB", masterOptionsPath, params.JVM.MasterHeapSize)
 		if err := m.modifyJVMOptions(masterOptionsPath, params.JVM.MasterHeapSize); err != nil {
-			agentlogger.Errorf("[configureJVM] Error modifying %s: %v", masterOptionsPath, err)
+			logger.ErrorF(ctx, "[configureJVM] Error modifying %s: %v", masterOptionsPath, err)
 			return err
 		}
 
 		workerOptionsPath := filepath.Join(configDir, "jvm_worker_options")
-		agentlogger.Infof("[configureJVM] Separated mode: modifying %s with heap=%dGB", workerOptionsPath, params.JVM.WorkerHeapSize)
+		logger.InfoF(ctx, "[configureJVM] Separated mode: modifying %s with heap=%dGB", workerOptionsPath, params.JVM.WorkerHeapSize)
 		if err := m.modifyJVMOptions(workerOptionsPath, params.JVM.WorkerHeapSize); err != nil {
-			agentlogger.Errorf("[configureJVM] Error modifying %s: %v", workerOptionsPath, err)
+			logger.ErrorF(ctx, "[configureJVM] Error modifying %s: %v", workerOptionsPath, err)
 			return err
 		}
 	}
@@ -1801,22 +1805,23 @@ func (m *InstallerManager) configureJVM(params *InstallParams) error {
 // This function handles both formats - uncomments if needed and sets the correct heap size
 // 此函数处理两种格式 - 如果需要则取消注释并设置正确的堆大小
 func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) error {
-	agentlogger.Infof("[modifyJVMOptions] Starting: file=%s, heapSize=%dGB", filePath, heapSizeGB)
-	
+	ctx := context.Background()
+	logger.InfoF(ctx, "[modifyJVMOptions] Starting: file=%s, heapSize=%dGB", filePath, heapSizeGB)
+
 	// Backup original file / 备份原始文件
 	if err := backupFile(filePath); err != nil {
-		agentlogger.Errorf("[modifyJVMOptions] Backup failed: %v", err)
+		logger.ErrorF(ctx, "[modifyJVMOptions] Backup failed: %v", err)
 		return fmt.Errorf("%w: %v", ErrConfigGenerationFailed, err)
 	}
 
 	// Read file content / 读取文件内容
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		agentlogger.Errorf("[modifyJVMOptions] Read failed: %v", err)
+		logger.ErrorF(ctx, "[modifyJVMOptions] Read failed: %v", err)
 		return fmt.Errorf("%w: failed to read %s: %v", ErrConfigGenerationFailed, filePath, err)
 	}
 
-	agentlogger.Infof("[modifyJVMOptions] File content length: %d bytes", len(content))
+	logger.InfoF(ctx, "[modifyJVMOptions] File content length: %d bytes", len(content))
 	lines := strings.Split(string(content), "\n")
 	var result []string
 	xmsModified := false
@@ -1834,13 +1839,13 @@ func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) err
 		if xmsPattern.MatchString(trimmed) {
 			// Replace with uncommented and correct heap size
 			// 替换为取消注释并设置正确的堆大小
-			agentlogger.Infof("[modifyJVMOptions] Found Xms line: '%s' -> '-Xms%dg'", trimmed, heapSizeGB)
+			logger.InfoF(ctx, "[modifyJVMOptions] Found Xms line: '%s' -> '-Xms%dg'", trimmed, heapSizeGB)
 			result = append(result, fmt.Sprintf("-Xms%dg", heapSizeGB))
 			xmsModified = true
 		} else if xmxPattern.MatchString(trimmed) {
 			// Replace with uncommented and correct heap size
 			// 替换为取消注释并设置正确的堆大小
-			agentlogger.Infof("[modifyJVMOptions] Found Xmx line: '%s' -> '-Xmx%dg'", trimmed, heapSizeGB)
+			logger.InfoF(ctx, "[modifyJVMOptions] Found Xmx line: '%s' -> '-Xmx%dg'", trimmed, heapSizeGB)
 			result = append(result, fmt.Sprintf("-Xmx%dg", heapSizeGB))
 			xmxModified = true
 		} else {
@@ -1849,16 +1854,16 @@ func (m *InstallerManager) modifyJVMOptions(filePath string, heapSizeGB int) err
 		}
 	}
 
-	agentlogger.Infof("[modifyJVMOptions] Modifications: Xms=%v, Xmx=%v", xmsModified, xmxModified)
+	logger.InfoF(ctx, "[modifyJVMOptions] Modifications: Xms=%v, Xmx=%v", xmsModified, xmxModified)
 	contentStr := strings.Join(result, "\n")
 
 	// Write modified content / 写入修改后的内容
 	if err := os.WriteFile(filePath, []byte(contentStr), 0644); err != nil {
-		agentlogger.Errorf("[modifyJVMOptions] Write failed: %v", err)
+		logger.ErrorF(ctx, "[modifyJVMOptions] Write failed: %v", err)
 		return fmt.Errorf("%w: failed to write %s: %v", ErrConfigGenerationFailed, filePath, err)
 	}
 
-	agentlogger.Infof("[modifyJVMOptions] Successfully wrote %d bytes to %s", len(contentStr), filePath)
+	logger.InfoF(ctx, "[modifyJVMOptions] Successfully wrote %d bytes to %s", len(contentStr), filePath)
 	return nil
 }
 
@@ -2224,6 +2229,12 @@ func (m *InstallerManager) modifyHazelcastConfig(filePath string, params *Instal
 		return fmt.Errorf("%w: failed to set port: %v", ErrConfigGenerationFailed, err)
 	}
 
+	// Enable Hazelcast REST API with basic endpoints (best-effort). / 启用 Hazelcast REST API 以及基础端点（最佳努力）
+	// If the path does not exist, it will be created. / 如果路径不存在，则创建
+	_ = setYAMLValueCreate(&root, []string{"hazelcast", "network", "rest-api", "enabled"}, true)
+	_ = setYAMLValueCreate(&root, []string{"hazelcast", "network", "rest-api", "endpoint-groups", "CLUSTER_WRITE", "enabled"}, true)
+	_ = setYAMLValueCreate(&root, []string{"hazelcast", "network", "rest-api", "endpoint-groups", "DATA", "enabled"}, true)
+
 	// Write modified content / 写入修改后的内容
 	output, err := yaml.Marshal(&root)
 	if err != nil {
@@ -2314,9 +2325,9 @@ func (m *InstallerManager) modifySeaTunnelConfig(filePath string, params *Instal
 	// 配置 HTTP 设置（SeaTunnel 2.3.9+）
 	if params.HTTPPort > 0 {
 		// Set HTTP configuration / 设置 HTTP 配置
-		_ = setYAMLValue(&root, []string{"seatunnel", "engine", "http", "enable-http"}, true)
-		_ = setYAMLValue(&root, []string{"seatunnel", "engine", "http", "port"}, params.HTTPPort)
-		_ = setYAMLValue(&root, []string{"seatunnel", "engine", "http", "enable-dynamic-port"}, false)
+		_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "http", "enable-http"}, true)
+		_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "http", "port"}, params.HTTPPort)
+		_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "http", "enable-dynamic-port"}, false)
 	}
 
 	// Set dynamic-slot value (default: true, can be overridden by user)
@@ -2325,7 +2336,12 @@ func (m *InstallerManager) modifySeaTunnelConfig(filePath string, params *Instal
 	if params.DynamicSlot != nil && !*params.DynamicSlot {
 		dynamicSlotValue = false
 	}
-	_ = setYAMLValue(&root, []string{"seatunnel", "engine", "slot-service", "dynamic-slot"}, dynamicSlotValue)
+	_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "slot-service", "dynamic-slot"}, dynamicSlotValue)
+
+	// Ensure telemetry metric and log settings are enabled by default (best-effort).
+	// If the path does not exist, it will be created.
+	_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "telemetry", "metric", "enabled"}, true)
+	_ = setYAMLValueCreate(&root, []string{"seatunnel", "engine", "telemetry", "logs", "scheduled-deletion-enable"}, true)
 
 	// Write modified content / 写入修改后的内容
 	output, err := yaml.Marshal(&root)
@@ -2420,6 +2436,80 @@ func setNodeValue(node *yaml.Node, value interface{}) error {
 	return nil
 }
 
+// setYAMLValueCreate sets a value at the specified path in a YAML node tree,
+// creating intermediate mapping nodes as needed.
+// setYAMLValueCreate 在 YAML 节点树中的指定路径设置值，如有需要会自动创建中间映射节点。
+func setYAMLValueCreate(root *yaml.Node, path []string, value interface{}) error {
+	if root == nil || len(path) == 0 {
+		return fmt.Errorf("invalid arguments")
+	}
+
+	// Handle document node / 处理文档节点
+	node := root
+	if node.Kind == yaml.DocumentNode {
+		if len(node.Content) == 0 {
+			// Initialize document root as a mapping node if empty
+			// 如果文档为空，则初始化为 mapping 节点
+			node.Content = []*yaml.Node{
+				{
+					Kind: yaml.MappingNode,
+					Tag:  "!!map",
+				},
+			}
+		}
+		node = node.Content[0]
+	}
+
+	// Ensure we have a mapping at the top level/ 确保在顶层有一个映射节点
+	if node.Kind != yaml.MappingNode {
+		node.Kind = yaml.MappingNode
+		node.Tag = "!!map"
+	}
+
+	// Traverse or create intermediate nodes / 遍历或创建必要的中间映射节点
+	current := node
+	for i, key := range path {
+		isLast := i == len(path)-1
+
+		// Find existing child / 查找存在的子节点
+		var valueNode *yaml.Node
+		if current.Kind == yaml.MappingNode {
+			for j := 0; j < len(current.Content); j += 2 {
+				if current.Content[j].Value == key {
+					valueNode = current.Content[j+1]
+					break
+				}
+			}
+		}
+
+		// Create if not found / 如果未找到，则创建
+		if valueNode == nil {
+			keyNode := &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!str",
+				Value: key,
+			}
+			valueNode = &yaml.Node{}
+			current.Content = append(current.Content, keyNode, valueNode)
+		}
+
+		if isLast {
+			// Set the final value / 设置最终值
+			return setNodeValue(valueNode, value)
+		}
+
+		// For intermediate nodes, ensure mapping type / 中间节点确保为 mapping
+		if valueNode.Kind != yaml.MappingNode {
+			valueNode.Kind = yaml.MappingNode
+			valueNode.Tag = "!!map"
+			valueNode.Content = nil
+		}
+		current = valueNode
+	}
+
+	return nil
+}
+
 // setYAMLMapValue sets a map value at the specified path in a YAML node tree
 // setYAMLMapValue 在 YAML 节点树中的指定路径设置 map 值
 // This replaces all children of the target node with the new map entries
@@ -2493,7 +2583,6 @@ func setYAMLMapValue(root *yaml.Node, path []string, values map[string]string) e
 	return nil
 }
 
-
 // Uninstall removes the SeaTunnel installation
 // Uninstall 移除 SeaTunnel 安装
 func (m *InstallerManager) Uninstall(ctx context.Context, installDir string) error {
@@ -2509,4 +2598,3 @@ func (m *InstallerManager) Uninstall(ctx context.Context, installDir string) err
 
 	return nil
 }
-

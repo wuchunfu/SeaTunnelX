@@ -508,3 +508,37 @@ func TestHeartbeatNotFound(t *testing.T) {
 		t.Errorf("Expected ErrAgentNotFound, got %v", err)
 	}
 }
+
+// TestHeartbeatRestoresConnectedStatus verifies that a later heartbeat can recover
+// an Agent from offline/disconnected state back to connected.
+// TestHeartbeatRestoresConnectedStatus 验证后续心跳可将 Agent 从 offline/disconnected 恢复为 connected。
+func TestHeartbeatRestoresConnectedStatus(t *testing.T) {
+	m := NewManager(nil)
+	ctx := context.Background()
+
+	regReq := &pb.RegisterRequest{
+		AgentId:   "agent-recover",
+		IpAddress: "192.168.1.200",
+	}
+	_, _ = m.RegisterAgent(ctx, regReq)
+
+	conn, ok := m.GetAgent("agent-recover")
+	if !ok {
+		t.Fatal("Expected to find agent")
+	}
+
+	conn.SetStatus(AgentStatusOffline)
+
+	hbReq := &pb.HeartbeatRequest{
+		AgentId:   "agent-recover",
+		Timestamp: time.Now().UnixMilli(),
+	}
+
+	if err := m.HandleHeartbeat(ctx, hbReq); err != nil {
+		t.Fatalf("Failed to handle heartbeat: %v", err)
+	}
+
+	if conn.GetStatus() != AgentStatusConnected {
+		t.Errorf("Expected status 'connected' after heartbeat, got '%s'", conn.GetStatus())
+	}
+}
