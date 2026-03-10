@@ -1,0 +1,59 @@
+{
+  "id": "alerting-pr4-recipients-telemetry-email-ux",
+  "name": "alerting-pr4-recipients-telemetry-email-ux",
+  "title": "implement alerting PR-4 recipients, telemetry templates, and email UX",
+  "description": "Follow-up implementation phase for alerting productization: recipients, telemetry-based templates, and email channel UX redesign.",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "monitoring",
+  "priority": "P2",
+  "creator": "openai-agent",
+  "assignee": "openai-agent",
+  "createdAt": "2026-03-09",
+  "completedAt": "2026-03-10",
+  "branch": "analysis/alerting-notification-gap",
+  "base_branch": "analysis/alerting-notification-gap",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "03-08-alerting-notification-analysis",
+  "relatedFiles": [
+    "frontend/components/common/monitoring/MonitoringPolicyCenter.tsx",
+    "frontend/lib/services/monitoring/types.ts",
+    "frontend/lib/services/monitoring/monitoring.service.ts",
+    "frontend/app/(main)/admin/users/page.tsx",
+    "frontend/lib/i18n/locales/en.json",
+    "frontend/lib/i18n/locales/zh.json",
+    "internal/apps/auth/models.go",
+    "internal/apps/admin/user_handler.go",
+    "internal/apps/monitoring/model.go",
+    "internal/apps/monitoring/entity.go",
+    "internal/apps/monitoring/alert_policy_service.go",
+    "internal/apps/monitoring/notification_email.go",
+    "internal/apps/monitoring/notification_channel_config.go",
+    "internal/db/migrator/migrator.go"
+  ],
+  "notes": "",
+  "meta": {}
+}
