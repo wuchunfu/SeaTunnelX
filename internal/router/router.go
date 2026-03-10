@@ -262,6 +262,7 @@ func Serve() {
 
 				// Node management 节点管理
 				clusterRouter.POST("/:id/nodes", clusterHandler.AddNode)
+				clusterRouter.POST("/:id/nodes/batch", clusterHandler.AddNodes)
 				clusterRouter.GET("/:id/nodes", clusterHandler.GetNodes)
 				clusterRouter.PUT("/:id/nodes/:nodeId", clusterHandler.UpdateNode)
 				clusterRouter.DELETE("/:id/nodes/:nodeId", clusterHandler.RemoveNode)
@@ -529,6 +530,7 @@ func Serve() {
 			// Set host provider for precheck operations
 			// 设置用于预检查操作的主机提供者
 			installerService.SetHostProvider(&hostProviderAdapter{hostService: hostService})
+			installerService.SetNodeJVMResolver(clusterService)
 			// Inject agent manager if available
 			// 如果 Agent Manager 可用，注入
 			if agentManager != nil {
@@ -558,6 +560,10 @@ func Serve() {
 				// POST /api/v1/packages/upload - 上传安装包
 				// POST /api/v1/packages/upload - Upload package
 				packageRouter.POST("/upload", installerHandler.UploadPackage)
+
+				// POST /api/v1/packages/upload/chunk - 分片上传安装包
+				// POST /api/v1/packages/upload/chunk - Upload package chunk
+				packageRouter.POST("/upload/chunk", installerHandler.UploadPackageChunk)
 
 				// DELETE /api/v1/packages/:version - 删除本地安装包
 				// DELETE /api/v1/packages/:version - Delete local package

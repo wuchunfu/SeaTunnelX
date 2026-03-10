@@ -1348,6 +1348,7 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
         onOpenChange={setIsAddNodeDialogOpen}
         clusterId={clusterId}
         deploymentMode={cluster.deployment_mode}
+        clusterConfig={cluster.config}
         onSuccess={handleNodeAdded}
       />
 
@@ -1357,6 +1358,7 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
         onOpenChange={setIsEditNodeDialogOpen}
         node={nodeToEdit}
         deploymentMode={cluster.deployment_mode}
+        clusterConfig={cluster.config}
         onSuccess={handleNodeEdited}
       />
 

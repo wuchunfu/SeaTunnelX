@@ -629,6 +629,7 @@ export function ClusterDeployWizard({
           description: config.description || undefined,
           deployment_mode: config.deploymentMode,
           version: config.version,
+          config: {jvm: config.jvm},
         });
 
         if (!clusterResult.success || !clusterResult.data) {
