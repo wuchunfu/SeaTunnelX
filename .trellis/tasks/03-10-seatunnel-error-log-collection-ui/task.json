@@ -36,7 +36,12 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "03-11-diagnostics-task-context-refactor",
+    "03-11-diagnostics-report-signal-polish",
+    "03-11-diagnostics-auto-capture-mvp",
+    "03-11-unified-diagnosis-flow-mvp"
+  ],
   "parent": null,
   "relatedFiles": [
     "agent",
