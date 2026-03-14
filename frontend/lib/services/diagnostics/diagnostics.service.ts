@@ -166,10 +166,17 @@ export class DiagnosticsService extends BaseService {
   static async getErrorGroupDetail(
     groupId: number,
     eventLimit = 20,
+    params?: Pick<
+      DiagnosticsErrorEventListParams,
+      'cluster_id' | 'node_id' | 'host_id' | 'role' | 'job_id'
+    >,
   ): Promise<DiagnosticsErrorGroupDetailData> {
     return this.get<DiagnosticsErrorGroupDetailData>(
       `/errors/groups/${groupId}`,
-      {event_limit: eventLimit},
+      {
+        event_limit: eventLimit,
+        ...params,
+      },
     );
   }
 
@@ -180,13 +187,17 @@ export class DiagnosticsService extends BaseService {
   static async getErrorGroupDetailSafe(
     groupId: number,
     eventLimit = 20,
+    params?: Pick<
+      DiagnosticsErrorEventListParams,
+      'cluster_id' | 'node_id' | 'host_id' | 'role' | 'job_id'
+    >,
   ): Promise<{
     success: boolean;
     data?: DiagnosticsErrorGroupDetailData;
     error?: string;
   }> {
     try {
-      const data = await this.getErrorGroupDetail(groupId, eventLimit);
+      const data = await this.getErrorGroupDetail(groupId, eventLimit, params);
       return {success: true, data};
     } catch (error) {
       return {

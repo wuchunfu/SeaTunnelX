@@ -19,7 +19,7 @@
 
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
-import {ArrowLeft, Download, ExternalLink, Loader2, Package} from 'lucide-react';
+import {ArrowLeft, Download, ExternalLink, FileText, Loader2, Package} from 'lucide-react';
 import {toast} from 'sonner';
 import services from '@/lib/services';
 import type {
@@ -33,9 +33,17 @@ import type {
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
-import {Skeleton} from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
+import {Skeleton} from '@/components/ui/skeleton';
 import {Switch} from '@/components/ui/switch';
 import {localizeDiagnosticsText} from './text-utils';
 
@@ -140,6 +148,26 @@ function getFindingSeverityScore(
   }
 }
 
+function formatNodeOrigin(options: {
+  nodeId?: number | null;
+  hostId?: number | null;
+  hostName?: string | null;
+  hostIp?: string | null;
+}): string {
+  const parts: string[] = [];
+  if (options.hostName?.trim()) {
+    parts.push(options.hostName.trim());
+  } else if (options.hostIp?.trim()) {
+    parts.push(options.hostIp.trim());
+  } else if (options.hostId) {
+    parts.push(`#${options.hostId}`);
+  }
+  if (options.nodeId) {
+    parts.push(`node #${options.nodeId}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '-';
+}
+
 const DEFAULT_BUNDLE_OPTIONS: DiagnosticsTaskOptions = {
   include_thread_dump: true,
   include_jvm_dump: false,
@@ -161,6 +189,10 @@ export default function InspectionDetailPage({
     useState<DiagnosticsTaskOptions>(DEFAULT_BUNDLE_OPTIONS);
   const [nodeScope, setNodeScope] =
     useState<DiagnosticsTaskNodeScope>('all');
+  const [bundleLookbackMinutes, setBundleLookbackMinutes] =
+    useState<number>(30);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [execLogDialogOpen, setExecLogDialogOpen] = useState(false);
 
   const pollBundleTask = useCallback(
     async (taskId: number) => {
@@ -249,18 +281,29 @@ export default function InspectionDetailPage({
     };
   }, []);
 
+  const handleConfirmAndCreateBundle = useCallback(() => {
+    const base = report?.lookback_minutes || 30;
+    setBundleLookbackMinutes(
+      base < 5 || base > 1440 ? 30 : base,
+    );
+    setConfirmDialogOpen(true);
+  }, [report]);
+
   const handleCreateBundle = useCallback(async () => {
     if (!report) {
       return;
     }
-    // Pick the first finding (prefer critical > warning > info) to satisfy
-    // backend validation: inspection_finding trigger requires inspection_finding_id.
+    if (bundleLookbackMinutes < 5 || bundleLookbackMinutes > 1440) {
+      toast.error('时间范围需在 5 ~ 1440 分钟之间');
+      return;
+    }
     const firstFinding =
       findings.find((f) => f.severity === 'critical') ??
       findings.find((f) => f.severity === 'warning') ??
       findings[0];
 
     setCreatingBundle(true);
+    setConfirmDialogOpen(false);
     try {
       const payloadScope: DiagnosticsTaskNodeScope = nodeScope || 'all';
       const result = await services.diagnostics.createTaskSafe({
@@ -274,16 +317,16 @@ export default function InspectionDetailPage({
           : undefined,
         node_scope: payloadScope,
         options: bundleOptions,
+        lookback_minutes: bundleLookbackMinutes,
         auto_start: true,
       });
       if (!result.success || !result.data) {
-        toast.error(result.error || '创建诊断包失败');
+        toast.error(result.error || '诊断包生成失败');
         return;
       }
-      toast.success('诊断包创建成功，正在执行...');
+      toast.success('诊断包生成已启动');
       setBundleTask(result.data);
       setPollingBundle(true);
-      // Start polling
       const taskId = result.data.id;
       pollTimerRef.current = setInterval(() => {
         void pollBundleTask(taskId);
@@ -291,7 +334,7 @@ export default function InspectionDetailPage({
     } finally {
       setCreatingBundle(false);
     }
-  }, [bundleOptions, pollBundleTask, report]);
+  }, [bundleOptions, findings, nodeScope, pollBundleTask, report]);
 
   if (loading) {
     return (
@@ -440,6 +483,15 @@ export default function InspectionDetailPage({
                       建议：{localizeDiagnosticsText(finding.recommendation)}
                     </div>
                   ) : null}
+                  <div className='text-xs text-muted-foreground'>
+                    来源节点：
+                    {formatNodeOrigin({
+                      nodeId: finding.related_node_id,
+                      hostId: finding.related_host_id,
+                      hostName: finding.related_host_name,
+                      hostIp: finding.related_host_ip,
+                    })}
+                  </div>
                   {finding.related_error_group_id > 0 ? (
                     <Button asChild size='sm' variant='outline'>
                       <Link
@@ -464,7 +516,7 @@ export default function InspectionDetailPage({
           </CardHeader>
           <CardContent>
             {bundleTask ? (
-              <div className='space-y-4'>
+              <div className='space-y-3'>
                 <div className='flex flex-wrap items-center gap-2'>
                   <Badge variant={getStatusVariant(bundleTask.status)}>
                     {getStatusLabel(bundleTask.status)}
@@ -478,66 +530,60 @@ export default function InspectionDetailPage({
                   ) : null}
                 </div>
 
-                {/* Step progress */}
-                {Array.isArray(bundleTask.steps) &&
-                bundleTask.steps.length > 0 ? (
-                  <div className='space-y-2'>
-                    <div className='text-sm font-medium'>执行步骤</div>
-                    <div className='space-y-1'>
-                      {bundleTask.steps.map((step) => (
-                        <div
-                          key={step.id}
-                          className='flex items-center gap-2 rounded-md border px-3 py-2 text-sm'
+                <div className='flex flex-wrap gap-2'>
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    onClick={() => setExecLogDialogOpen(true)}
+                  >
+                    <FileText className='mr-2 h-4 w-4' />
+                    查看执行日志
+                  </Button>
+                  {bundleTask.status === 'succeeded' ? (
+                    <>
+                      <Button asChild variant='outline' size='sm'>
+                        <a
+                          href={services.diagnostics.getTaskHTMLUrl(
+                            bundleTask.id,
+                          )}
+                          target='_blank'
+                          rel='noopener noreferrer'
                         >
-                          <Badge
-                            variant={getStatusVariant(step.status)}
-                            className='text-xs'
-                          >
-                            {getStatusLabel(step.status)}
-                          </Badge>
-                          <span className='font-mono text-xs text-muted-foreground'>
-                            {step.code}
-                          </span>
-                          <span className='flex-1 truncate'>
-                            {localizeDiagnosticsText(step.title) ||
-                              step.description}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Download / View links when succeeded */}
-                {bundleTask.status === 'succeeded' ? (
-                  <div className='flex flex-wrap gap-2'>
-                    <Button asChild variant='outline' size='sm'>
-                      <a
-                        href={services.diagnostics.getTaskHTMLUrl(
-                          bundleTask.id,
-                        )}
-                        target='_blank'
-                        rel='noopener noreferrer'
+                          <ExternalLink className='mr-2 h-4 w-4' />
+                          预览报告
+                        </a>
+                      </Button>
+                      <Button asChild variant='outline' size='sm'>
+                        <a
+                          href={services.diagnostics.getTaskBundleUrl(
+                            bundleTask.id,
+                          )}
+                          download
+                        >
+                          <Download className='mr-2 h-4 w-4' />
+                          下载诊断包
+                        </a>
+                      </Button>
+                      <Button
+                        variant='outline'
+                        size='sm'
+                        onClick={handleConfirmAndCreateBundle}
+                        disabled={creatingBundle}
                       >
-                        <ExternalLink className='mr-2 h-4 w-4' />
-                        查看 HTML 报告
-                      </a>
-                    </Button>
-                    <Button asChild variant='outline' size='sm'>
-                      <a
-                        href={services.diagnostics.getTaskBundleUrl(
-                          bundleTask.id,
+                        {creatingBundle ? (
+                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                        ) : (
+                          <Package className='mr-2 h-4 w-4' />
                         )}
-                        download
-                      >
-                        <Download className='mr-2 h-4 w-4' />
-                        下载诊断包
-                      </a>
-                    </Button>
+                        重新生成
+                      </Button>
+                    </>
+                  ) : null}
+                  {bundleTask.status === 'failed' ? (
                     <Button
                       variant='outline'
                       size='sm'
-                      onClick={() => void handleCreateBundle()}
+                      onClick={handleConfirmAndCreateBundle}
                       disabled={creatingBundle}
                     >
                       {creatingBundle ? (
@@ -545,167 +591,18 @@ export default function InspectionDetailPage({
                       ) : (
                         <Package className='mr-2 h-4 w-4' />
                       )}
-                      重新生成诊断包
+                      重新生成
                     </Button>
-                  </div>
-                ) : null}
-
-                {bundleTask.status === 'failed' ? (
-                  <div className='space-y-2'>
-                    <div className='rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive'>
-                      {bundleTask.failure_reason || '诊断包生成失败'}
-                    </div>
-                    <Button
-                      variant='outline'
-                      size='sm'
-                      onClick={() => void handleCreateBundle()}
-                      disabled={creatingBundle}
-                    >
-                      {creatingBundle ? (
-                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                      ) : (
-                        <Package className='mr-2 h-4 w-4' />
-                      )}
-                      重新生成诊断包
-                    </Button>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </div>
             ) : hasFindings ? (
-              <div className='space-y-4'>
+              <div className='space-y-3'>
                 <p className='text-sm text-muted-foreground'>
-                  巡检已完成，发现 {findings.length}{' '}
-                  条问题。生成诊断包时，你可以选择节点范围、是否采集线程 / JVM Dump 以及日志采样范围。
+                  巡检已发现 {findings.length} 条问题，可一键生成诊断包与诊断报告。
                 </p>
-
-                <div className='space-y-3 rounded-lg border bg-background p-3'>
-                  <div className='text-sm font-medium'>节点范围</div>
-                  <div className='flex flex-wrap gap-2 text-xs'>
-                    <Button
-                      type='button'
-                      variant={nodeScope === 'all' ? 'default' : 'outline'}
-                      size='sm'
-                      onClick={() => setNodeScope('all')}
-                    >
-                      全部节点
-                    </Button>
-                    <Button
-                      type='button'
-                      variant={nodeScope === 'related' ? 'default' : 'outline'}
-                      size='sm'
-                      onClick={() => setNodeScope('related')}
-                    >
-                      仅问题相关节点
-                    </Button>
-                    <Button
-                      type='button'
-                      variant={nodeScope === 'custom' ? 'default' : 'outline'}
-                      size='sm'
-                      disabled
-                    >
-                      自定义节点列表（即将支持）
-                    </Button>
-                  </div>
-                  <p className='text-xs text-muted-foreground'>
-                    默认会对集群内所有受管节点采集线程 / 日志等信息；选择「仅问题相关节点」时，将只针对当前巡检发现关联的节点。
-                  </p>
-                </div>
-
-                <div className='grid gap-4 md:grid-cols-2'>
-                  <div className='flex items-center justify-between rounded-lg border bg-background p-3'>
-                    <div>
-                      <div className='font-medium'>采集线程 Dump</div>
-                      <div className='text-xs text-muted-foreground'>
-                        建议保持开启，用于分析线程状态、死锁等问题。
-                      </div>
-                    </div>
-                    <Switch
-                      checked={bundleOptions.include_thread_dump}
-                      onCheckedChange={(checked) =>
-                        setBundleOptions((current) => ({
-                          ...current,
-                          include_thread_dump: checked,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div className='flex items-center justify-between rounded-lg border bg-background p-3'>
-                    <div>
-                      <div className='font-medium'>采集 JVM Dump</div>
-                      <div className='text-xs text-muted-foreground'>
-                        仅在需要深入分析内存问题时开启，生成文件较大。
-                      </div>
-                    </div>
-                    <Switch
-                      checked={bundleOptions.include_jvm_dump}
-                      onCheckedChange={(checked) =>
-                        setBundleOptions((current) => ({
-                          ...current,
-                          include_jvm_dump: checked,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div className='space-y-2'>
-                    <Label htmlFor='inspection-bundle-log-lines'>
-                      日志采样行数
-                    </Label>
-                    <Input
-                      id='inspection-bundle-log-lines'
-                      type='number'
-                      min={50}
-                      step={50}
-                      value={
-                        bundleOptions.log_sample_lines ??
-                        DEFAULT_BUNDLE_OPTIONS.log_sample_lines
-                      }
-                      onChange={(event) =>
-                        setBundleOptions((current) => ({
-                          ...current,
-                          log_sample_lines:
-                            Number.parseInt(event.target.value, 10) ||
-                            DEFAULT_BUNDLE_OPTIONS.log_sample_lines,
-                        }))
-                      }
-                    />
-                    <div className='text-xs text-muted-foreground'>
-                      控制诊断包中每个关键步骤采样的日志行数，行数越多信息越完整，体积也会更大。
-                    </div>
-                  </div>
-
-                  <div className='space-y-2'>
-                    <Label htmlFor='inspection-bundle-jvm-space'>
-                      JVM Dump 最小剩余内存（MB）
-                    </Label>
-                    <Input
-                      id='inspection-bundle-jvm-space'
-                      type='number'
-                      min={256}
-                      step={256}
-                      value={
-                        bundleOptions.jvm_dump_min_free_mb ??
-                        DEFAULT_BUNDLE_OPTIONS.jvm_dump_min_free_mb
-                      }
-                      onChange={(event) =>
-                        setBundleOptions((current) => ({
-                          ...current,
-                          jvm_dump_min_free_mb:
-                            Number.parseInt(event.target.value, 10) ||
-                            DEFAULT_BUNDLE_OPTIONS.jvm_dump_min_free_mb,
-                        }))
-                      }
-                      disabled={!bundleOptions.include_jvm_dump}
-                    />
-                    <div className='text-xs text-muted-foreground'>
-                      仅在开启 JVM Dump 时生效，用于避免在可用空间过小的机器上生成 Dump。
-                    </div>
-                  </div>
-                </div>
-
                 <Button
-                  onClick={() => void handleCreateBundle()}
+                  onClick={handleConfirmAndCreateBundle}
                   disabled={creatingBundle}
                 >
                   {creatingBundle ? (
@@ -713,17 +610,169 @@ export default function InspectionDetailPage({
                   ) : (
                     <Package className='mr-2 h-4 w-4' />
                   )}
-                  生成诊断包
+                  一键生成诊断包和诊断报告
                 </Button>
               </div>
             ) : (
-              <div className='text-sm text-muted-foreground'>
+              <p className='text-sm text-muted-foreground'>
                 巡检已完成，未发现问题，无需生成诊断包。
-              </div>
+              </p>
             )}
           </CardContent>
         </Card>
       ) : null}
+
+      {/* 生成确认弹窗 */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>确认生成诊断包</DialogTitle>
+            <DialogDescription>
+              将采集时间范围内的错误日志、告警信息及指标数据，并可选采集线程 Dump 与 JVM Dump。
+            </DialogDescription>
+          </DialogHeader>
+          <div className='space-y-4 py-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='bundle-lookback'>时间范围（分钟）</Label>
+              <Input
+                id='bundle-lookback'
+                type='number'
+                min={5}
+                max={1440}
+                step={5}
+                value={bundleLookbackMinutes}
+                onChange={(event) =>
+                  setBundleLookbackMinutes(
+                    Number.parseInt(event.target.value, 10) || 30,
+                  )
+                }
+              />
+              <p className='text-xs text-muted-foreground'>
+                默认与巡检时间范围一致，可在此按需调整，用于采集该时段内的现场证据。
+              </p>
+            </div>
+            <div className='space-y-3'>
+              <div className='flex items-center justify-between rounded-lg border p-3'>
+                <div>
+                  <div className='font-medium'>采集线程 Dump</div>
+                  <div className='text-xs text-muted-foreground'>
+                    用于分析线程状态、死锁等问题。
+                  </div>
+                </div>
+                <Switch
+                  checked={bundleOptions.include_thread_dump}
+                  onCheckedChange={(checked) =>
+                    setBundleOptions((c) => ({
+                      ...c,
+                      include_thread_dump: checked,
+                    }))
+                  }
+                />
+              </div>
+              <div className='flex items-center justify-between rounded-lg border p-3'>
+                <div>
+                  <div className='font-medium'>采集 JVM Dump</div>
+                  <div className='text-xs text-muted-foreground'>
+                    体积较大，仅在需深入分析内存时开启。
+                  </div>
+                </div>
+                <Switch
+                  checked={bundleOptions.include_jvm_dump}
+                  onCheckedChange={(checked) =>
+                    setBundleOptions((c) => ({
+                      ...c,
+                      include_jvm_dump: checked,
+                    }))
+                  }
+                />
+              </div>
+              <div className='flex flex-wrap gap-2 text-xs'>
+                <Button
+                  type='button'
+                  variant={nodeScope === 'all' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setNodeScope('all')}
+                >
+                  全部节点
+                </Button>
+                <Button
+                  type='button'
+                  variant={nodeScope === 'related' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setNodeScope('related')}
+                >
+                  仅问题相关节点
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant='outline'
+              onClick={() => setConfirmDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={() => void handleCreateBundle()}
+              disabled={creatingBundle}
+            >
+              {creatingBundle ? (
+                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+              ) : null}
+              确认生成
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 查看执行日志弹窗 */}
+      <Dialog open={execLogDialogOpen} onOpenChange={setExecLogDialogOpen}>
+        <DialogContent className='max-h-[85vh] overflow-hidden flex flex-col sm:max-w-2xl'>
+          <DialogHeader>
+            <DialogTitle>执行日志</DialogTitle>
+            <DialogDescription>
+              诊断包生成步骤及执行状态
+            </DialogDescription>
+          </DialogHeader>
+          <div className='flex-1 overflow-y-auto space-y-3 py-2'>
+            {bundleTask?.steps?.length ? (
+              bundleTask.steps.map((step) => (
+                <div
+                  key={step.id}
+                  className='rounded-lg border p-3 space-y-1'
+                >
+                  <div className='flex items-center gap-2'>
+                    <Badge
+                      variant={getStatusVariant(step.status)}
+                      className='text-xs'
+                    >
+                      {getStatusLabel(step.status)}
+                    </Badge>
+                    <span className='font-mono text-xs text-muted-foreground'>
+                      {step.code}
+                    </span>
+                  </div>
+                  <div className='text-sm'>
+                    {localizeDiagnosticsText(step.title) || step.description}
+                  </div>
+                  {(step.error || step.message) ? (
+                    <div className='rounded bg-muted/60 px-2 py-1.5 text-xs text-muted-foreground'>
+                      {step.error || step.message}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : bundleTask?.failure_reason ? (
+              <div className='rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive'>
+                {bundleTask.failure_reason}
+              </div>
+            ) : (
+              <p className='text-sm text-muted-foreground'>暂无执行步骤记录</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

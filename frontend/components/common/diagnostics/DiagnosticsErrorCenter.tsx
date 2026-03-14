@@ -72,6 +72,30 @@ function resolveOccurrenceVariant(
   return 'outline';
 }
 
+function formatNodeOrigin(options: {
+  nodeId?: number | null;
+  hostId?: number | null;
+  hostName?: string | null;
+  hostIp?: string | null;
+  role?: string | null;
+}): string {
+  const parts: string[] = [];
+  if (options.hostName?.trim()) {
+    parts.push(options.hostName.trim());
+  } else if (options.hostIp?.trim()) {
+    parts.push(options.hostIp.trim());
+  } else if (options.hostId) {
+    parts.push(`#${options.hostId}`);
+  }
+  if (options.role?.trim()) {
+    parts.push(options.role.trim());
+  }
+  if (options.nodeId) {
+    parts.push(`node #${options.nodeId}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '-';
+}
+
 export function DiagnosticsErrorCenter({
   clusterId,
   clusterName,
@@ -123,6 +147,9 @@ export function DiagnosticsErrorCenter({
       const result = await services.diagnostics.getErrorGroupDetailSafe(
         groupId,
         20,
+        {
+          cluster_id: clusterId,
+        },
       );
       if (!result.success || !result.data) {
         toast.error(result.error || t('errors.loadDetailError'));
@@ -137,7 +164,7 @@ export function DiagnosticsErrorCenter({
     } finally {
       setLoadingDetail(false);
     }
-  }, [t]);
+  }, [clusterId, t]);
 
   useEffect(() => {
     void loadGroups();
@@ -243,11 +270,14 @@ export function DiagnosticsErrorCenter({
                 <Table className='table-fixed'>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className='w-[52%]'>
+                      <TableHead className='w-[38%]'>
                         {t('errors.columns.group')}
                       </TableHead>
-                      <TableHead className='w-[24%]'>
+                      <TableHead className='w-[19%]'>
                         {t('errors.columns.exception')}
+                      </TableHead>
+                      <TableHead className='w-[20%]'>
+                        {t('errors.columns.node')}
                       </TableHead>
                       <TableHead className='w-[96px] whitespace-nowrap'>
                         {t('errors.columns.occurrences')}
@@ -271,7 +301,7 @@ export function DiagnosticsErrorCenter({
                           onSelectGroup?.(group.id);
                         }}
                       >
-                        <TableCell className='w-[52%] max-w-0'>
+                        <TableCell className='w-[38%] max-w-0'>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <div className='overflow-hidden'>
@@ -305,12 +335,30 @@ export function DiagnosticsErrorCenter({
                             </TooltipContent>
                           </Tooltip>
                         </TableCell>
-                        <TableCell className='w-[24%] max-w-0 text-sm text-muted-foreground'>
+                        <TableCell className='w-[19%] max-w-0 text-sm text-muted-foreground'>
                           <div
                             className='truncate'
                             title={group.exception_class || '-'}
                           >
                             {group.exception_class || '-'}
+                          </div>
+                        </TableCell>
+                        <TableCell className='max-w-0 text-sm text-muted-foreground'>
+                          <div
+                            className='truncate'
+                            title={formatNodeOrigin({
+                              nodeId: group.last_node_id,
+                              hostId: group.last_host_id,
+                              hostName: group.last_host_name,
+                              hostIp: group.last_host_ip,
+                            })}
+                          >
+                            {formatNodeOrigin({
+                              nodeId: group.last_node_id,
+                              hostId: group.last_host_id,
+                              hostName: group.last_host_name,
+                              hostIp: group.last_host_ip,
+                            })}
                           </div>
                         </TableCell>
                         <TableCell className='whitespace-nowrap'>
@@ -390,6 +438,14 @@ export function DiagnosticsErrorCenter({
                   <Badge variant='outline'>
                     {t('errors.columns.lastSeen')}: {formatDateTime(selectedGroup.last_seen_at)}
                   </Badge>
+                  <Badge variant='outline'>
+                    {t('errors.columns.node')}: {formatNodeOrigin({
+                      nodeId: selectedGroup.last_node_id,
+                      hostId: selectedGroup.last_host_id,
+                      hostName: selectedGroup.last_host_name,
+                      hostIp: selectedGroup.last_host_ip,
+                    })}
+                  </Badge>
                 </div>
                   <div>
                     <div className='break-all text-sm font-medium'>
@@ -412,6 +468,7 @@ export function DiagnosticsErrorCenter({
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t('errors.columns.time')}</TableHead>
+                      <TableHead>{t('errors.columns.node')}</TableHead>
                       <TableHead>{t('errors.columns.job')}</TableHead>
                       <TableHead>{t('errors.columns.source')}</TableHead>
                     </TableRow>
@@ -420,7 +477,7 @@ export function DiagnosticsErrorCenter({
                     {groupEvents.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={3}
+                          colSpan={4}
                           className='text-center text-sm text-muted-foreground'
                         >
                           {t('errors.noEvents')}
@@ -439,6 +496,26 @@ export function DiagnosticsErrorCenter({
                         >
                           <TableCell className='text-sm text-muted-foreground'>
                             {formatDateTime(event.occurred_at)}
+                          </TableCell>
+                          <TableCell className='max-w-[220px] text-sm text-muted-foreground'>
+                            <div
+                              className='truncate'
+                              title={formatNodeOrigin({
+                                nodeId: event.node_id,
+                                hostId: event.host_id,
+                                hostName: event.host_name,
+                                hostIp: event.host_ip,
+                                role: event.role,
+                              })}
+                            >
+                              {formatNodeOrigin({
+                                nodeId: event.node_id,
+                                hostId: event.host_id,
+                                hostName: event.host_name,
+                                hostIp: event.host_ip,
+                                role: event.role,
+                              })}
+                            </div>
                           </TableCell>
                           <TableCell>{event.job_id || '-'}</TableCell>
                           <TableCell className='max-w-[220px] text-sm text-muted-foreground'>
@@ -463,6 +540,34 @@ export function DiagnosticsErrorCenter({
               </div>
 
               <div className='space-y-3'>
+                <div className='rounded-lg border p-4 text-sm'>
+                  <div className='font-medium'>{t('errors.selectedEventTitle')}</div>
+                  <div className='mt-2 grid gap-2 text-muted-foreground sm:grid-cols-2'>
+                    <div>
+                      {t('errors.columns.node')}: {formatNodeOrigin({
+                        nodeId: selectedEvent?.node_id,
+                        hostId: selectedEvent?.host_id,
+                        hostName: selectedEvent?.host_name,
+                        hostIp: selectedEvent?.host_ip,
+                        role: selectedEvent?.role,
+                      })}
+                    </div>
+                    <div>
+                      Agent: {selectedEvent?.agent_id || '-'}
+                    </div>
+                    <div>
+                      Job: {selectedEvent?.job_id || '-'}
+                    </div>
+                    <div>
+                      {t('errors.columns.source')}: {selectedEvent?.source_file || '-'}
+                    </div>
+                  </div>
+                  {selectedEvent?.message ? (
+                    <div className='mt-3 rounded-md bg-muted/40 p-3 text-muted-foreground'>
+                      {selectedEvent.message}
+                    </div>
+                  ) : null}
+                </div>
                 <div className='text-sm font-medium'>{t('errors.evidenceTitle')}</div>
                 <ScrollArea className='h-[400px] rounded-lg border bg-muted/20'>
                   <pre className='whitespace-pre-wrap break-words p-4 text-xs leading-6 text-muted-foreground'>

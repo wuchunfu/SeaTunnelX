@@ -83,6 +83,8 @@ export interface DiagnosticsErrorGroup {
   last_cluster_id: number;
   last_node_id: number;
   last_host_id: number;
+  last_host_name?: string;
+  last_host_ip?: string;
 }
 
 export interface DiagnosticsErrorEvent {
@@ -92,6 +94,8 @@ export interface DiagnosticsErrorEvent {
   cluster_id: number;
   node_id: number;
   host_id: number;
+  host_name?: string;
+  host_ip?: string;
   agent_id: string;
   role: string;
   install_dir: string;
@@ -189,6 +193,8 @@ export interface DiagnosticsInspectionFinding {
   evidence_summary: string;
   related_node_id: number;
   related_host_id: number;
+  related_host_name?: string;
+  related_host_ip?: string;
   related_error_group_id: number;
   related_alert_id: string;
   created_at: string;
@@ -350,6 +356,7 @@ export interface DiagnosticsTaskSummary {
   cluster_id: number;
   trigger_source: DiagnosticsTaskSourceType;
   status: DiagnosticsTaskStatus;
+  lookback_minutes?: number;
   current_step: DiagnosticsTaskStepCode;
   failure_step: DiagnosticsTaskStepCode;
   failure_reason: string;
@@ -369,6 +376,7 @@ export interface DiagnosticsTask {
   source_ref: DiagnosticsTaskSourceRef;
   options: DiagnosticsTaskOptions;
   status: DiagnosticsTaskStatus;
+  lookback_minutes?: number;
   current_step: DiagnosticsTaskStepCode;
   failure_step: DiagnosticsTaskStepCode;
   failure_reason: string;
@@ -423,10 +431,11 @@ export interface CreateDiagnosticsTaskRequest {
   cluster_id?: number;
   trigger_source?: DiagnosticsTaskSourceType;
   source_ref?: DiagnosticsTaskSourceRef;
-   node_scope?: DiagnosticsTaskNodeScope;
+  node_scope?: DiagnosticsTaskNodeScope;
   selected_node_ids?: number[];
   options?: DiagnosticsTaskOptions;
   summary?: string;
+  lookback_minutes?: number;
   auto_start?: boolean;
 }
 

@@ -17,11 +17,10 @@
 
 'use client';
 
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
-import {useRouter} from 'next/navigation';
 import {useTranslations} from 'next-intl';
-import {ClipboardCheck, Loader2, RefreshCw} from 'lucide-react';
+import {ClipboardCheck, Download, ExternalLink, FileText, Loader2, Package, RefreshCw} from 'lucide-react';
 import {toast} from 'sonner';
 import services from '@/lib/services';
 import type {
@@ -29,10 +28,21 @@ import type {
   DiagnosticsInspectionFindingSeverity,
   DiagnosticsInspectionReport,
   DiagnosticsInspectionReportStatus,
+  DiagnosticsTask,
+  DiagnosticsTaskNodeScope,
+  DiagnosticsTaskOptions,
 } from '@/lib/services/diagnostics';
 import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {ScrollArea} from '@/components/ui/scroll-area';
@@ -44,20 +54,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {Skeleton} from '@/components/ui/skeleton';
+import {Switch} from '@/components/ui/switch';
 import {localizeDiagnosticsText} from './text-utils';
+
+const DEFAULT_BUNDLE_OPTIONS: DiagnosticsTaskOptions = {
+  include_thread_dump: true,
+  include_jvm_dump: false,
+  jvm_dump_min_free_mb: 2048,
+  log_sample_lines: 200,
+};
 
 type DiagnosticsInspectionCenterProps = {
   clusterId?: number;
   clusterName?: string;
   reportId?: number;
   onSelectReport?: (reportId: number | null) => void;
-};
-
-const DEFAULT_DIAGNOSIS_TASK_OPTIONS = {
-  include_thread_dump: true,
-  include_jvm_dump: false,
-  jvm_dump_min_free_mb: 2048,
-  log_sample_lines: 200,
 };
 
 function formatDateTime(value?: string | null): string {
@@ -72,19 +83,32 @@ function formatDateTime(value?: string | null): string {
 }
 
 function getStatusVariant(
-  status: DiagnosticsInspectionReportStatus,
+  status: string,
 ): 'default' | 'secondary' | 'outline' | 'destructive' {
   switch (status) {
     case 'completed':
+    case 'succeeded':
       return 'default';
     case 'failed':
       return 'destructive';
     case 'running':
       return 'secondary';
-    case 'pending':
     default:
       return 'outline';
   }
+}
+
+function getTaskStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    pending: '等待中',
+    ready: '就绪',
+    running: '执行中',
+    succeeded: '已完成',
+    failed: '失败',
+    skipped: '已跳过',
+    cancelled: '已取消',
+  };
+  return map[status] ?? status;
 }
 
 function getSeverityVariant(
@@ -115,6 +139,26 @@ function getFindingSeverityScore(
   }
 }
 
+function formatNodeOrigin(options: {
+  nodeId?: number | null;
+  hostId?: number | null;
+  hostName?: string | null;
+  hostIp?: string | null;
+}): string {
+  const parts: string[] = [];
+  if (options.hostName?.trim()) {
+    parts.push(options.hostName.trim());
+  } else if (options.hostIp?.trim()) {
+    parts.push(options.hostIp.trim());
+  } else if (options.hostId) {
+    parts.push(`#${options.hostId}`);
+  }
+  if (options.nodeId) {
+    parts.push(`node #${options.nodeId}`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : '-';
+}
+
 export function DiagnosticsInspectionCenter({
   clusterId,
   clusterName,
@@ -123,7 +167,6 @@ export function DiagnosticsInspectionCenter({
 }: DiagnosticsInspectionCenterProps) {
   const t = useTranslations('diagnosticsCenter');
   const commonT = useTranslations('common');
-  const router = useRouter();
 
   const [statusFilter, setStatusFilter] = useState<
     'all' | DiagnosticsInspectionReportStatus
@@ -143,14 +186,19 @@ export function DiagnosticsInspectionCenter({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedReport, setSelectedReport] =
     useState<DiagnosticsInspectionReport | null>(null);
-  const [relatedTask, setRelatedTask] =
-    useState<import('@/lib/services/diagnostics').DiagnosticsTask | null>(null);
   const [findings, setFindings] = useState<DiagnosticsInspectionFinding[]>([]);
-  const [selectedFindingId, setSelectedFindingId] = useState<number | null>(null);
-  const [creatingDiagnosisTask, setCreatingDiagnosisTask] = useState(false);
-  const [dismissedFollowUpReportId, setDismissedFollowUpReportId] = useState<
-    number | null
-  >(null);
+  const [bundleTask, setBundleTask] = useState<DiagnosticsTask | null>(null);
+  const [creatingBundle, setCreatingBundle] = useState(false);
+  const [pollingBundle, setPollingBundle] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [bundleOptions, setBundleOptions] =
+    useState<DiagnosticsTaskOptions>(DEFAULT_BUNDLE_OPTIONS);
+  const [nodeScope, setNodeScope] =
+    useState<DiagnosticsTaskNodeScope>('all');
+  const [bundleLookbackMinutes, setBundleLookbackMinutes] =
+    useState<number>(30);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [execLogDialogOpen, setExecLogDialogOpen] = useState(false);
 
   const loadReports = useCallback(async () => {
     setLoadingReports(true);
@@ -187,12 +235,12 @@ export function DiagnosticsInspectionCenter({
           toast.error(result.error || t('inspections.loadDetailError'));
           setSelectedReport(null);
           setFindings([]);
-          setRelatedTask(null);
+          setBundleTask(null);
           return;
         }
         setSelectedReport(result.data.report);
         setFindings(result.data.findings || []);
-        setRelatedTask(result.data.related_diagnostic_task || null);
+        setBundleTask(result.data.related_diagnostic_task || null);
       } finally {
         setLoadingDetail(false);
       }
@@ -209,7 +257,7 @@ export function DiagnosticsInspectionCenter({
       setSelectedReportId(null);
       setSelectedReport(null);
       setFindings([]);
-      setRelatedTask(null);
+      setBundleTask(null);
       return;
     }
     if (
@@ -235,26 +283,6 @@ export function DiagnosticsInspectionCenter({
     setSelectedReportId(reportId ?? null);
   }, [reportId]);
 
-  useEffect(() => {
-    if (findings.length === 0) {
-      setSelectedFindingId(null);
-      return;
-    }
-    if (selectedFindingId && findings.some((item) => item.id === selectedFindingId)) {
-      return;
-    }
-    const recommendedFinding = [...findings].sort((left, right) => {
-      const severityDelta =
-        getFindingSeverityScore(right.severity) -
-        getFindingSeverityScore(left.severity);
-      if (severityDelta !== 0) {
-        return severityDelta;
-      }
-      return left.id - right.id;
-    })[0];
-    setSelectedFindingId(recommendedFinding?.id ?? null);
-  }, [findings, selectedFindingId]);
-
   const groupedFindings = useMemo(
     () =>
       findings.reduce<
@@ -277,18 +305,84 @@ export function DiagnosticsInspectionCenter({
       ),
     [findings],
   );
-  const selectedFinding = useMemo(
-    () => findings.find((item) => item.id === selectedFindingId) ?? null,
-    [findings, selectedFindingId],
-  );
   const hasFindings = findings.length > 0;
-  const showFollowUpPrompt =
-    !!selectedReport &&
-    selectedReport.status === 'completed' &&
-    hasFindings &&
-    dismissedFollowUpReportId !== selectedReport.id;
-
   const totalPages = Math.max(1, Math.ceil(reportTotal / 20));
+
+  const pollBundleTask = useCallback(async (taskId: number) => {
+    const result = await services.diagnostics.getTaskSafe(taskId);
+    if (!result.success || !result.data) return;
+    setBundleTask(result.data);
+    if (['succeeded', 'failed', 'cancelled'].includes(result.data.status)) {
+      setPollingBundle(false);
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!bundleTask || !selectedReportId || bundleTask.id === 0) return;
+    const status = bundleTask.status;
+    if (['succeeded', 'failed', 'cancelled'].includes(status)) return;
+    setPollingBundle(true);
+    const taskId = bundleTask.id;
+    pollTimerRef.current = setInterval(() => void pollBundleTask(taskId), 3000);
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [bundleTask?.id, bundleTask?.status, pollBundleTask, selectedReportId]);
+
+  const handleConfirmAndCreateBundle = useCallback(() => {
+    const base =
+      selectedReport?.lookback_minutes || lookbackMinutes || 30;
+    setBundleLookbackMinutes(
+      base < 5 || base > 1440 ? 30 : base,
+    );
+    setConfirmDialogOpen(true);
+  }, [lookbackMinutes, selectedReport]);
+
+  const handleCreateBundle = useCallback(async () => {
+    if (!selectedReport) return;
+    if (bundleLookbackMinutes < 5 || bundleLookbackMinutes > 1440) {
+      toast.error(t('inspections.lookbackRangeError'));
+      return;
+    }
+    const firstFinding =
+      findings.find((f) => f.severity === 'critical') ??
+      findings.find((f) => f.severity === 'warning') ??
+      findings[0];
+    setCreatingBundle(true);
+    setConfirmDialogOpen(false);
+    try {
+      const result = await services.diagnostics.createTaskSafe({
+        cluster_id: selectedReport.cluster_id,
+        trigger_source: firstFinding ? 'inspection_finding' : 'manual',
+        source_ref: firstFinding
+          ? {
+              inspection_report_id: selectedReport.id,
+              inspection_finding_id: firstFinding.id,
+            }
+          : undefined,
+        node_scope: nodeScope || 'all',
+        options: bundleOptions,
+        lookback_minutes: bundleLookbackMinutes,
+        auto_start: true,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error || t('inspections.followUp.createTaskError'));
+        return;
+      }
+      toast.success(t('inspections.followUp.createTaskSuccess'));
+      setBundleTask(result.data);
+      setPollingBundle(true);
+    } finally {
+      setCreatingBundle(false);
+    }
+  }, [bundleOptions, findings, nodeScope, pollBundleTask, selectedReport, t]);
 
   const handleStartInspection = useCallback(async () => {
     if (!clusterId) {
@@ -320,39 +414,6 @@ export function DiagnosticsInspectionCenter({
       setStartingInspection(false);
     }
   }, [clusterId, loadReports, lookbackMinutes, onSelectReport, t]);
-
-  const handleCreateDiagnosisTask = useCallback(async () => {
-    if (!selectedReport || !selectedFinding) {
-      toast.error(t('inspections.followUp.chooseFindingFirst'));
-      return;
-    }
-    // 已经存在关联诊断任务时，优先引导用户查看现有结果，避免重复创建。
-    if (relatedTask) {
-      router.push(`/diagnostics/inspections/${selectedReport.id}`);
-      return;
-    }
-    setCreatingDiagnosisTask(true);
-    try {
-      const result = await services.diagnostics.createTaskSafe({
-        cluster_id: selectedReport.cluster_id,
-        trigger_source: 'inspection_finding',
-        source_ref: {
-          inspection_report_id: selectedReport.id,
-          inspection_finding_id: selectedFinding.id,
-        },
-        options: DEFAULT_DIAGNOSIS_TASK_OPTIONS,
-        auto_start: true,
-      });
-      if (!result.success || !result.data) {
-        toast.error(result.error || t('inspections.followUp.createTaskError'));
-        return;
-      }
-      toast.success(t('inspections.followUp.createTaskSuccess'));
-      router.push(`/diagnostics/inspections/${selectedReport.id}`);
-    } finally {
-      setCreatingDiagnosisTask(false);
-    }
-  }, [relatedTask, router, selectedFinding, selectedReport, t]);
 
   return (
     <div className='grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] xl:items-start'>
@@ -514,9 +575,6 @@ export function DiagnosticsInspectionCenter({
                           setSelectedReportId(report.id);
                           onSelectReport?.(report.id);
                         }}
-                        onDoubleClick={() => {
-                          router.push(`/diagnostics/inspections/${report.id}`);
-                        }}
                       >
                         <div className='flex flex-wrap items-center gap-2'>
                           <Badge variant={getStatusVariant(report.status)}>
@@ -559,17 +617,6 @@ export function DiagnosticsInspectionCenter({
                               report.finished_at || report.created_at,
                             )}
                           </div>
-                          <Button
-                            asChild
-                            size='sm'
-                            variant='ghost'
-                            className='h-auto px-2 py-1 text-xs'
-                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                          >
-                            <Link href={`/diagnostics/inspections/${report.id}`}>
-                              查看详情
-                            </Link>
-                          </Button>
                         </div>
                       </button>
                     ))}
@@ -628,154 +675,108 @@ export function DiagnosticsInspectionCenter({
             </div>
           ) : (
             <>
-              <div className='space-y-3 rounded-lg border p-4'>
-                <div className='flex flex-wrap items-center gap-2'>
-                  <Badge variant={getStatusVariant(selectedReport.status)}>
-                    {t(`inspections.status.${selectedReport.status}`)}
-                  </Badge>
-                  <Badge variant='outline'>
-                    {t(`inspections.trigger.${selectedReport.trigger_source}`)}
-                  </Badge>
-                </div>
-                <div className='text-sm'>
-                  {localizeDiagnosticsText(selectedReport.summary) ||
-                    t('inspections.summaryFallback')}
-                </div>
-                {selectedReport.error_message ? (
-                  <div className='rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive'>
-                    {selectedReport.error_message}
-                  </div>
-                ) : null}
-                <div className='grid gap-2 text-sm sm:grid-cols-2'>
-                  <div>
-                    <span className='text-muted-foreground'>
-                      {t('inspections.requestedBy')}:
-                    </span>{' '}
-                    {selectedReport.requested_by || '-'}
-                  </div>
-                  <div>
-                    <span className='text-muted-foreground'>
-                      {t('inspections.startedAt')}:
-                    </span>{' '}
-                    {formatDateTime(
-                      selectedReport.started_at || selectedReport.created_at,
-                    )}
-                  </div>
-                  <div>
-                    <span className='text-muted-foreground'>
-                      {t('inspections.finishedAt')}:
-                    </span>{' '}
-                    {formatDateTime(selectedReport.finished_at)}
-                  </div>
-                  <div>
-                    <span className='text-muted-foreground'>
-                      {t('inspections.lookbackLabel')}:
-                    </span>{' '}
-                    {t('inspections.lookbackValue', {
-                      minutes: selectedReport.lookback_minutes || 30,
-                    })}
-                  </div>
-                  <div>
-                    <span className='text-muted-foreground'>
-                      {t('inspections.countSummary')}:
-                    </span>{' '}
-                    {t('inspections.counts', {
-                      total: selectedReport.finding_total,
-                      critical: selectedReport.critical_count,
-                      warning: selectedReport.warning_count,
-                      info: selectedReport.info_count,
-                    })}
-                  </div>
-                </div>
-              </div>
-
               <div className='flex min-h-0 flex-1 flex-col space-y-3'>
-                {selectedReport.status === 'completed' ? (
-                  <div className='rounded-lg border bg-muted/20 p-4'>
-                    {showFollowUpPrompt ? (
-                      <div className='space-y-3'>
+                {selectedReport.status === 'completed' && hasFindings ? (
+                  <div className='rounded-lg border bg-muted/20 p-4 space-y-3'>
+                    {bundleTask ? (
+                      <>
                         <div className='flex flex-wrap items-center gap-2'>
-                          <Badge variant='secondary'>
-                            {t('inspections.followUp.title')}
+                          <Badge variant={getStatusVariant(bundleTask.status)}>
+                            {getTaskStatusLabel(bundleTask.status)}
                           </Badge>
-                          <Badge variant={getSeverityVariant(selectedFinding?.severity || 'info')}>
-                            {t(
-                              `inspections.severity.${selectedFinding?.severity || 'info'}`,
-                            )}
-                          </Badge>
+                          <Badge variant='outline'>任务 #{bundleTask.id}</Badge>
+                          {pollingBundle ? (
+                            <span className='flex items-center gap-1 text-xs text-muted-foreground'>
+                              <Loader2 className='h-3 w-3 animate-spin' />
+                              正在刷新...
+                            </span>
+                          ) : null}
                         </div>
-                        <div className='text-sm leading-6'>
-                          {t('inspections.followUp.hasFindingsDescription')}
-                        </div>
-                        {selectedFinding ? (
-                          <div className='rounded-md border bg-background p-3'>
-                            <div className='text-xs text-muted-foreground'>
-                              {t('inspections.followUp.currentFinding')}
-                            </div>
-                            <div className='mt-1 text-sm font-medium leading-6'>
-                              {localizeDiagnosticsText(
-                                selectedFinding.check_name ||
-                                  selectedFinding.summary,
-                              )}
-                            </div>
-                            <div className='mt-1 text-xs text-muted-foreground'>
-                              {localizeDiagnosticsText(selectedFinding.summary)}
-                            </div>
-                          </div>
-                        ) : null}
                         <div className='flex flex-wrap gap-2'>
-                          <Button
-                            onClick={() => void handleCreateDiagnosisTask()}
-                            disabled={creatingDiagnosisTask || !selectedFinding}
-                          >
-                            {creatingDiagnosisTask ? (
-                              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                            ) : null}
-                            {relatedTask
-                              ? t('inspections.followUp.viewExistingTask')
-                              : t('inspections.followUp.createTask')}
-                          </Button>
-                          <Button
-                            variant='outline'
-                            onClick={() =>
-                              setDismissedFollowUpReportId(selectedReport.id)
-                            }
-                          >
-                            {t('inspections.followUp.dismiss')}
-                          </Button>
-                        </div>
-                        <div className='text-xs text-muted-foreground'>
-                          {t('inspections.followUp.hasFindingsHint')}
-                        </div>
-                      </div>
-                    ) : hasFindings ? (
-                      <div className='space-y-2'>
-                        <div className='font-medium'>
-                          {t('inspections.followUp.dismissedTitle')}
-                        </div>
-                        <div className='text-sm text-muted-foreground'>
-                          {t('inspections.followUp.dismissedDescription')}
-                        </div>
-                        <div>
                           <Button
                             variant='outline'
                             size='sm'
-                            onClick={() => setDismissedFollowUpReportId(null)}
+                            onClick={() => setExecLogDialogOpen(true)}
                           >
-                            {t('inspections.followUp.resume')}
+                            <FileText className='mr-2 h-4 w-4' />
+                            查看执行日志
                           </Button>
+                          {bundleTask.status === 'succeeded' ? (
+                            <>
+                              <Button asChild variant='outline' size='sm'>
+                                <a
+                                  href={services.diagnostics.getTaskHTMLUrl(bundleTask.id)}
+                                  target='_blank'
+                                  rel='noopener noreferrer'
+                                >
+                                  <ExternalLink className='mr-2 h-4 w-4' />
+                                  预览报告
+                                </a>
+                              </Button>
+                              <Button asChild variant='outline' size='sm'>
+                                <a
+                                  href={services.diagnostics.getTaskBundleUrl(bundleTask.id)}
+                                  download
+                                >
+                                  <Download className='mr-2 h-4 w-4' />
+                                  下载诊断包
+                                </a>
+                              </Button>
+                              <Button
+                                variant='outline'
+                                size='sm'
+                                onClick={handleConfirmAndCreateBundle}
+                                disabled={creatingBundle}
+                              >
+                                {creatingBundle ? (
+                                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                ) : (
+                                  <Package className='mr-2 h-4 w-4' />
+                                )}
+                                重新生成
+                              </Button>
+                            </>
+                          ) : bundleTask.status === 'failed' ? (
+                            <Button
+                              variant='outline'
+                              size='sm'
+                              onClick={handleConfirmAndCreateBundle}
+                              disabled={creatingBundle}
+                            >
+                              {creatingBundle ? (
+                                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                              ) : (
+                                <Package className='mr-2 h-4 w-4' />
+                              )}
+                              重新生成
+                            </Button>
+                          ) : null}
                         </div>
-                      </div>
+                      </>
                     ) : (
-                      <div className='space-y-2'>
-                        <div className='font-medium'>
-                          {t('inspections.followUp.noFindingsTitle')}
-                        </div>
-                        <div className='text-sm text-muted-foreground'>
-                          {t('inspections.followUp.noFindingsDescription')}
-                        </div>
-                      </div>
+                      <>
+                        <Button
+                          onClick={handleConfirmAndCreateBundle}
+                          disabled={creatingBundle}
+                        >
+                          {creatingBundle ? (
+                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          ) : (
+                            <Package className='mr-2 h-4 w-4' />
+                          )}
+                          {t('inspections.followUp.generateBundle')}
+                        </Button>
+                        <p className='text-xs text-muted-foreground'>
+                          {t('inspections.followUp.generateHint')}
+                        </p>
+                      </>
                     )}
+                  </div>
+                ) : selectedReport.status === 'completed' && !hasFindings ? (
+                  <div className='rounded-lg border bg-muted/20 p-4'>
+                    <p className='text-sm text-muted-foreground'>
+                      {t('inspections.followUp.noFindingsDescription')}
+                    </p>
                   </div>
                 ) : null}
 
@@ -850,50 +851,24 @@ export function DiagnosticsInspectionCenter({
                                         )}
                                       </div>
                                     ) : null}
-                                    <div className='flex flex-wrap items-center gap-2 pt-1'>
-                                      <Button
-                                        size='sm'
-                                        variant={
-                                          selectedFindingId === finding.id
-                                            ? 'default'
-                                            : 'outline'
-                                        }
-                                        onClick={() =>
-                                          setSelectedFindingId(finding.id)
-                                        }
-                                      >
-                                        {selectedFindingId === finding.id
-                                          ? t(
-                                              'inspections.actions.selectedForDiagnosis',
-                                            )
-                                          : t(
-                                              'inspections.actions.useForDiagnosis',
-                                            )}
-                                      </Button>
+                                    <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                                      <span>
+                                        {t('inspections.nodeLabel')}:{' '}
+                                        {formatNodeOrigin({
+                                          nodeId: finding.related_node_id,
+                                          hostId: finding.related_host_id,
+                                          hostName: finding.related_host_name,
+                                          hostIp: finding.related_host_ip,
+                                        })}
+                                      </span>
                                       {finding.related_error_group_id > 0 ? (
-                                        <Button
-                                          asChild
-                                          size='sm'
-                                          variant='outline'
-                                        >
-                                          <Link
-                                            href={`/diagnostics?tab=errors&cluster_id=${selectedReport.cluster_id}&group_id=${finding.related_error_group_id}&source=inspection-finding`}
-                                          >
-                                            {t('inspections.actions.viewError')}
-                                          </Link>
-                                        </Button>
-                                      ) : null}
-                                      <Button
-                                        asChild
-                                        size='sm'
-                                        variant='outline'
-                                      >
                                         <Link
-                                          href={`/diagnostics?tab=tasks&cluster_id=${selectedReport.cluster_id}&report_id=${selectedReport.id}&finding_id=${finding.id}&source=inspection-finding`}
+                                          href={`/diagnostics?tab=errors&cluster_id=${selectedReport.cluster_id}&group_id=${finding.related_error_group_id}&source=inspection-finding`}
+                                          className='text-primary hover:underline'
                                         >
-                                          {t('inspections.actions.createTask')}
+                                          {t('inspections.actions.viewErrorGroup')}
                                         </Link>
-                                      </Button>
+                                      ) : null}
                                     </div>
                                   </div>
                                 </div>
@@ -910,6 +885,158 @@ export function DiagnosticsInspectionCenter({
           )}
         </CardContent>
       </Card>
+
+      {/* 生成确认弹窗 */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>确认生成诊断包</DialogTitle>
+            <DialogDescription>
+              将采集时间范围内的错误日志、告警信息及指标数据，并可选采集线程 Dump 与 JVM Dump。
+            </DialogDescription>
+          </DialogHeader>
+          <div className='space-y-4 py-4'>
+            <div className='space-y-2'>
+              <Label htmlFor='bundle-lookback'>时间范围（分钟）</Label>
+              <Input
+                id='bundle-lookback'
+                type='number'
+                min={5}
+                max={1440}
+                step={5}
+                value={bundleLookbackMinutes}
+                onChange={(event) =>
+                  setBundleLookbackMinutes(
+                    Number.parseInt(event.target.value, 10) || 30,
+                  )
+                }
+              />
+              <p className='text-xs text-muted-foreground'>
+                默认与巡检时间范围一致，可在此按需调整，用于采集该时段内的现场证据。
+              </p>
+            </div>
+            <div className='space-y-3'>
+              <div className='flex items-center justify-between rounded-lg border p-3'>
+                <div>
+                  <div className='font-medium'>采集线程 Dump</div>
+                  <div className='text-xs text-muted-foreground'>
+                    用于分析线程状态、死锁等问题。
+                  </div>
+                </div>
+                <Switch
+                  checked={bundleOptions.include_thread_dump}
+                  onCheckedChange={(checked) =>
+                    setBundleOptions((c) => ({
+                      ...c,
+                      include_thread_dump: checked,
+                    }))
+                  }
+                />
+              </div>
+              <div className='flex items-center justify-between rounded-lg border p-3'>
+                <div>
+                  <div className='font-medium'>采集 JVM Dump</div>
+                  <div className='text-xs text-muted-foreground'>
+                    体积较大，仅在需深入分析内存时开启。
+                  </div>
+                </div>
+                <Switch
+                  checked={bundleOptions.include_jvm_dump}
+                  onCheckedChange={(checked) =>
+                    setBundleOptions((c) => ({
+                      ...c,
+                      include_jvm_dump: checked,
+                    }))
+                  }
+                />
+              </div>
+              <div className='flex flex-wrap gap-2 text-xs'>
+                <Button
+                  type='button'
+                  variant={nodeScope === 'all' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setNodeScope('all')}
+                >
+                  全部节点
+                </Button>
+                <Button
+                  type='button'
+                  variant={nodeScope === 'related' ? 'default' : 'outline'}
+                  size='sm'
+                  onClick={() => setNodeScope('related')}
+                >
+                  仅问题相关节点
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant='outline'
+              onClick={() => setConfirmDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={() => void handleCreateBundle()}
+              disabled={creatingBundle}
+            >
+              {creatingBundle ? (
+                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+              ) : null}
+              确认生成
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 查看执行日志弹窗 */}
+      <Dialog open={execLogDialogOpen} onOpenChange={setExecLogDialogOpen}>
+        <DialogContent className='max-h-[85vh] overflow-hidden flex flex-col sm:max-w-2xl'>
+          <DialogHeader>
+            <DialogTitle>执行日志</DialogTitle>
+            <DialogDescription>
+              诊断包生成步骤及执行状态
+            </DialogDescription>
+          </DialogHeader>
+          <div className='flex-1 overflow-y-auto space-y-3 py-2'>
+            {bundleTask?.steps?.length ? (
+              bundleTask.steps.map((step) => (
+                <div
+                  key={step.id}
+                  className='rounded-lg border p-3 space-y-1'
+                >
+                  <div className='flex items-center gap-2'>
+                    <Badge
+                      variant={getStatusVariant(step.status)}
+                      className='text-xs'
+                    >
+                      {getTaskStatusLabel(step.status)}
+                    </Badge>
+                    <span className='font-mono text-xs text-muted-foreground'>
+                      {step.code}
+                    </span>
+                  </div>
+                  <div className='text-sm'>
+                    {localizeDiagnosticsText(step.title) || step.description}
+                  </div>
+                  {(step.error || step.message) ? (
+                    <div className='rounded bg-muted/60 px-2 py-1.5 text-xs text-muted-foreground'>
+                      {step.error || step.message}
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : bundleTask?.failure_reason ? (
+              <div className='rounded-md border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive'>
+                {bundleTask.failure_reason}
+              </div>
+            ) : (
+              <p className='text-sm text-muted-foreground'>暂无执行步骤记录</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

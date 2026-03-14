@@ -48,6 +48,7 @@ export type {
   DiagnosticsTaskLogListData,
   DiagnosticsTaskLogQuery,
   DiagnosticsTaskNodeExecution,
+  DiagnosticsTaskNodeScope,
   DiagnosticsTaskNodeTarget,
   DiagnosticsTaskOptions,
   DiagnosticsTaskSourceRef,

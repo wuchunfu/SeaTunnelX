@@ -2197,7 +2197,7 @@
   },
   "diagnosticsCenter": {
     "title": "诊断中心",
-    "subtitle": "先看错误中心，再到巡检中心，必要时抓现场并查看诊断报告。",
+    "subtitle": "错误中心聚合历史异常；巡检中心汇总检查结果，支持一键生成诊断包与报告。",
     "workspaceTitle": "统一诊断工作台",
     "loading": "加载诊断中心中...",
     "loadError": "加载诊断中心失败",
@@ -2244,6 +2244,7 @@
       "empty": "当前筛选条件下暂无错误组。",
       "selectGroup": "请选择左侧错误组查看样本事件与证据。",
       "recentEventsTitle": "近期事件样本",
+      "selectedEventTitle": "当前选中事件",
       "evidenceTitle": "错误证据样本",
       "noEvents": "暂无错误事件",
       "noEvidence": "暂无错误证据",
@@ -2257,6 +2258,7 @@
         "occurrences": "出现次数",
         "lastSeen": "最近出现",
         "time": "时间",
+        "node": "来源节点",
         "job": "Job",
         "source": "来源文件"
       }
@@ -2285,6 +2287,7 @@
       "finishedAt": "完成时间",
       "countSummary": "发现摘要",
       "counts": "共 {total} 项（严重 {critical} / 告警 {warning} / 信息 {info}）",
+      "nodeLabel": "来源节点",
       "findingsTitle": "发现的问题",
       "noFindings": "当前巡检没有结构化发现项。",
       "filters": {
@@ -2310,27 +2313,15 @@
         "diagnostics_workspace": "诊断中心"
       },
       "actions": {
-        "viewError": "查看关联错误",
-        "createTask": "查看更多诊断选项",
-        "useForDiagnosis": "用这项继续排查",
-        "selectedForDiagnosis": "当前正在围绕这项排查"
+        "viewErrorGroup": "查看错误组"
       },
       "followUp": {
         "title": "继续诊断",
-        "hasFindingsDescription": "本次检查已经发现异常。你可以直接继续抓现场证据，系统会生成诊断包和诊断报告。",
-        "currentFinding": "当前准备继续排查的问题",
-        "createTask": "继续抓现场并查看诊断报告",
-        "viewExistingTask": "查看诊断结果",
-        "dismiss": "先只看检查结果",
-        "hasFindingsHint": "这一步会立即开始采集日志样本、线程栈等现场证据；如果现场已经变化，报告里也会明确区分“历史异常”和“当前现场”。",
-        "noFindingsTitle": "本次检查未发现需要继续排查的问题",
-        "noFindingsDescription": "当前没有需要继续抓现场的异常项，可以直接把本次检查结果当作轻量诊断结论查看。",
-        "dismissedTitle": "你已选择先查看检查结果",
-        "dismissedDescription": "如果后续还想继续抓现场证据，可随时恢复并继续查看诊断报告。",
-        "resume": "恢复继续诊断",
-        "chooseFindingFirst": "请先选择一个要继续排查的问题",
-        "createTaskSuccess": "已开始继续诊断，正在生成诊断包和报告",
-        "createTaskError": "继续诊断失败"
+        "generateBundle": "一键生成诊断包和诊断报告",
+        "generateHint": "生成后可在本页下载诊断包与 HTML 报告。",
+        "noFindingsDescription": "本次检查未发现需要采集现场证据的异常项。",
+        "createTaskSuccess": "诊断包生成已启动",
+        "createTaskError": "诊断包生成失败"
       }
     },
     "tasks": {

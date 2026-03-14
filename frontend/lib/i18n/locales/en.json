@@ -2244,6 +2244,7 @@
       "empty": "No error groups match the current filters.",
       "selectGroup": "Select an error group to inspect sampled events and evidence.",
       "recentEventsTitle": "Recent Event Samples",
+      "selectedEventTitle": "Selected Event",
       "evidenceTitle": "Evidence Sample",
       "noEvents": "No error events",
       "noEvidence": "No evidence available",
@@ -2257,6 +2258,7 @@
         "occurrences": "Occurrences",
         "lastSeen": "Last Seen",
         "time": "Time",
+        "node": "Origin Node",
         "job": "Job",
         "source": "Source File"
       }
@@ -2285,6 +2287,7 @@
       "finishedAt": "Finished At",
       "countSummary": "Finding Summary",
       "counts": "{total} findings ({critical} critical / {warning} warning / {info} info)",
+      "nodeLabel": "Origin Node",
       "findingsTitle": "Detected Issues",
       "noFindings": "This inspection produced no structured findings.",
       "filters": {
@@ -2310,26 +2313,15 @@
         "diagnostics_workspace": "Diagnostics Workspace"
       },
       "actions": {
-        "viewError": "Open Related Error",
-        "createTask": "More Diagnosis Options",
-        "useForDiagnosis": "Use This to Continue",
-        "selectedForDiagnosis": "Currently Selected"
+        "viewErrorGroup": "View Error Group"
       },
       "followUp": {
         "title": "Continue Diagnosis",
-        "hasFindingsDescription": "This check has already found anomalies. You can continue collecting live evidence directly, and the system will generate a diagnostic bundle and report.",
-        "currentFinding": "Issue Selected for Follow-up",
-        "createTask": "Continue to Generate Bundle and Report",
-        "dismiss": "Review Check Result Only",
-        "hasFindingsHint": "This step starts collecting live evidence such as log samples and thread dumps immediately. If the live state has already changed, the report will distinguish historical anomalies from the current runtime state.",
-        "noFindingsTitle": "No Follow-up Issue Was Found",
-        "noFindingsDescription": "There is no abnormal finding that requires live evidence collection right now, so you can treat this check result as a lightweight diagnosis conclusion.",
-        "dismissedTitle": "Follow-up Diagnosis Is Postponed",
-        "dismissedDescription": "If you later want to collect live evidence, you can resume and continue generating the bundle and report at any time.",
-        "resume": "Resume Diagnosis",
-        "chooseFindingFirst": "Please choose an issue to continue investigating",
-        "createTaskSuccess": "Diagnosis continuation started, and the bundle/report are being generated",
-        "createTaskError": "Failed to continue diagnosis"
+        "generateBundle": "Generate Diagnostic Bundle and Report",
+        "generateHint": "Download the bundle and HTML report from this page after generation.",
+        "noFindingsDescription": "No abnormal findings require live evidence collection.",
+        "createTaskSuccess": "Diagnostic bundle generation started",
+        "createTaskError": "Failed to generate diagnostic bundle"
       }
     },
     "tasks": {
