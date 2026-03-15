@@ -164,6 +164,7 @@ export interface DiagnosticsInspectionReport {
   status: DiagnosticsInspectionReportStatus;
   trigger_source: DiagnosticsInspectionTriggerSource;
   lookback_minutes: number;
+  error_threshold: number;
   requested_by_user_id: number;
   requested_by: string;
   summary: string;
@@ -229,6 +230,7 @@ export interface StartDiagnosticsInspectionRequest {
   cluster_id: number;
   trigger_source?: DiagnosticsInspectionTriggerSource;
   lookback_minutes?: number;
+  error_threshold?: number;
 }
 
 export type DiagnosticsTaskStatus =

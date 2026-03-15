@@ -17,8 +17,9 @@
 
 'use client';
 
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
+import {useTranslations} from 'next-intl';
 import {ArrowLeft, Download, ExternalLink, FileText, Loader2, Package} from 'lucide-react';
 import {toast} from 'sonner';
 import services from '@/lib/services';
@@ -62,19 +63,6 @@ function formatDateTime(value?: string | null): string {
   return parsed.toLocaleString();
 }
 
-function getSeverityLabel(severity: DiagnosticsInspectionFindingSeverity): string {
-  switch (severity) {
-    case 'critical':
-      return '严重';
-    case 'warning':
-      return '警告';
-    case 'info':
-      return '信息';
-    default:
-      return severity;
-  }
-}
-
 function getSeverityBadgeClass(severity: DiagnosticsInspectionFindingSeverity): string {
   switch (severity) {
     case 'critical':
@@ -85,21 +73,6 @@ function getSeverityBadgeClass(severity: DiagnosticsInspectionFindingSeverity): 
       return 'bg-blue-100 text-blue-800 border-blue-200';
     default:
       return '';
-  }
-}
-
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'pending':
-      return '等待中';
-    case 'running':
-      return '执行中';
-    case 'completed':
-      return '已完成';
-    case 'failed':
-      return '失败';
-    default:
-      return status;
   }
 }
 
@@ -116,21 +89,6 @@ function getStatusVariant(
       return 'secondary';
     default:
       return 'outline';
-  }
-}
-
-function getTriggerSourceLabel(source: string): string {
-  switch (source) {
-    case 'manual':
-      return '手动触发';
-    case 'auto':
-      return '自动触发';
-    case 'cluster_detail':
-      return '集群详情';
-    case 'diagnostics_workspace':
-      return '诊断工作台';
-    default:
-      return source;
   }
 }
 
@@ -178,6 +136,58 @@ const DEFAULT_BUNDLE_OPTIONS: DiagnosticsTaskOptions = {
 export default function InspectionDetailPage({
   inspectionId,
 }: InspectionDetailPageProps) {
+  const t = useTranslations('diagnosticsCenter');
+  const getSeverityLabel = useCallback(
+    (severity: DiagnosticsInspectionFindingSeverity): string => {
+      switch (severity) {
+        case 'critical':
+          return t('inspections.severity.critical');
+        case 'warning':
+          return t('inspections.severity.warning');
+        case 'info':
+          return t('inspections.severity.info');
+        default:
+          return severity;
+      }
+    },
+    [t],
+  );
+  const getStatusLabel = useCallback(
+    (status: string): string => {
+      switch (status) {
+        case 'pending':
+          return t('inspections.status.pending');
+        case 'running':
+          return t('inspections.status.running');
+        case 'completed':
+        case 'succeeded':
+          return t('inspections.status.completed');
+        case 'failed':
+        case 'cancelled':
+          return t('inspections.status.failed');
+        default:
+          return status;
+      }
+    },
+    [t],
+  );
+  const getTriggerSourceLabel = useCallback(
+    (source: string): string => {
+      switch (source) {
+        case 'manual':
+          return t('inspections.trigger.manual');
+        case 'auto':
+          return t('inspections.detailPage.autoTrigger');
+        case 'cluster_detail':
+          return t('inspections.trigger.cluster_detail');
+        case 'diagnostics_workspace':
+          return t('inspections.trigger.diagnostics_workspace');
+        default:
+          return source;
+      }
+    },
+    [t],
+  );
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<DiagnosticsInspectionReport | null>(null);
   const [findings, setFindings] = useState<DiagnosticsInspectionFinding[]>([]);
@@ -223,7 +233,7 @@ export default function InspectionDetailPage({
       const result =
         await services.diagnostics.getInspectionReportDetailSafe(inspectionId);
       if (!result.success || !result.data) {
-        toast.error(result.error || '加载巡检详情失败');
+        toast.error(result.error || t('inspections.loadDetailError'));
         setReport(null);
         setFindings([]);
         setBundleTask(null);
@@ -256,7 +266,7 @@ export default function InspectionDetailPage({
     } finally {
       setLoading(false);
     }
-  }, [inspectionId, pollBundleTask]);
+  }, [inspectionId, pollBundleTask, t]);
 
   useEffect(() => {
     void loadDetail();
@@ -290,11 +300,11 @@ export default function InspectionDetailPage({
   }, [report]);
 
   const handleCreateBundle = useCallback(async () => {
-    if (!report) {
+    if (!report || creatingBundle) {
       return;
     }
     if (bundleLookbackMinutes < 5 || bundleLookbackMinutes > 1440) {
-      toast.error('时间范围需在 5 ~ 1440 分钟之间');
+      toast.error(t('inspections.lookbackRangeError'));
       return;
     }
     const firstFinding =
@@ -321,10 +331,10 @@ export default function InspectionDetailPage({
         auto_start: true,
       });
       if (!result.success || !result.data) {
-        toast.error(result.error || '诊断包生成失败');
+        toast.error(result.error || t('inspections.followUp.createTaskError'));
         return;
       }
-      toast.success('诊断包生成已启动');
+      toast.success(t('inspections.followUp.createTaskSuccess'));
       setBundleTask(result.data);
       setPollingBundle(true);
       const taskId = result.data.id;
@@ -334,7 +344,27 @@ export default function InspectionDetailPage({
     } finally {
       setCreatingBundle(false);
     }
-  }, [bundleOptions, findings, nodeScope, pollBundleTask, report]);
+  }, [
+    bundleLookbackMinutes,
+    bundleOptions,
+    creatingBundle,
+    findings,
+    nodeScope,
+    pollBundleTask,
+    report,
+    t,
+  ]);
+
+  const handleBundleInputKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== 'Enter') {
+        return;
+      }
+      event.preventDefault();
+      void handleCreateBundle();
+    },
+    [handleCreateBundle],
+  );
 
   if (loading) {
     return (
@@ -352,12 +382,12 @@ export default function InspectionDetailPage({
         <Button asChild variant='ghost'>
           <Link href='/diagnostics?tab=inspections'>
             <ArrowLeft className='mr-2 h-4 w-4' />
-            返回巡检列表
+            {t('inspections.detailPage.backToList')}
           </Link>
         </Button>
         <Card>
           <CardContent className='py-8 text-center text-muted-foreground'>
-            巡检报告不存在或加载失败
+            {t('inspections.detailPage.notFound')}
           </CardContent>
         </Card>
       </div>
@@ -374,10 +404,12 @@ export default function InspectionDetailPage({
         <Button asChild variant='ghost' size='sm'>
           <Link href='/diagnostics?tab=inspections'>
             <ArrowLeft className='mr-2 h-4 w-4' />
-            返回巡检列表
+            {t('inspections.detailPage.backToList')}
           </Link>
         </Button>
-        <h1 className='text-2xl font-bold tracking-tight'>巡检详情</h1>
+        <h1 className='text-2xl font-bold tracking-tight'>
+          {t('inspections.detailPage.title')}
+        </h1>
         <Badge variant='outline'>#{report.id}</Badge>
       </div>
 
@@ -394,29 +426,52 @@ export default function InspectionDetailPage({
             {report.cluster_name ? (
               <Badge variant='outline'>{report.cluster_name}</Badge>
             ) : (
-              <Badge variant='outline'>集群 #{report.cluster_id}</Badge>
+              <Badge variant='outline'>
+                {t('inspections.detailPage.clusterFallback', {
+                  clusterId: report.cluster_id,
+                })}
+              </Badge>
             )}
           </div>
           {report.trigger_source === 'auto' && report.auto_trigger_reason ? (
             <div className='rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800'>
-              自动触发原因：{report.auto_trigger_reason}
+              {t('inspections.detailPage.autoTriggerReason')}
+              {report.auto_trigger_reason}
             </div>
           ) : null}
-          <div className='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4'>
+          <div className='grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-5'>
             <div>
-              <span className='text-muted-foreground'>创建时间：</span>
+              <span className='text-muted-foreground'>
+                {t('inspections.detailPage.createdAt')}
+              </span>
               {formatDateTime(report.created_at)}
             </div>
             <div>
-              <span className='text-muted-foreground'>完成时间：</span>
+              <span className='text-muted-foreground'>
+                {t('inspections.detailPage.finishedAt')}
+              </span>
               {formatDateTime(report.finished_at)}
             </div>
             <div>
-              <span className='text-muted-foreground'>回溯时间：</span>
-              {report.lookback_minutes || 30} 分钟
+              <span className='text-muted-foreground'>
+                {t('inspections.detailPage.lookbackMinutes')}
+              </span>
+              {t('inspections.lookbackValue', {
+                minutes: report.lookback_minutes || 30,
+              })}
             </div>
             <div>
-              <span className='text-muted-foreground'>发起人：</span>
+              <span className='text-muted-foreground'>
+                {t('inspections.detailPage.errorThreshold')}
+              </span>
+              {t('inspections.errorThresholdValue', {
+                count: report.error_threshold || 1,
+              })}
+            </div>
+            <div>
+              <span className='text-muted-foreground'>
+                {t('inspections.requestedBy')}：
+              </span>
               {report.requested_by || '-'}
             </div>
           </div>
@@ -431,9 +486,13 @@ export default function InspectionDetailPage({
             </div>
           ) : null}
           <div className='text-sm text-muted-foreground'>
-            发现统计：共 {report.finding_total} 条（严重{' '}
-            {report.critical_count} / 警告 {report.warning_count} / 信息{' '}
-            {report.info_count}）
+            {t('inspections.countSummary')}：
+            {t('inspections.counts', {
+              total: report.finding_total,
+              critical: report.critical_count,
+              warning: report.warning_count,
+              info: report.info_count,
+            })}
           </div>
         </CardContent>
       </Card>
@@ -441,12 +500,12 @@ export default function InspectionDetailPage({
       {/* Findings Section */}
       <Card>
         <CardHeader>
-          <CardTitle>巡检发现</CardTitle>
+          <CardTitle>{t('inspections.findingsTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           {sortedFindings.length === 0 ? (
             <div className='flex items-center justify-center rounded-lg border border-dashed p-8 text-sm text-muted-foreground'>
-              暂无巡检发现
+              {t('inspections.noFindings')}
             </div>
           ) : (
             <div className='space-y-4'>
@@ -480,11 +539,12 @@ export default function InspectionDetailPage({
                   ) : null}
                   {finding.recommendation ? (
                     <div className='text-sm text-muted-foreground'>
-                      建议：{localizeDiagnosticsText(finding.recommendation)}
+                      {t('inspections.detailPage.recommendation')}
+                      {localizeDiagnosticsText(finding.recommendation)}
                     </div>
                   ) : null}
                   <div className='text-xs text-muted-foreground'>
-                    来源节点：
+                    {t('inspections.nodeLabel')}：
                     {formatNodeOrigin({
                       nodeId: finding.related_node_id,
                       hostId: finding.related_host_id,
@@ -497,7 +557,7 @@ export default function InspectionDetailPage({
                       <Link
                         href={`/diagnostics?tab=errors&cluster_id=${finding.cluster_id}&group_id=${finding.related_error_group_id}&source=inspection-finding`}
                       >
-                        查看错误组 &rarr;
+                        {t('inspections.actions.viewErrorGroup')} &rarr;
                       </Link>
                     </Button>
                   ) : null}
@@ -512,7 +572,7 @@ export default function InspectionDetailPage({
       {isCompleted ? (
         <Card>
           <CardHeader>
-            <CardTitle>诊断包</CardTitle>
+            <CardTitle>{t('inspections.detailPage.bundleTitle')}</CardTitle>
           </CardHeader>
           <CardContent>
             {bundleTask ? (
@@ -536,8 +596,8 @@ export default function InspectionDetailPage({
                     size='sm'
                     onClick={() => setExecLogDialogOpen(true)}
                   >
-                    <FileText className='mr-2 h-4 w-4' />
-                    查看执行日志
+                      <FileText className='mr-2 h-4 w-4' />
+                    {t('inspections.detailPage.viewExecutionLogs')}
                   </Button>
                   {bundleTask.status === 'succeeded' ? (
                     <>
@@ -550,7 +610,7 @@ export default function InspectionDetailPage({
                           rel='noopener noreferrer'
                         >
                           <ExternalLink className='mr-2 h-4 w-4' />
-                          预览报告
+                          {t('inspections.detailPage.previewReport')}
                         </a>
                       </Button>
                       <Button asChild variant='outline' size='sm'>
@@ -561,7 +621,7 @@ export default function InspectionDetailPage({
                           download
                         >
                           <Download className='mr-2 h-4 w-4' />
-                          下载诊断包
+                          {t('inspections.detailPage.downloadBundle')}
                         </a>
                       </Button>
                       <Button
@@ -575,7 +635,7 @@ export default function InspectionDetailPage({
                         ) : (
                           <Package className='mr-2 h-4 w-4' />
                         )}
-                        重新生成
+                        {t('inspections.detailPage.regenerate')}
                       </Button>
                     </>
                   ) : null}
@@ -591,7 +651,7 @@ export default function InspectionDetailPage({
                       ) : (
                         <Package className='mr-2 h-4 w-4' />
                       )}
-                      重新生成
+                      {t('inspections.detailPage.regenerate')}
                     </Button>
                   ) : null}
                 </div>
@@ -599,7 +659,9 @@ export default function InspectionDetailPage({
             ) : hasFindings ? (
               <div className='space-y-3'>
                 <p className='text-sm text-muted-foreground'>
-                  巡检已发现 {findings.length} 条问题，可一键生成诊断包与诊断报告。
+                  {t('inspections.detailPage.hasFindingsHint', {
+                    count: findings.length,
+                  })}
                 </p>
                 <Button
                   onClick={handleConfirmAndCreateBundle}
@@ -610,12 +672,12 @@ export default function InspectionDetailPage({
                   ) : (
                     <Package className='mr-2 h-4 w-4' />
                   )}
-                  一键生成诊断包和诊断报告
+                  {t('inspections.followUp.generateBundle')}
                 </Button>
               </div>
             ) : (
               <p className='text-sm text-muted-foreground'>
-                巡检已完成，未发现问题，无需生成诊断包。
+                {t('inspections.detailPage.noBundleNeeded')}
               </p>
             )}
           </CardContent>
@@ -626,14 +688,16 @@ export default function InspectionDetailPage({
       <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
         <DialogContent className='sm:max-w-md'>
           <DialogHeader>
-            <DialogTitle>确认生成诊断包</DialogTitle>
+            <DialogTitle>{t('inspections.detailPage.confirmBundleTitle')}</DialogTitle>
             <DialogDescription>
-              将采集时间范围内的错误日志、告警信息及指标数据，并可选采集线程 Dump 与 JVM Dump。
+              {t('inspections.detailPage.confirmBundleDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className='space-y-4 py-4'>
             <div className='space-y-2'>
-              <Label htmlFor='bundle-lookback'>时间范围（分钟）</Label>
+              <Label htmlFor='bundle-lookback'>
+                {t('inspections.lookbackLabel')}
+              </Label>
               <Input
                 id='bundle-lookback'
                 type='number'
@@ -646,17 +710,20 @@ export default function InspectionDetailPage({
                     Number.parseInt(event.target.value, 10) || 30,
                   )
                 }
+                onKeyDown={handleBundleInputKeyDown}
               />
               <p className='text-xs text-muted-foreground'>
-                默认与巡检时间范围一致，可在此按需调整，用于采集该时段内的现场证据。
+                {t('inspections.detailPage.bundleLookbackHint')}
               </p>
             </div>
             <div className='space-y-3'>
               <div className='flex items-center justify-between rounded-lg border p-3'>
                 <div>
-                  <div className='font-medium'>采集线程 Dump</div>
+                  <div className='font-medium'>
+                    {t('inspections.detailPage.includeThreadDump')}
+                  </div>
                   <div className='text-xs text-muted-foreground'>
-                    用于分析线程状态、死锁等问题。
+                    {t('inspections.detailPage.includeThreadDumpHint')}
                   </div>
                 </div>
                 <Switch
@@ -671,9 +738,11 @@ export default function InspectionDetailPage({
               </div>
               <div className='flex items-center justify-between rounded-lg border p-3'>
                 <div>
-                  <div className='font-medium'>采集 JVM Dump</div>
+                  <div className='font-medium'>
+                    {t('inspections.detailPage.includeJVMDump')}
+                  </div>
                   <div className='text-xs text-muted-foreground'>
-                    体积较大，仅在需深入分析内存时开启。
+                    {t('inspections.detailPage.includeJVMDumpHint')}
                   </div>
                 </div>
                 <Switch
@@ -693,7 +762,7 @@ export default function InspectionDetailPage({
                   size='sm'
                   onClick={() => setNodeScope('all')}
                 >
-                  全部节点
+                  {t('inspections.detailPage.allNodes')}
                 </Button>
                 <Button
                   type='button'
@@ -701,7 +770,7 @@ export default function InspectionDetailPage({
                   size='sm'
                   onClick={() => setNodeScope('related')}
                 >
-                  仅问题相关节点
+                  {t('inspections.detailPage.relatedNodes')}
                 </Button>
               </div>
             </div>
@@ -711,7 +780,7 @@ export default function InspectionDetailPage({
               variant='outline'
               onClick={() => setConfirmDialogOpen(false)}
             >
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={() => void handleCreateBundle()}
@@ -720,7 +789,7 @@ export default function InspectionDetailPage({
               {creatingBundle ? (
                 <Loader2 className='mr-2 h-4 w-4 animate-spin' />
               ) : null}
-              确认生成
+              {t('inspections.detailPage.confirmCreate')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -730,9 +799,9 @@ export default function InspectionDetailPage({
       <Dialog open={execLogDialogOpen} onOpenChange={setExecLogDialogOpen}>
         <DialogContent className='max-h-[85vh] overflow-hidden flex flex-col sm:max-w-2xl'>
           <DialogHeader>
-            <DialogTitle>执行日志</DialogTitle>
+            <DialogTitle>{t('inspections.detailPage.executionLogsTitle')}</DialogTitle>
             <DialogDescription>
-              诊断包生成步骤及执行状态
+              {t('inspections.detailPage.executionLogsDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className='flex-1 overflow-y-auto space-y-3 py-2'>
@@ -768,7 +837,9 @@ export default function InspectionDetailPage({
                 {bundleTask.failure_reason}
               </div>
             ) : (
-              <p className='text-sm text-muted-foreground'>暂无执行步骤记录</p>
+              <p className='text-sm text-muted-foreground'>
+                {t('inspections.detailPage.noExecutionSteps')}
+              </p>
             )}
           </div>
         </DialogContent>

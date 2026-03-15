@@ -17,7 +17,7 @@
 
 'use client';
 
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import Link from 'next/link';
 import {useTranslations} from 'next-intl';
 import {ClipboardCheck, Download, ExternalLink, FileText, Loader2, Package, RefreshCw} from 'lucide-react';
@@ -125,20 +125,6 @@ function getSeverityVariant(
   }
 }
 
-function getFindingSeverityScore(
-  severity: DiagnosticsInspectionFindingSeverity,
-): number {
-  switch (severity) {
-    case 'critical':
-      return 3;
-    case 'warning':
-      return 2;
-    case 'info':
-    default:
-      return 1;
-  }
-}
-
 function formatNodeOrigin(options: {
   nodeId?: number | null;
   hostId?: number | null;
@@ -178,6 +164,7 @@ export function DiagnosticsInspectionCenter({
   const [loadingReports, setLoadingReports] = useState(true);
   const [startingInspection, setStartingInspection] = useState(false);
   const [lookbackMinutes, setLookbackMinutes] = useState(30);
+  const [errorThreshold, setErrorThreshold] = useState(1);
   const [reports, setReports] = useState<DiagnosticsInspectionReport[]>([]);
   const [reportTotal, setReportTotal] = useState(0);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(
@@ -310,7 +297,9 @@ export function DiagnosticsInspectionCenter({
 
   const pollBundleTask = useCallback(async (taskId: number) => {
     const result = await services.diagnostics.getTaskSafe(taskId);
-    if (!result.success || !result.data) return;
+    if (!result.success || !result.data) {
+      return;
+    }
     setBundleTask(result.data);
     if (['succeeded', 'failed', 'cancelled'].includes(result.data.status)) {
       setPollingBundle(false);
@@ -322,9 +311,13 @@ export function DiagnosticsInspectionCenter({
   }, []);
 
   useEffect(() => {
-    if (!bundleTask || !selectedReportId || bundleTask.id === 0) return;
+    if (!bundleTask || !selectedReportId || bundleTask.id === 0) {
+      return;
+    }
     const status = bundleTask.status;
-    if (['succeeded', 'failed', 'cancelled'].includes(status)) return;
+    if (['succeeded', 'failed', 'cancelled'].includes(status)) {
+      return;
+    }
     setPollingBundle(true);
     const taskId = bundleTask.id;
     pollTimerRef.current = setInterval(() => void pollBundleTask(taskId), 3000);
@@ -334,7 +327,7 @@ export function DiagnosticsInspectionCenter({
         pollTimerRef.current = null;
       }
     };
-  }, [bundleTask?.id, bundleTask?.status, pollBundleTask, selectedReportId]);
+  }, [bundleTask, pollBundleTask, selectedReportId]);
 
   const handleConfirmAndCreateBundle = useCallback(() => {
     const base =
@@ -346,7 +339,9 @@ export function DiagnosticsInspectionCenter({
   }, [lookbackMinutes, selectedReport]);
 
   const handleCreateBundle = useCallback(async () => {
-    if (!selectedReport) return;
+    if (!selectedReport || creatingBundle) {
+      return;
+    }
     if (bundleLookbackMinutes < 5 || bundleLookbackMinutes > 1440) {
       toast.error(t('inspections.lookbackRangeError'));
       return;
@@ -382,14 +377,26 @@ export function DiagnosticsInspectionCenter({
     } finally {
       setCreatingBundle(false);
     }
-  }, [bundleOptions, findings, nodeScope, pollBundleTask, selectedReport, t]);
+  }, [
+    bundleLookbackMinutes,
+    bundleOptions,
+    creatingBundle,
+    findings,
+    nodeScope,
+    selectedReport,
+    t,
+  ]);
 
   const handleStartInspection = useCallback(async () => {
-    if (!clusterId) {
+    if (!clusterId || startingInspection) {
       return;
     }
     if (lookbackMinutes < 5 || lookbackMinutes > 1440) {
       toast.error(t('inspections.lookbackRangeError'));
+      return;
+    }
+    if (errorThreshold < 1 || errorThreshold > 1000) {
+      toast.error(t('inspections.errorThresholdRangeError'));
       return;
     }
     setStartingInspection(true);
@@ -398,6 +405,7 @@ export function DiagnosticsInspectionCenter({
         cluster_id: clusterId,
         trigger_source: 'diagnostics_workspace',
         lookback_minutes: lookbackMinutes,
+        error_threshold: errorThreshold,
       });
       if (!result.success || !result.data?.report) {
         toast.error(result.error || t('inspections.startError'));
@@ -413,7 +421,37 @@ export function DiagnosticsInspectionCenter({
     } finally {
       setStartingInspection(false);
     }
-  }, [clusterId, loadReports, lookbackMinutes, onSelectReport, t]);
+  }, [
+    clusterId,
+    errorThreshold,
+    loadReports,
+    lookbackMinutes,
+    onSelectReport,
+    startingInspection,
+    t,
+  ]);
+
+  const handleInspectionInputKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== 'Enter') {
+        return;
+      }
+      event.preventDefault();
+      void handleStartInspection();
+    },
+    [handleStartInspection],
+  );
+
+  const handleBundleInputKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== 'Enter') {
+        return;
+      }
+      event.preventDefault();
+      void handleCreateBundle();
+    },
+    [handleCreateBundle],
+  );
 
   return (
     <div className='grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] xl:items-start'>
@@ -452,7 +490,7 @@ export function DiagnosticsInspectionCenter({
                 </Button>
               </div>
             </div>
-            <div className='grid grid-cols-1 gap-3 lg:grid-cols-3'>
+            <div className='grid grid-cols-1 gap-3 lg:grid-cols-4'>
               <div className='space-y-2'>
                 <Label>{t('inspections.filters.status')}</Label>
                 <Select
@@ -534,9 +572,33 @@ export function DiagnosticsInspectionCenter({
                       Number.parseInt(event.target.value, 10) || 30,
                     )
                   }
+                  onKeyDown={handleInspectionInputKeyDown}
                 />
                 <div className='text-xs text-muted-foreground'>
                   {t('inspections.lookbackHint')}
+                </div>
+              </div>
+
+              <div className='space-y-2'>
+                <Label htmlFor='diagnostics-inspection-error-threshold'>
+                  {t('inspections.errorThresholdLabel')}
+                </Label>
+                <Input
+                  id='diagnostics-inspection-error-threshold'
+                  type='number'
+                  min={1}
+                  max={1000}
+                  step={1}
+                  value={errorThreshold}
+                  onChange={(event) =>
+                    setErrorThreshold(
+                      Number.parseInt(event.target.value, 10) || 1,
+                    )
+                  }
+                  onKeyDown={handleInspectionInputKeyDown}
+                />
+                <div className='text-xs text-muted-foreground'>
+                  {t('inspections.errorThresholdHint')}
                 </div>
               </div>
             </div>
@@ -607,6 +669,11 @@ export function DiagnosticsInspectionCenter({
                           <div className='mt-1 text-xs text-muted-foreground'>
                             {t('inspections.lookbackValue', {
                               minutes: report.lookback_minutes || 30,
+                            })}
+                          </div>
+                          <div className='mt-1 text-xs text-muted-foreground'>
+                            {t('inspections.errorThresholdValue', {
+                              count: report.error_threshold || 1,
                             })}
                           </div>
                         </div>
@@ -910,6 +977,7 @@ export function DiagnosticsInspectionCenter({
                     Number.parseInt(event.target.value, 10) || 30,
                   )
                 }
+                onKeyDown={handleBundleInputKeyDown}
               />
               <p className='text-xs text-muted-foreground'>
                 默认与巡检时间范围一致，可在此按需调整，用于采集该时段内的现场证据。
