@@ -344,15 +344,18 @@ func (h *Handler) StreamDiagnosticTaskEvents(c *gin.Context) {
 		return
 	}
 
-	task, err := h.service.GetDiagnosticTaskDetail(c.Request.Context(), taskID)
-	if err != nil {
-		c.JSON(getDiagnosticsStatusCode(err), Response{ErrorMsg: err.Error()})
-		return
-	}
-
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, Response{ErrorMsg: "streaming is not supported"})
+		return
+	}
+
+	events, unsubscribe := h.service.SubscribeDiagnosticTaskEvents(taskID)
+	defer unsubscribe()
+
+	task, err := h.service.GetDiagnosticTaskDetail(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(getDiagnosticsStatusCode(err), Response{ErrorMsg: err.Error()})
 		return
 	}
 
@@ -378,9 +381,6 @@ func (h *Handler) StreamDiagnosticTaskEvents(c *gin.Context) {
 	if !writeEvent(newDiagnosticTaskSnapshotEvent(task)) {
 		return
 	}
-
-	events, unsubscribe := h.service.SubscribeDiagnosticTaskEvents(taskID)
-	defer unsubscribe()
 
 	keepAliveTicker := time.NewTicker(15 * time.Second)
 	defer keepAliveTicker.Stop()

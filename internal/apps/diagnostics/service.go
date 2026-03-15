@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/seatunnel/seatunnelX/internal/apps/cluster"
@@ -71,6 +72,7 @@ type Service struct {
 	monitoringService alertInstanceReader
 	agentSender       diagnosticAgentCommandSender
 	taskEvents        *diagnosticTaskEventHub
+	taskEventsOnce    sync.Once
 	policyChecker     *AutoPolicyChecker
 }
 
@@ -117,6 +119,7 @@ func newDiagnosticsService(repo *Repository, configRepo *appconfig.Repository, c
 		clusterService:    clusterService,
 		monitorService:    monitorService,
 		monitoringService: monitoringService,
+		taskEvents:        newDiagnosticTaskEventHub(),
 	}
 	if repo != nil {
 		svc.policyChecker = NewAutoPolicyChecker(repo, svc)

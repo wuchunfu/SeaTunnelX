@@ -105,6 +105,18 @@ func (h *diagnosticTaskEventHub) Publish(event DiagnosticTaskEvent) {
 	}
 }
 
+func (s *Service) ensureDiagnosticTaskEventHub() *diagnosticTaskEventHub {
+	if s == nil {
+		return nil
+	}
+	s.taskEventsOnce.Do(func() {
+		if s.taskEvents == nil {
+			s.taskEvents = newDiagnosticTaskEventHub()
+		}
+	})
+	return s.taskEvents
+}
+
 // SubscribeDiagnosticTaskEvents subscribes to one diagnostics task event stream.
 // SubscribeDiagnosticTaskEvents 订阅单个诊断任务的事件流。
 func (s *Service) SubscribeDiagnosticTaskEvents(taskID uint) (<-chan DiagnosticTaskEvent, func()) {
@@ -113,20 +125,24 @@ func (s *Service) SubscribeDiagnosticTaskEvents(taskID uint) (<-chan DiagnosticT
 		close(ch)
 		return ch, func() {}
 	}
-	if s.taskEvents == nil {
-		s.taskEvents = newDiagnosticTaskEventHub()
+	hub := s.ensureDiagnosticTaskEventHub()
+	if hub == nil {
+		ch := make(chan DiagnosticTaskEvent)
+		close(ch)
+		return ch, func() {}
 	}
-	return s.taskEvents.Subscribe(taskID)
+	return hub.Subscribe(taskID)
 }
 
 func (s *Service) publishDiagnosticTaskEvent(event DiagnosticTaskEvent) {
-	if s == nil || s.taskEvents == nil {
+	hub := s.ensureDiagnosticTaskEventHub()
+	if hub == nil {
 		return
 	}
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now().UTC()
 	}
-	s.taskEvents.Publish(event)
+	hub.Publish(event)
 }
 
 func newDiagnosticTaskSnapshotEvent(task *DiagnosticTask) DiagnosticTaskEvent {

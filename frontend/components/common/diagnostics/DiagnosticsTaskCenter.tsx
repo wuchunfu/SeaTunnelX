@@ -90,7 +90,6 @@ type DiagnosticsTaskCenterProps = {
   taskId?: number;
   source?: string;
   onSelectTask?: (taskId: number | null) => void;
-  onClearSourceContext?: () => void;
 };
 
 type CreateContext = {
@@ -371,7 +370,6 @@ export function DiagnosticsTaskCenter({
   taskId,
   source,
   onSelectTask,
-  onClearSourceContext,
 }: DiagnosticsTaskCenterProps) {
   const t = useTranslations('diagnosticsCenter');
   const commonT = useTranslations('common');
@@ -1353,15 +1351,6 @@ export function DiagnosticsTaskCenter({
                     </div>
                   ) : null}
                 </div>
-                {hasSourcePrefill ? (
-                  <Button
-                    variant='outline'
-                    className='lg:mt-8'
-                    onClick={onClearSourceContext}
-                  >
-                    {t('tasks.switchToManual')}
-                  </Button>
-                ) : null}
               </div>
 
               <div className='mt-4 flex flex-wrap items-center gap-2'>
