@@ -137,3 +137,35 @@ func TestServiceDiagnosticTaskEventStreamReceivesUpdates(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceSubscribeDiagnosticTaskEvents_initializesHubForZeroValueService(t *testing.T) {
+	var service Service
+
+	events, cancel := service.SubscribeDiagnosticTaskEvents(99)
+	defer cancel()
+
+	service.publishDiagnosticTaskEvent(DiagnosticTaskEvent{
+		TaskID:     99,
+		EventType:  DiagnosticTaskEventTypeTaskUpdated,
+		TaskStatus: DiagnosticTaskStatusRunning,
+	})
+
+	select {
+	case event := <-events:
+		if event.TaskID != 99 {
+			t.Fatalf("expected task id 99, got %d", event.TaskID)
+		}
+		if event.EventType != DiagnosticTaskEventTypeTaskUpdated {
+			t.Fatalf("expected task_updated event, got %s", event.EventType)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for diagnostics task event from zero-value service")
+	}
+}
+
+func TestNewDiagnosticsService_initializesTaskEventHub(t *testing.T) {
+	service := newDiagnosticTaskEventService(t)
+	if service.taskEvents == nil {
+		t.Fatal("expected diagnostics service to initialize task event hub")
+	}
+}
