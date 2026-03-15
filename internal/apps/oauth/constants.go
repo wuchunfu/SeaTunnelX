@@ -45,7 +45,7 @@ const (
 )
 
 const (
-	OAuthStateCacheKeyFormat     = "oauth:state:%s"
+	OAuthPendingStatesSessionKey = "oauth_pending_states"
 	OAuthStateCacheKeyExpiration = 10 * time.Minute
 )
 
