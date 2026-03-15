@@ -30,9 +30,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/seatunnel/seatunnelX/internal/apps/cluster"
@@ -42,6 +44,11 @@ import (
 	"github.com/seatunnel/seatunnelX/internal/config"
 	"github.com/seatunnel/seatunnelX/internal/logger"
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	diagnosticDisplayTimezoneOnce sync.Once
+	diagnosticDisplayTimezone     *time.Location
 )
 
 type diagnosticBundleArtifact struct {
@@ -80,6 +87,7 @@ type diagnosticBundleExecutionState struct {
 	LookbackMinutes  int
 	ErrorGroup       *SeatunnelErrorGroup
 	ErrorEvents      []*SeatunnelErrorEvent
+	LogSamples       []diagnosticCollectedLogSample
 	InspectionDetail *ClusterInspectionReportDetailData
 	ProcessEvents    []*monitor.ProcessEvent
 	AlertSnapshot    []*monitoringapp.AlertInstance
@@ -108,6 +116,7 @@ type diagnosticConfigSnapshotSummary struct {
 	CollectedAt        time.Time                      `json:"collected_at"`
 	Files              []diagnosticConfigSnapshotFile `json:"files"`
 	KeyHighlights      []diagnosticConfigKeyHighlight `json:"key_highlights,omitempty"`
+	FilePreviews       []diagnosticConfigFilePreview  `json:"file_previews,omitempty"`
 	DirectoryManifests []diagnosticDirectoryManifest  `json:"directory_manifests,omitempty"`
 	ConfigChanges      []diagnosticConfigChangeRecord `json:"config_changes,omitempty"`
 	CollectionNotes    []diagnosticConfigSnapshotNote `json:"collection_notes,omitempty"`
@@ -150,6 +159,17 @@ type diagnosticConfigKeyValue struct {
 	Value string `json:"value"`
 }
 
+type diagnosticConfigFilePreview struct {
+	HostID     uint   `json:"host_id"`
+	HostName   string `json:"host_name,omitempty"`
+	HostIP     string `json:"host_ip,omitempty"`
+	NodeID     uint   `json:"node_id"`
+	Role       string `json:"role,omitempty"`
+	ConfigType string `json:"config_type"`
+	RemotePath string `json:"remote_path,omitempty"`
+	Preview    string `json:"preview"`
+}
+
 type diagnosticDirectoryManifest struct {
 	HostID     uint                              `json:"host_id"`
 	HostName   string                            `json:"host_name,omitempty"`
@@ -184,6 +204,19 @@ type diagnosticConfigChangeRecord struct {
 	IsTemplate bool      `json:"is_template"`
 }
 
+type diagnosticCollectedLogSample struct {
+	HostID      uint      `json:"host_id"`
+	HostName    string    `json:"host_name,omitempty"`
+	HostIP      string    `json:"host_ip,omitempty"`
+	NodeID      uint      `json:"node_id"`
+	Role        string    `json:"role,omitempty"`
+	SourceFile  string    `json:"source_file"`
+	LocalPath   string    `json:"local_path,omitempty"`
+	WindowStart time.Time `json:"window_start"`
+	WindowEnd   time.Time `json:"window_end"`
+	Content     string    `json:"content"`
+}
+
 type agentPullConfigResult struct {
 	Success    bool   `json:"success"`
 	Message    string `json:"message"`
@@ -215,15 +248,25 @@ type diagnosticPrometheusSignal struct {
 	Threshold     float64                             `json:"threshold"`
 	ThresholdText string                              `json:"threshold_text"`
 	Status        string                              `json:"status"`
+	Comparator    string                              `json:"comparator"`
 	Series        []diagnosticPrometheusSeriesSummary `json:"series"`
 }
 
+type diagnosticPrometheusPoint struct {
+	Timestamp time.Time `json:"timestamp"`
+	Value     float64   `json:"value"`
+}
+
 type diagnosticPrometheusSeriesSummary struct {
-	Instance  string  `json:"instance"`
-	MinValue  float64 `json:"min_value"`
-	MaxValue  float64 `json:"max_value"`
-	LastValue float64 `json:"last_value"`
-	Samples   int     `json:"samples"`
+	Instance  string                      `json:"instance"`
+	MinValue  float64                     `json:"min_value"`
+	MinAt     *time.Time                  `json:"min_at,omitempty"`
+	MaxValue  float64                     `json:"max_value"`
+	MaxAt     *time.Time                  `json:"max_at,omitempty"`
+	LastValue float64                     `json:"last_value"`
+	LastAt    *time.Time                  `json:"last_at,omitempty"`
+	Samples   int                         `json:"samples"`
+	Points    []diagnosticPrometheusPoint `json:"points,omitempty"`
 }
 
 type diagnosticBundleHTMLPayload struct {
@@ -321,6 +364,7 @@ type diagnosticBundleHTMLErrorPanel struct {
 	SampleMessage    string                           `json:"sample_message"`
 	RecentEventCount int                              `json:"recent_event_count"`
 	Events           []diagnosticBundleHTMLErrorEvent `json:"events"`
+	LogSamples       []diagnosticBundleHTMLLogSample  `json:"log_samples"`
 }
 
 type diagnosticBundleHTMLErrorEvent struct {
@@ -334,17 +378,23 @@ type diagnosticBundleHTMLErrorEvent struct {
 }
 
 type diagnosticBundleHTMLAlertPanel struct {
-	Total    int                             `json:"total"`
-	Critical int                             `json:"critical"`
-	Warning  int                             `json:"warning"`
-	Firing   int                             `json:"firing"`
-	Alerts   []diagnosticBundleHTMLAlertItem `json:"alerts"`
+	Total       int                             `json:"total"`
+	Critical    int                             `json:"critical"`
+	Warning     int                             `json:"warning"`
+	Firing      int                             `json:"firing"`
+	FirstSeenAt string                          `json:"first_seen_at"`
+	LastSeenAt  string                          `json:"last_seen_at"`
+	Alerts      []diagnosticBundleHTMLAlertItem `json:"alerts"`
 }
 
 type diagnosticBundleHTMLAlertItem struct {
 	Name        string `json:"name"`
 	Severity    string `json:"severity"`
 	Status      string `json:"status"`
+	CreatedAt   string `json:"created_at"`
+	FiringAt    string `json:"firing_at"`
+	LastSeenAt  string `json:"last_seen_at"`
+	ResolvedAt  string `json:"resolved_at"`
 	Summary     string `json:"summary"`
 	Description string `json:"description"`
 }
@@ -361,6 +411,7 @@ type diagnosticBundleHTMLConfigPanel struct {
 	DirectoryCount     int                            `json:"directory_count"`
 	ChangedConfigCount int                            `json:"changed_config_count"`
 	KeyHighlights      []diagnosticConfigKeyHighlight `json:"key_highlights"`
+	FilePreviews       []diagnosticConfigFilePreview  `json:"file_previews"`
 	RecentChanges      []diagnosticConfigChangeRecord `json:"recent_changes"`
 	RemainingChanges   []diagnosticConfigChangeRecord `json:"remaining_changes"`
 	Files              []diagnosticConfigSnapshotFile `json:"files"`
@@ -383,6 +434,13 @@ type diagnosticBundleHTMLProcessEvent struct {
 	ProcessName string `json:"process_name"`
 	NodeLabel   string `json:"node_label"`
 	Details     string `json:"details"`
+}
+
+type diagnosticBundleHTMLLogSample struct {
+	HostLabel   string `json:"host_label"`
+	SourceFile  string `json:"source_file"`
+	WindowLabel string `json:"window_label"`
+	Content     string `json:"content"`
 }
 
 type diagnosticBundleHTMLExecutionPanel struct {
@@ -840,6 +898,7 @@ func (s *Service) executeCollectConfigSnapshotStep(ctx context.Context, task *Di
 		CollectedAt:        time.Now().UTC(),
 		Files:              make([]diagnosticConfigSnapshotFile, 0, len(task.SelectedNodes)*6),
 		KeyHighlights:      make([]diagnosticConfigKeyHighlight, 0, len(task.SelectedNodes)*4),
+		FilePreviews:       make([]diagnosticConfigFilePreview, 0, len(task.SelectedNodes)*4),
 		DirectoryManifests: make([]diagnosticDirectoryManifest, 0, len(task.SelectedNodes)*3),
 		ConfigChanges:      make([]diagnosticConfigChangeRecord, 0),
 		CollectionNotes:    make([]diagnosticConfigSnapshotNote, 0, len(task.SelectedNodes)),
@@ -951,7 +1010,7 @@ func (s *Service) executeCollectConfigSnapshotStep(ctx context.Context, task *Di
 }
 
 func (s *Service) pullDiagnosticConfigFile(ctx context.Context, target DiagnosticTaskNodeTarget, configType appconfig.ConfigType) (*agentPullConfigResult, string, error) {
-	success, output, err := s.agentSender.SendCommand(ctx, target.AgentID, "pull_config", map[string]string{
+	success, output, err := s.sendDiagnosticAgentCommandWithRetry(ctx, target.AgentID, "pull_config", map[string]string{
 		"install_dir": target.InstallDir,
 		"config_type": string(configType),
 	})
@@ -970,7 +1029,7 @@ func (s *Service) pullDiagnosticConfigFile(ctx context.Context, target Diagnosti
 }
 
 func (s *Service) pullDiagnosticRawFile(ctx context.Context, target DiagnosticTaskNodeTarget, absolutePath string) (string, string, error) {
-	success, output, err := s.agentSender.SendCommand(ctx, target.AgentID, "get_logs", map[string]string{
+	success, output, err := s.sendDiagnosticAgentCommandWithRetry(ctx, target.AgentID, "get_logs", map[string]string{
 		"log_file": absolutePath,
 		"mode":     "all",
 	})
@@ -982,7 +1041,7 @@ func (s *Service) pullDiagnosticRawFile(ctx context.Context, target DiagnosticTa
 }
 
 func (s *Service) pullDiagnosticDirectoryManifest(ctx context.Context, target DiagnosticTaskNodeTarget, absolutePath string) (*agentDirectoryListingResult, string, error) {
-	success, output, err := s.agentSender.SendCommand(ctx, target.AgentID, "get_logs", map[string]string{
+	success, output, err := s.sendDiagnosticAgentCommandWithRetry(ctx, target.AgentID, "get_logs", map[string]string{
 		"log_file": absolutePath,
 		"mode":     "list",
 	})
@@ -1044,6 +1103,18 @@ func (s *Service) collectDiagnosticConfigArtifact(ctx context.Context, task *Dia
 		SizeBytes:   int64(len(content)),
 		ContentHash: hash,
 	})
+	if preview := buildDiagnosticConfigPreview(content); strings.TrimSpace(preview) != "" {
+		summary.FilePreviews = append(summary.FilePreviews, diagnosticConfigFilePreview{
+			HostID:     target.HostID,
+			HostName:   target.HostName,
+			HostIP:     target.HostIP,
+			NodeID:     target.NodeID,
+			Role:       target.Role,
+			ConfigType: configType,
+			RemotePath: normalizedRemotePath,
+			Preview:    preview,
+		})
+	}
 	if items := extractDiagnosticConfigHighlights(configType, normalizedRemotePath, content); len(items) > 0 {
 		summary.KeyHighlights = append(summary.KeyHighlights, diagnosticConfigKeyHighlight{
 			HostID:     target.HostID,
@@ -1438,6 +1509,13 @@ func extractDiagnosticPluginConfigHighlights(remotePath, content string) []diagn
 	}
 }
 
+func buildDiagnosticConfigPreview(content string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	return strings.TrimSpace(content)
+}
+
 func buildDiagnosticExtraConfigFilesForTarget(mode cluster.DeploymentMode, role string) []string {
 	items := []string{
 		"log4j2.properties",
@@ -1583,6 +1661,10 @@ func (s *Service) executeCollectLogSampleStep(ctx context.Context, task *Diagnos
 	if s.agentSender == nil {
 		return fmt.Errorf("agent sender is unavailable")
 	}
+	window := resolveDiagnosticCollectionWindow(task, state.InspectionDetail)
+	state.WindowStart = timePtr(window.Start)
+	state.WindowEnd = timePtr(window.End)
+	state.LookbackMinutes = window.LookbackMinutes
 	logDir := filepath.Join(bundleDir, "logs")
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return err
@@ -1600,13 +1682,9 @@ func (s *Service) executeCollectLogSampleStep(ctx context.Context, task *Diagnos
 		candidates := buildDiagnosticLogCandidates(selected, state.ErrorEvents)
 		var nodeSuccess bool
 		for _, candidate := range candidates {
-			success, output, err := s.agentSender.SendCommand(ctx, selected.AgentID, "get_logs", map[string]string{
-				"log_file": candidate,
-				"mode":     "tail",
-				"lines":    fmt.Sprintf("%d", task.Options.LogSampleLines),
-			})
-			if err != nil || !success {
-				detail := resolveDiagnosticCommandFailure(output, err, "日志样本采集失败。", "Failed to collect log sample.")
+			snippet, detail, err := s.collectDiagnosticWindowedLogSnippet(ctx, selected, candidate, window, task.Options.LogSampleLines)
+			if err != nil || strings.TrimSpace(snippet) == "" {
+				detail = firstNonEmptyString(detail, bilingualText("日志样本采集失败。", "Failed to collect log sample."))
 				_ = s.AppendDiagnosticStepLog(ctx, &DiagnosticStepLog{
 					TaskID:          task.ID,
 					TaskStepID:      uintPtr(step.ID),
@@ -1622,7 +1700,7 @@ func (s *Service) executeCollectLogSampleStep(ctx context.Context, task *Diagnos
 			}
 			fileName := fmt.Sprintf("host-%d-%s.log", selected.HostID, filepath.Base(candidate))
 			localPath := filepath.Join(logDir, fileName)
-			if err := os.WriteFile(localPath, []byte(output), 0o644); err != nil {
+			if err := os.WriteFile(localPath, []byte(snippet), 0o644); err != nil {
 				return err
 			}
 			state.Artifacts = append(state.Artifacts, &diagnosticBundleArtifact{
@@ -1634,8 +1712,20 @@ func (s *Service) executeCollectLogSampleStep(ctx context.Context, task *Diagnos
 				NodeID:    selected.NodeID,
 				HostID:    selected.HostID,
 				HostName:  selected.HostName,
-				SizeBytes: int64(len(output)),
+				SizeBytes: int64(len(snippet)),
 				Message:   candidate,
+			})
+			state.LogSamples = append(state.LogSamples, diagnosticCollectedLogSample{
+				HostID:      selected.HostID,
+				HostName:    selected.HostName,
+				HostIP:      selected.HostIP,
+				NodeID:      selected.NodeID,
+				Role:        selected.Role,
+				SourceFile:  candidate,
+				LocalPath:   localPath,
+				WindowStart: window.Start,
+				WindowEnd:   window.End,
+				Content:     snippet,
 			})
 			_ = s.AppendDiagnosticStepLog(ctx, &DiagnosticStepLog{
 				TaskID:          task.ID,
@@ -1666,6 +1756,12 @@ func (s *Service) executeCollectLogSampleStep(ctx context.Context, task *Diagnos
 	if successCount == 0 {
 		return formatDiagnosticAllNodesFailed("全部节点都未采集到日志样本", "No log samples collected on any node", errs)
 	}
+	sort.SliceStable(state.LogSamples, func(i, j int) bool {
+		if state.LogSamples[i].HostID != state.LogSamples[j].HostID {
+			return state.LogSamples[i].HostID < state.LogSamples[j].HostID
+		}
+		return state.LogSamples[i].SourceFile < state.LogSamples[j].SourceFile
+	})
 	return nil
 }
 
@@ -1687,7 +1783,7 @@ func (s *Service) executeCollectThreadDumpStep(ctx context.Context, task *Diagno
 		if err := s.beginDiagnosticNodeStep(ctx, step, node, bilingualText("正在采集线程栈。", "Collecting thread dump.")); err != nil {
 			return err
 		}
-		success, output, err := s.agentSender.SendCommand(ctx, selected.AgentID, "thread_dump", map[string]string{
+		success, output, err := s.sendDiagnosticAgentCommandWithRetry(ctx, selected.AgentID, "thread_dump", map[string]string{
 			"install_dir": selected.InstallDir,
 			"role":        selected.Role,
 		})
@@ -1777,7 +1873,7 @@ func (s *Service) executeCollectJVMDumpStep(ctx context.Context, task *Diagnosti
 		if err := s.beginDiagnosticNodeStep(ctx, step, node, bilingualText("正在采集 JVM Dump。", "Collecting JVM dump.")); err != nil {
 			return err
 		}
-		success, output, err := s.agentSender.SendCommand(ctx, selected.AgentID, "jvm_dump", map[string]string{
+		success, output, err := s.sendDiagnosticAgentCommandWithRetry(ctx, selected.AgentID, "jvm_dump", map[string]string{
 			"install_dir": selected.InstallDir,
 			"role":        selected.Role,
 			"min_free_mb": fmt.Sprintf("%d", task.Options.JVMDumpMinFreeMB),
@@ -1916,6 +2012,9 @@ func (s *Service) executeRenderHTMLSummaryStep(ctx context.Context, task *Diagno
 		},
 		"formatMetricValue": func(unit string, value float64) string {
 			return formatDiagnosticMetricValue(unit, value)
+		},
+		"metricChartSVG": func(points []diagnosticPrometheusPoint, threshold float64, comparator string, unit string) template.HTML {
+			return renderDiagnosticMetricChart(points, threshold, comparator, unit)
 		},
 		"shortHash": func(value string) string {
 			value = strings.TrimSpace(value)
@@ -2248,6 +2347,7 @@ func queryDiagnosticPrometheusSignal(ctx context.Context, baseURL string, window
 		Threshold:     spec.Threshold,
 		ThresholdText: spec.ThresholdText,
 		Status:        status,
+		Comparator:    spec.Comparator,
 		Series:        summaries,
 	}, nil
 }
@@ -2291,6 +2391,7 @@ func summarizeDiagnosticPrometheusSeries(item diagnosticPrometheusQueryRangeVect
 		Instance: firstNonEmptyString(strings.TrimSpace(item.Metric["instance"]), strings.TrimSpace(item.Metric["cluster"]), "-"),
 		MinValue: 0,
 		MaxValue: 0,
+		Points:   make([]diagnosticPrometheusPoint, 0, len(item.Values)),
 	}
 	if len(item.Values) == 0 {
 		return summary, false
@@ -2305,18 +2406,40 @@ func summarizeDiagnosticPrometheusSeries(item diagnosticPrometheusQueryRangeVect
 		if !ok {
 			continue
 		}
+		ts, tsOK := parseDiagnosticPrometheusSampleValue(sample[0])
 		if first {
 			summary.MinValue = value
 			summary.MaxValue = value
+			if tsOK {
+				sampledAt := time.Unix(int64(ts), 0).UTC()
+				summary.MinAt = &sampledAt
+				summary.MaxAt = &sampledAt
+			}
 			first = false
 		}
 		if value < summary.MinValue {
 			summary.MinValue = value
+			if tsOK {
+				sampledAt := time.Unix(int64(ts), 0).UTC()
+				summary.MinAt = &sampledAt
+			}
 		}
 		if value > summary.MaxValue {
 			summary.MaxValue = value
+			if tsOK {
+				sampledAt := time.Unix(int64(ts), 0).UTC()
+				summary.MaxAt = &sampledAt
+			}
 		}
 		summary.LastValue = value
+		if tsOK {
+			sampledAt := time.Unix(int64(ts), 0).UTC()
+			summary.LastAt = &sampledAt
+			summary.Points = append(summary.Points, diagnosticPrometheusPoint{
+				Timestamp: sampledAt,
+				Value:     value,
+			})
+		}
 		summary.Samples++
 		switch comparator {
 		case "lt":
@@ -2573,7 +2696,7 @@ func buildDiagnosticBundleHTMLPayload(task *DiagnosticTask, state *diagnosticBun
 	// Evidence & 附录
 	payload.Cluster = buildDiagnosticBundleHTMLClusterSummary(state.ClusterSnapshot)
 	payload.Inspection = buildDiagnosticBundleHTMLInspectionPanel(state.InspectionDetail)
-	payload.ErrorContext = buildDiagnosticBundleHTMLErrorPanel(state.ErrorGroup, state.ErrorEvents)
+	payload.ErrorContext = buildDiagnosticBundleHTMLErrorPanel(state.ErrorGroup, state.ErrorEvents, state.LogSamples)
 	payload.AlertSnapshot = buildDiagnosticBundleHTMLAlertPanel(state.AlertSnapshot)
 	payload.ProcessEvents = buildDiagnosticBundleHTMLProcessPanel(state.ProcessEvents)
 	payload.ConfigSnapshot = buildDiagnosticBundleHTMLConfigPanel(state.ConfigSnapshot)
@@ -2711,12 +2834,13 @@ func buildDiagnosticBundleHTMLInspectionPanel(detail *ClusterInspectionReportDet
 	}
 }
 
-func buildDiagnosticBundleHTMLErrorPanel(group *SeatunnelErrorGroup, events []*SeatunnelErrorEvent) *diagnosticBundleHTMLErrorPanel {
-	if group == nil && len(events) == 0 {
+func buildDiagnosticBundleHTMLErrorPanel(group *SeatunnelErrorGroup, events []*SeatunnelErrorEvent, logSamples []diagnosticCollectedLogSample) *diagnosticBundleHTMLErrorPanel {
+	if group == nil && len(events) == 0 && len(logSamples) == 0 {
 		return nil
 	}
 	panel := &diagnosticBundleHTMLErrorPanel{
-		Events: make([]diagnosticBundleHTMLErrorEvent, 0, len(events)),
+		Events:     make([]diagnosticBundleHTMLErrorEvent, 0, len(events)),
+		LogSamples: make([]diagnosticBundleHTMLLogSample, 0, len(logSamples)),
 	}
 	if group != nil {
 		panel.GroupTitle = normalizeDiagnosticDisplayText(group.Title)
@@ -2754,6 +2878,14 @@ func buildDiagnosticBundleHTMLErrorPanel(group *SeatunnelErrorGroup, events []*S
 		})
 	}
 	panel.RecentEventCount = len(panel.Events)
+	for _, item := range logSamples {
+		panel.LogSamples = append(panel.LogSamples, diagnosticBundleHTMLLogSample{
+			HostLabel:   resolveDiagnosticHostLabel(item.HostName, item.HostID, item.HostIP),
+			SourceFile:  normalizeDiagnosticDisplayText(item.SourceFile),
+			WindowLabel: fmt.Sprintf("%s ~ %s", formatDiagnosticBundleTimeValue(item.WindowStart), formatDiagnosticBundleTimeValue(item.WindowEnd)),
+			Content:     normalizeDiagnosticDisplayText(item.Content),
+		})
+	}
 	return panel
 }
 
@@ -2772,6 +2904,10 @@ func buildDiagnosticBundleHTMLAlertPanel(alerts []*monitoringapp.AlertInstance) 
 			Name:        normalizeDiagnosticDisplayText(alert.AlertName),
 			Severity:    normalizeDiagnosticDisplayText(string(alert.Severity)),
 			Status:      normalizeDiagnosticDisplayText(string(alert.Status)),
+			CreatedAt:   formatDiagnosticBundleTimeValue(alert.CreatedAt),
+			FiringAt:    formatDiagnosticBundleTimeValue(alert.FiringAt),
+			LastSeenAt:  formatDiagnosticBundleTimeValue(alert.LastSeenAt),
+			ResolvedAt:  formatDiagnosticBundleTime(alert.ResolvedAt),
 			Summary:     normalizeDiagnosticDisplayText(alert.Summary),
 			Description: normalizeDiagnosticDisplayText(alert.Description),
 		}
@@ -2783,6 +2919,13 @@ func buildDiagnosticBundleHTMLAlertPanel(alerts []*monitoringapp.AlertInstance) 
 		}
 		if alert.Status == monitoringapp.AlertDisplayStatusFiring {
 			panel.Firing++
+		}
+		if panel.FirstSeenAt == "" || (!alert.CreatedAt.IsZero() && formatDiagnosticBundleTimeValue(alert.CreatedAt) < panel.FirstSeenAt) {
+			panel.FirstSeenAt = formatDiagnosticBundleTimeValue(alert.CreatedAt)
+		}
+		lastSeen := formatDiagnosticBundleTimeValue(alert.LastSeenAt)
+		if panel.LastSeenAt == "" || lastSeen > panel.LastSeenAt {
+			panel.LastSeenAt = lastSeen
 		}
 		panel.Alerts = append(panel.Alerts, item)
 	}
@@ -2844,6 +2987,7 @@ func buildDiagnosticBundleHTMLConfigPanel(summary *diagnosticConfigSnapshotSumma
 		DirectoryCount:     len(summary.DirectoryManifests),
 		ChangedConfigCount: len(summary.ConfigChanges),
 		KeyHighlights:      append([]diagnosticConfigKeyHighlight(nil), summary.KeyHighlights...),
+		FilePreviews:       append([]diagnosticConfigFilePreview(nil), summary.FilePreviews...),
 		RecentChanges:      recentChanges,
 		RemainingChanges:   remainingChanges,
 		Files:              summary.Files,
@@ -3381,7 +3525,60 @@ func formatDiagnosticBundleTimeValue(value time.Time) string {
 	if value.IsZero() {
 		return "-"
 	}
-	return value.Local().Format("2006-01-02 15:04:05 MST")
+	return value.In(diagnosticDisplayLocation()).Format("2006-01-02 15:04:05 MST")
+}
+
+func diagnosticDisplayLocation() *time.Location {
+	diagnosticDisplayTimezoneOnce.Do(func() {
+		name := strings.TrimSpace(os.Getenv("STX_REPORT_TIMEZONE"))
+		if name == "" {
+			name = "Asia/Shanghai"
+		}
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			diagnosticDisplayTimezone = time.FixedZone("CST", 8*3600)
+			return
+		}
+		diagnosticDisplayTimezone = loc
+	})
+	if diagnosticDisplayTimezone == nil {
+		return time.FixedZone("CST", 8*3600)
+	}
+	return diagnosticDisplayTimezone
+}
+
+func (s *Service) sendDiagnosticAgentCommandWithRetry(ctx context.Context, agentID, command string, params map[string]string) (bool, string, error) {
+	if s == nil || s.agentSender == nil {
+		return false, "", fmt.Errorf("agent sender is unavailable")
+	}
+	var (
+		success bool
+		output  string
+		err     error
+	)
+	for attempt := 0; attempt < 8; attempt++ {
+		success, output, err = s.agentSender.SendCommand(ctx, agentID, command, params)
+		if !shouldRetryDiagnosticAgentCommand(err, output) {
+			return success, output, err
+		}
+		select {
+		case <-ctx.Done():
+			return success, output, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	return success, output, err
+}
+
+func shouldRetryDiagnosticAgentCommand(err error, output string) bool {
+	combined := strings.ToLower(strings.TrimSpace(firstNonEmptyString(output, fmt.Sprint(err))))
+	if combined == "" {
+		return false
+	}
+	return strings.Contains(combined, "command stream not available") ||
+		strings.Contains(combined, "agent not found") ||
+		strings.Contains(combined, "agent command stream not found") ||
+		strings.Contains(combined, "no active command stream")
 }
 
 func formatDiagnosticBytes(size int64) string {
@@ -3417,6 +3614,108 @@ func formatDiagnosticMetricValue(unit string, value float64) string {
 	default:
 		return fmt.Sprintf("%.2f", value)
 	}
+}
+
+func renderDiagnosticMetricChart(points []diagnosticPrometheusPoint, threshold float64, comparator string, unit string) template.HTML {
+	if len(points) < 2 {
+		return ""
+	}
+	const width = 360.0
+	const height = 156.0
+	const leftPadding = 48.0
+	const rightPadding = 16.0
+	const topPadding = 12.0
+	const bottomPadding = 32.0
+
+	minValue := points[0].Value
+	maxValue := points[0].Value
+	for _, point := range points[1:] {
+		if point.Value < minValue {
+			minValue = point.Value
+		}
+		if point.Value > maxValue {
+			maxValue = point.Value
+		}
+	}
+	if threshold < minValue {
+		minValue = threshold
+	}
+	if threshold > maxValue {
+		maxValue = threshold
+	}
+	if minValue == maxValue {
+		maxValue = minValue + 1
+	}
+
+	start := points[0].Timestamp.Unix()
+	end := points[len(points)-1].Timestamp.Unix()
+	if end <= start {
+		end = start + 1
+	}
+	plotWidth := width - leftPadding - rightPadding
+	plotHeight := height - topPadding - bottomPadding
+	pathParts := make([]string, 0, len(points))
+	for index, point := range points {
+		x := leftPadding + (float64(point.Timestamp.Unix()-start)/float64(end-start))*plotWidth
+		y := topPadding + (1-((point.Value-minValue)/(maxValue-minValue)))*plotHeight
+		if index == 0 {
+			pathParts = append(pathParts, fmt.Sprintf("M %.2f %.2f", x, y))
+			continue
+		}
+		pathParts = append(pathParts, fmt.Sprintf("L %.2f %.2f", x, y))
+	}
+	thresholdY := topPadding + (1-((threshold-minValue)/(maxValue-minValue)))*plotHeight
+	if thresholdY < topPadding {
+		thresholdY = topPadding
+	}
+	if thresholdY > height-bottomPadding {
+		thresholdY = height - bottomPadding
+	}
+	strokeColor := "#2563eb"
+	if strings.TrimSpace(comparator) == "lt" {
+		strokeColor = "#dc2626"
+	}
+	axisColor := "#94a3b8"
+	gridColor := "#e2e8f0"
+	lastX := leftPadding + (float64(points[len(points)-1].Timestamp.Unix()-start)/float64(end-start))*plotWidth
+	lastY := topPadding + (1-((points[len(points)-1].Value-minValue)/(maxValue-minValue)))*plotHeight
+	midTime := points[0].Timestamp.Add(points[len(points)-1].Timestamp.Sub(points[0].Timestamp) / 2)
+	formatLabel := func(ts time.Time) string {
+		return ts.Local().Format("01-02 15:04")
+	}
+	yTop := formatDiagnosticMetricValue(unit, maxValue)
+	yBottom := formatDiagnosticMetricValue(unit, minValue)
+	thresholdLabel := fmt.Sprintf("Threshold %s", formatDiagnosticMetricValue(unit, threshold))
+	svg := fmt.Sprintf(
+		`<svg viewBox="0 0 %.0f %.0f" class="metric-chart" preserveAspectRatio="none" aria-label="diagnostic metric chart">
+<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" class="metric-chart-axis" style="stroke:%s"/>
+<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" class="metric-chart-axis" style="stroke:%s"/>
+<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" class="metric-chart-grid" style="stroke:%s"/>
+<line x1="%.2f" y1="%.2f" x2="%.2f" y2="%.2f" class="metric-chart-threshold"/>
+<path d="%s" class="metric-chart-path" style="stroke:%s"/>
+<circle cx="%.2f" cy="%.2f" r="3.2" class="metric-chart-dot"/>
+<text x="%.2f" y="%.2f" class="metric-chart-label y-top">%s</text>
+<text x="%.2f" y="%.2f" class="metric-chart-label y-bottom">%s</text>
+<text x="%.2f" y="%.2f" class="metric-chart-label x-start">%s</text>
+<text x="%.2f" y="%.2f" class="metric-chart-label x-mid">%s</text>
+<text x="%.2f" y="%.2f" class="metric-chart-label x-end">%s</text>
+<text x="%.2f" y="%.2f" class="metric-chart-label threshold-label">%s</text>
+</svg>`,
+		width, height,
+		leftPadding, topPadding, leftPadding, height-bottomPadding, axisColor,
+		leftPadding, height-bottomPadding, width-rightPadding, height-bottomPadding, axisColor,
+		leftPadding, topPadding+plotHeight/2, width-rightPadding, topPadding+plotHeight/2, gridColor,
+		leftPadding, thresholdY, width-rightPadding, thresholdY,
+		strings.Join(pathParts, " "), strokeColor,
+		lastX, lastY,
+		8.0, topPadding+4.0, template.HTMLEscapeString(yTop),
+		8.0, height-bottomPadding, template.HTMLEscapeString(yBottom),
+		leftPadding, height-10.0, template.HTMLEscapeString(formatLabel(points[0].Timestamp)),
+		leftPadding+plotWidth/2, height-10.0, template.HTMLEscapeString(formatLabel(midTime)),
+		width-rightPadding, height-10.0, template.HTMLEscapeString(formatLabel(points[len(points)-1].Timestamp)),
+		width-rightPadding, thresholdY-4.0, template.HTMLEscapeString(thresholdLabel),
+	)
+	return template.HTML(svg)
 }
 
 func diagnosticHTMLStatusClass(status string) string {
@@ -3488,6 +3787,136 @@ func buildDiagnosticLogCandidates(target DiagnosticTaskNodeTarget, errorEvents [
 		candidates = append(candidates, defaultLog)
 	}
 	return candidates
+}
+
+var diagnosticLogTimestampPattern = regexp.MustCompile(`(?:\[[^\]]*\]\s+)?(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d{3})?)`)
+
+func (s *Service) collectDiagnosticWindowedLogSnippet(ctx context.Context, target DiagnosticTaskNodeTarget, candidate string, window diagnosticCollectionWindow, maxLines int) (string, string, error) {
+	if s.agentSender == nil {
+		return "", "agent sender is unavailable", fmt.Errorf("agent sender is unavailable")
+	}
+	contents := make([]string, 0, 4)
+	days := diagnosticWindowDays(window.Start, window.End)
+	for _, day := range days {
+		params := map[string]string{
+			"log_file": candidate,
+			"mode":     "all",
+		}
+		if isDiagnosticCurrentLogDay(day, window.End) {
+			// current active file
+		} else {
+			params["date"] = day.Format("2006-01-02")
+		}
+		success, output, err := s.sendDiagnosticAgentCommandWithRetry(ctx, target.AgentID, "get_logs", params)
+		if err != nil || !success {
+			continue
+		}
+		if strings.TrimSpace(output) != "" {
+			contents = append(contents, output)
+		}
+	}
+	if len(contents) == 0 {
+		return "", bilingualText("未读取到日志文件内容。", "No log file content was read."), fmt.Errorf("no log content")
+	}
+
+	snippet, _, sawTimestamp := extractDiagnosticLogWindowContent(contents, window.Start, window.End)
+	if strings.TrimSpace(snippet) == "" {
+		if sawTimestamp {
+			return "", bilingualText("指定时间窗内未命中日志片段。", "No log entries matched the diagnostics window."), nil
+		}
+		snippet = strings.TrimSpace(strings.Join(contents, "\n"))
+	}
+	return snippet, "", nil
+}
+
+func diagnosticWindowDays(start, end time.Time) []time.Time {
+	if end.Before(start) {
+		start, end = end, start
+	}
+	start = start.Local()
+	end = end.Local()
+	startDay := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, start.Location())
+	endDay := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, end.Location())
+	days := make([]time.Time, 0, int(endDay.Sub(startDay)/(24*time.Hour))+1)
+	for day := startDay; !day.After(endDay); day = day.Add(24 * time.Hour) {
+		days = append(days, day)
+	}
+	return days
+}
+
+func isDiagnosticCurrentLogDay(day, end time.Time) bool {
+	y1, m1, d1 := day.Date()
+	y2, m2, d2 := end.Local().Date()
+	return y1 == y2 && m1 == m2 && d1 == d2
+}
+
+func extractDiagnosticLogWindowContent(contents []string, start, end time.Time) (string, bool, bool) {
+	type logEntry struct {
+		ts      time.Time
+		hasTime bool
+		lines   []string
+	}
+	entries := make([]logEntry, 0, 64)
+	appendLine := func(current *logEntry, line string) *logEntry {
+		if current == nil {
+			entry := logEntry{lines: []string{line}}
+			entries = append(entries, entry)
+			return &entries[len(entries)-1]
+		}
+		current.lines = append(current.lines, line)
+		return current
+	}
+
+	var current *logEntry
+	for _, content := range contents {
+		for _, line := range strings.Split(content, "\n") {
+			if ts, ok := parseDiagnosticLogTimestamp(line); ok {
+				entry := logEntry{
+					ts:      ts,
+					hasTime: true,
+					lines:   []string{line},
+				}
+				entries = append(entries, entry)
+				current = &entries[len(entries)-1]
+				continue
+			}
+			current = appendLine(current, line)
+		}
+	}
+
+	filtered := make([]string, 0, 256)
+	sawTimestamp := false
+	matchedWindow := false
+	for _, entry := range entries {
+		if entry.hasTime {
+			sawTimestamp = true
+		}
+		if entry.hasTime && (entry.ts.Before(start) || entry.ts.After(end)) {
+			continue
+		}
+		if entry.hasTime {
+			matchedWindow = true
+		}
+		for _, line := range entry.lines {
+			filtered = append(filtered, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(filtered, "\n")), matchedWindow, sawTimestamp
+}
+
+func parseDiagnosticLogTimestamp(line string) (time.Time, bool) {
+	matches := diagnosticLogTimestampPattern.FindStringSubmatch(line)
+	if len(matches) != 2 {
+		return time.Time{}, false
+	}
+	value := strings.TrimSpace(matches[1])
+	layouts := []string{"2006-01-02 15:04:05,000", "2006-01-02 15:04:05"}
+	for _, layout := range layouts {
+		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func diagnosticDefaultLogFile(role string) string {
@@ -3843,6 +4272,12 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
     .muted {
       color: var(--muted);
     }
+    .muted.wrap-text,
+    .wrap-text {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
     .small { font-size: 12px; }
     .callout {
       margin-top: 14px;
@@ -3885,6 +4320,29 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
       border-bottom: 1px solid #edf2f7;
       vertical-align: top;
       word-break: break-word;
+    }
+    .process-events-table th:first-child,
+    .process-events-table td:first-child {
+      width: 168px;
+      min-width: 168px;
+      white-space: normal;
+      overflow-wrap: normal;
+      word-break: keep-all;
+    }
+    .process-events-table th:nth-child(2),
+    .process-events-table td:nth-child(2) {
+      width: 110px;
+      min-width: 110px;
+    }
+    .process-events-table th:nth-child(3),
+    .process-events-table td:nth-child(3) {
+      width: 92px;
+      min-width: 92px;
+    }
+    .process-events-table th:nth-child(4),
+    .process-events-table td:nth-child(4) {
+      width: 92px;
+      min-width: 92px;
     }
     th {
       background: #f8fbff;
@@ -3963,6 +4421,47 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
       cursor: pointer;
       font-weight: 600;
     }
+    .metric-chart {
+      width: 100%;
+      min-width: 320px;
+      height: 156px;
+      display: block;
+      background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+    }
+    .metric-chart-axis {
+      stroke-width: 1.2;
+    }
+    .metric-chart-grid {
+      stroke-width: 1;
+      stroke-dasharray: 3 4;
+    }
+    .metric-chart-path {
+      fill: none;
+      stroke-width: 2.4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .metric-chart-threshold {
+      stroke: #f59e0b;
+      stroke-width: 1.2;
+      stroke-dasharray: 4 3;
+    }
+    .metric-chart-dot {
+      fill: #0f172a;
+    }
+    .metric-chart-label {
+      fill: #64748b;
+      font-size: 10px;
+    }
+    .metric-chart-label.x-mid {
+      text-anchor: middle;
+    }
+    .metric-chart-label.x-end,
+    .metric-chart-label.threshold-label {
+      text-anchor: end;
+    }
     .empty {
       border: 1px dashed var(--border);
       border-radius: 12px;
@@ -4025,7 +4524,6 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
       <a href="#focus">摘要</a>
       <a href="#findings">关键发现</a>
       <a href="#evidence">证据详情</a>
-      <a href="#artifacts">诊断产物</a>
       <a href="#appendix">附录</a>
     </nav>
 
@@ -4170,6 +4668,25 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
             </table>
           </div>
           {{end}}
+          {{if .ErrorContext.LogSamples}}
+          <div class="subsection">
+            <div class="subsection-label">原始错误日志预览 / Raw Error Log Preview</div>
+            <div class="list">
+              {{range .ErrorContext.LogSamples}}
+              <div class="entry">
+                <div class="entry-header">
+                  <div>
+                    <div class="entry-title">{{.HostLabel}}</div>
+                    <div class="muted small"><code class="inline">{{.SourceFile}}</code></div>
+                  </div>
+                  <span class="badge">{{.WindowLabel}}</span>
+                </div>
+                <pre>{{.Content}}</pre>
+              </div>
+              {{end}}
+            </div>
+          </div>
+          {{end}}
           {{else}}
           <div class="empty">当前诊断报告未附带错误组上下文。 / No error-group context is attached to this report.</div>
           {{end}}
@@ -4188,78 +4705,6 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
           </div>
           {{else}}
           <div class="empty">当前诊断报告没有巡检详情上下文。 / No inspection context is attached to this report.</div>
-          {{end}}
-        </div>
-      </div>
-
-      <div class="grid-2" style="margin-top: 18px;">
-        <div class="detail-panel">
-          <div class="panel-label">告警快照 / Alert Snapshot</div>
-          {{if .AlertSnapshot}}
-          <div class="stat-grid">
-            <div class="stat-card"><div class="label">Total Alerts</div><div class="value">{{.AlertSnapshot.Total}}</div></div>
-            <div class="stat-card"><div class="label">Critical</div><div class="value">{{.AlertSnapshot.Critical}}</div></div>
-            <div class="stat-card"><div class="label">Warning</div><div class="value">{{.AlertSnapshot.Warning}}</div></div>
-            <div class="stat-card"><div class="label">Firing</div><div class="value">{{.AlertSnapshot.Firing}}</div></div>
-          </div>
-          <div class="subsection">
-            <div class="subsection-label">告警明细 / Alert Details</div>
-            <div class="list">
-              {{range .AlertSnapshot.Alerts}}
-              <div class="entry">
-                <div class="entry-header">
-                  <div class="entry-title">{{.Name}}</div>
-                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <span class="badge {{statusClass .Severity}}">{{.Severity}}</span>
-                    <span class="badge {{statusClass .Status}}">{{.Status}}</span>
-                  </div>
-                </div>
-                {{if .Summary}}<div>{{.Summary}}</div>{{end}}
-                {{if .Description}}<div class="muted" style="margin-top: 8px;">{{.Description}}</div>{{end}}
-              </div>
-              {{end}}
-            </div>
-          </div>
-          {{else}}
-          <div class="empty">未采集到活动告警。 / No alert snapshot was collected.</div>
-          {{end}}
-        </div>
-
-        <div class="detail-panel">
-          <div class="panel-label">进程信号 / Process Signals</div>
-          {{if .ProcessEvents}}
-          <div class="stat-grid">
-            <div class="stat-card"><div class="label">Total Events</div><div class="value">{{.ProcessEvents.Total}}</div></div>
-            {{range .ProcessEvents.ByType}}
-            <div class="stat-card"><div class="label">{{.Label}}</div><div class="value">{{.Value}}</div></div>
-            {{end}}
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Created At</th>
-                  <th>Event Type</th>
-                  <th>Process</th>
-                  <th>Node</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{range .ProcessEvents.Events}}
-                <tr>
-                  <td>{{.CreatedAt}}</td>
-                  <td>{{.EventType}}</td>
-                  <td>{{.ProcessName}}</td>
-                  <td>{{.NodeLabel}}</td>
-                  <td>{{.Details}}</td>
-                </tr>
-                {{end}}
-              </tbody>
-            </table>
-          </div>
-          {{else}}
-          <div class="empty">未采集到近期进程事件。 / No process events were collected.</div>
           {{end}}
         </div>
       </div>
@@ -4295,6 +4740,25 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
                   </div>
                   {{end}}
                 </div>
+              </div>
+              {{end}}
+            </div>
+          </div>
+          {{end}}
+          {{if .ConfigSnapshot.FilePreviews}}
+          <div class="subsection">
+            <div class="subsection-label">配置文件预览 / Runtime Config Preview</div>
+            <div class="list">
+              {{range .ConfigSnapshot.FilePreviews}}
+              <div class="entry">
+                <div class="entry-header">
+                  <div>
+                    <div class="entry-title">{{.ConfigType}}</div>
+                    <div class="muted small">{{if .HostName}}{{.HostName}}{{else}}Host #{{.HostID}}{{end}} / {{.Role}}</div>
+                  </div>
+                </div>
+                <div class="muted small"><code class="inline">{{.RemotePath}}</code></div>
+                <pre>{{.Preview}}</pre>
               </div>
               {{end}}
             </div>
@@ -4481,13 +4945,15 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
               <div>{{.Summary}}</div>
               {{if .Series}}
               {{$unit := .Unit}}
+              {{$threshold := .Threshold}}
+              {{$comparator := .Comparator}}
               <div class="table-wrap" style="margin-top: 10px;">
                 <table>
                   <thead>
                     <tr>
                       <th>Instance</th>
-                      <th>Min</th>
-                      <th>Max</th>
+                      <th>Curve</th>
+                      <th>Peak</th>
                       <th>Last</th>
                       <th>Samples</th>
                     </tr>
@@ -4496,8 +4962,8 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
                     {{range .Series}}
                     <tr>
                       <td>{{.Instance}}</td>
-                      <td>{{formatMetricValue $unit .MinValue}}</td>
-                      <td>{{formatMetricValue $unit .MaxValue}}</td>
+                      <td>{{metricChartSVG .Points $threshold $comparator $unit}}</td>
+                      <td>{{formatMetricValue $unit .MaxValue}}<div class="muted small">{{formatTime .MaxAt}}</div></td>
                       <td>{{formatMetricValue $unit .LastValue}}</td>
                       <td>{{.Samples}}</td>
                     </tr>
@@ -4533,6 +4999,94 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
           {{end}}
           {{else}}
           <div class="empty">未采集到 Prometheus 指标快照。 / No Prometheus metrics snapshot was collected.</div>
+          {{end}}
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="operations">
+      <div class="section-heading">
+        <div>
+          <h2>附录：告警与进程 / Appendix: Alerts & Process Signals</h2>
+          <p class="section-lead">这部分主要用于补充当时的告警态势和进程事件，优先级低于错误、配置和指标本身。</p>
+        </div>
+      </div>
+      <div class="detail-columns">
+        <div class="detail-panel">
+          <div class="panel-label">告警快照 / Alert Snapshot</div>
+          {{if .AlertSnapshot}}
+          <div class="stat-grid">
+            <div class="stat-card"><div class="label">Total Alerts</div><div class="value">{{.AlertSnapshot.Total}}</div></div>
+            <div class="stat-card"><div class="label">Critical</div><div class="value">{{.AlertSnapshot.Critical}}</div></div>
+            <div class="stat-card"><div class="label">Warning</div><div class="value">{{.AlertSnapshot.Warning}}</div></div>
+            <div class="stat-card"><div class="label">Firing</div><div class="value">{{.AlertSnapshot.Firing}}</div></div>
+          </div>
+          <div class="dl" style="margin-top: 14px;">
+            <div class="dl-row"><div class="dl-term">首次告警 / First Seen</div><div class="dl-value">{{.AlertSnapshot.FirstSeenAt}}</div></div>
+            <div class="dl-row"><div class="dl-term">最近告警 / Last Seen</div><div class="dl-value">{{.AlertSnapshot.LastSeenAt}}</div></div>
+          </div>
+          <div class="subsection">
+            <div class="subsection-label">告警明细 / Alert Details</div>
+            <div class="list">
+              {{range .AlertSnapshot.Alerts}}
+              <div class="entry">
+                <div class="entry-header">
+                  <div>
+                    <div class="entry-title">{{.Name}}</div>
+                    <div class="muted small wrap-text">Created {{.CreatedAt}} · Firing {{.FiringAt}} · Last Seen {{.LastSeenAt}}</div>
+                  </div>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <span class="badge {{statusClass .Severity}}">{{.Severity}}</span>
+                    <span class="badge {{statusClass .Status}}">{{.Status}}</span>
+                  </div>
+                </div>
+                {{if ne .ResolvedAt "-"}}<div class="muted small wrap-text">Resolved {{.ResolvedAt}}</div>{{end}}
+                {{if .Summary}}<div style="margin-top: 8px;">{{.Summary}}</div>{{end}}
+                {{if .Description}}<div class="muted wrap-text" style="margin-top: 8px;">{{.Description}}</div>{{end}}
+              </div>
+              {{end}}
+            </div>
+          </div>
+          {{else}}
+          <div class="empty">未采集到活动告警。 / No alert snapshot was collected.</div>
+          {{end}}
+        </div>
+
+        <div class="detail-panel">
+          <div class="panel-label">进程信号 / Process Signals</div>
+          {{if .ProcessEvents}}
+          <div class="stat-grid">
+            <div class="stat-card"><div class="label">Total Events</div><div class="value">{{.ProcessEvents.Total}}</div></div>
+            {{range .ProcessEvents.ByType}}
+            <div class="stat-card"><div class="label">{{.Label}}</div><div class="value">{{.Value}}</div></div>
+            {{end}}
+          </div>
+          <div class="table-wrap" style="margin-top: 14px;">
+            <table class="process-events-table">
+              <thead>
+                <tr>
+                  <th>Created At</th>
+                  <th>Event Type</th>
+                  <th>Process</th>
+                  <th>Node</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .ProcessEvents.Events}}
+                <tr>
+                  <td>{{.CreatedAt}}</td>
+                  <td>{{.EventType}}</td>
+                  <td>{{.ProcessName}}</td>
+                  <td>{{.NodeLabel}}</td>
+                  <td>{{.Details}}</td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+          {{else}}
+          <div class="empty">未采集到近期进程事件。 / No process events were collected.</div>
           {{end}}
         </div>
       </div>
@@ -4695,66 +5249,6 @@ const diagnosticBundleHTMLTemplate = `<!DOCTYPE html>
           {{end}}
         </div>
       </div>
-    </section>
-
-    <section class="section" id="artifacts">
-      <div class="section-heading">
-        <div>
-          <h2>诊断产物 / Diagnostic Artifacts</h2>
-          <p class="section-lead">按类别展示已收集证据；需要深挖时可直接打开相对路径或查看预览。</p>
-        </div>
-      </div>
-      {{if .ArtifactGroups}}
-      {{range .ArtifactGroups}}
-      <div class="artifact-group">
-        <div class="section-heading" style="margin-bottom: 12px;">
-          <div>
-            <h3>{{.Label}}</h3>
-            <p class="section-lead">{{len .Items}} artifact(s)</p>
-          </div>
-        </div>
-        <div class="artifact-grid">
-          {{range .Items}}
-          <div class="artifact-card">
-            <div class="entry-header" style="margin-bottom: 0;">
-              <div>
-                <div class="entry-title">{{.CategoryLabel}}</div>
-                <div class="muted small">{{.StepCode}}</div>
-              </div>
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <span class="badge {{statusClass .Status}}">{{.Status}}</span>
-                <span class="badge">{{.Format}}</span>
-              </div>
-            </div>
-            <div class="artifact-meta">
-              <div class="meta-item"><div class="label">Host</div><div class="value">{{.HostLabel}}</div></div>
-              <div class="meta-item"><div class="label">Size</div><div class="value">{{.SizeLabel}}</div></div>
-              <div class="meta-item"><div class="label">Relative Path</div><div class="value">{{if ne .RelativePath "-"}}<a href="{{.RelativePath}}"><code class="inline">{{.RelativePath}}</code></a>{{else}}-{{end}}</div></div>
-              <div class="meta-item"><div class="label">Remote Path</div><div class="value">{{if ne .RemotePath "-"}}<code class="inline">{{.RemotePath}}</code>{{else}}-{{end}}</div></div>
-            </div>
-            <div>
-              <div class="muted small">Message</div>
-              <div>{{.Message}}</div>
-            </div>
-            {{if ne .LocalPath "-"}}
-            <div>
-              <div class="muted small">Local Path</div>
-              <code class="inline">{{.LocalPath}}</code>
-            </div>
-            {{end}}
-            <details>
-              <summary>产物预览 / Artifact Preview</summary>
-              {{if ne .Preview "-"}}<pre>{{.Preview}}</pre>{{else}}<div class="empty" style="margin-top: 12px;">暂无可展示预览。 / No preview available.</div>{{end}}
-              {{if ne .PreviewNote "-"}}<div class="muted small" style="margin-top: 10px;">{{.PreviewNote}}</div>{{end}}
-            </details>
-          </div>
-          {{end}}
-        </div>
-      </div>
-      {{end}}
-      {{else}}
-      <div class="empty">No artifacts were registered in this bundle.</div>
-      {{end}}
     </section>
 
     <section class="section" id="appendix">

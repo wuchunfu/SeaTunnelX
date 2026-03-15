@@ -214,7 +214,7 @@ type DiagnosticTaskOptions struct {
 // Normalize 填充采集选项默认值。
 func (o DiagnosticTaskOptions) Normalize() DiagnosticTaskOptions {
 	if o.LogSampleLines <= 0 {
-		o.LogSampleLines = 200
+		o.LogSampleLines = 400
 	}
 	if o.JVMDumpMinFreeMB <= 0 {
 		o.JVMDumpMinFreeMB = 2048
@@ -278,11 +278,11 @@ func DefaultDiagnosticTaskSteps() []DiagnosticPlanStep {
 // DiagnosticTask persists one diagnostic bundle task.
 // DiagnosticTask 存储一条诊断包任务。
 type DiagnosticTask struct {
-	ID             uint                      `json:"id" gorm:"primaryKey;autoIncrement"`
-	ClusterID      uint                      `json:"cluster_id" gorm:"index;not null"`
-	TriggerSource  DiagnosticTaskSourceType  `json:"trigger_source" gorm:"size:40;index;not null"`
-	SourceRef      DiagnosticTaskSourceRef   `json:"source_ref" gorm:"type:json;not null"`
-	Options        DiagnosticTaskOptions     `json:"options" gorm:"type:json;not null"`
+	ID            uint                     `json:"id" gorm:"primaryKey;autoIncrement"`
+	ClusterID     uint                     `json:"cluster_id" gorm:"index;not null"`
+	TriggerSource DiagnosticTaskSourceType `json:"trigger_source" gorm:"size:40;index;not null"`
+	SourceRef     DiagnosticTaskSourceRef  `json:"source_ref" gorm:"type:json;not null"`
+	Options       DiagnosticTaskOptions    `json:"options" gorm:"type:json;not null"`
 	// LookbackMinutes controls the diagnostics collection window in minutes.
 	// LookbackMinutes 控制诊断采集时间窗口（分钟），0 表示使用默认或来源巡检窗口。
 	LookbackMinutes int                       `json:"lookback_minutes" gorm:"default:0"`

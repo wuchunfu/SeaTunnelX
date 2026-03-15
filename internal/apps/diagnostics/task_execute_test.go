@@ -364,6 +364,43 @@ func TestBuildDiagnosticBundleHTMLMetricsPanel_prioritizesAnomalies(t *testing.T
 	}
 }
 
+func TestExtractDiagnosticLogWindowContent_filtersByTimeWindow(t *testing.T) {
+	start := time.Date(2026, 3, 15, 10, 0, 0, 0, time.Local)
+	end := start.Add(5 * time.Minute)
+	content := strings.Join([]string{
+		"[] 2026-03-15 09:58:00,000 ERROR [x] [main] - before",
+		"[] 2026-03-15 10:01:00,000 ERROR [x] [main] - matched",
+		"\tat example.Stack",
+		"[] 2026-03-15 10:04:00,000 WARN [x] [main] - matched-2",
+		"[] 2026-03-15 10:07:00,000 ERROR [x] [main] - after",
+	}, "\n")
+
+	got, matchedWindow, sawTimestamp := extractDiagnosticLogWindowContent([]string{content}, start, end)
+	if !matchedWindow || !sawTimestamp {
+		t.Fatalf("expected matchedWindow and sawTimestamp to be true, got matched=%v sawTimestamp=%v", matchedWindow, sawTimestamp)
+	}
+	if strings.Contains(got, "before") || strings.Contains(got, "after") {
+		t.Fatalf("expected out-of-window entries to be filtered, got %s", got)
+	}
+	if !strings.Contains(got, "matched") || !strings.Contains(got, "matched-2") {
+		t.Fatalf("expected in-window entries to remain, got %s", got)
+	}
+	if !strings.Contains(got, "example.Stack") {
+		t.Fatalf("expected stack trace lines to stay attached, got %s", got)
+	}
+}
+
+func TestBuildDiagnosticConfigPreview_keepsFullContent(t *testing.T) {
+	lines := make([]string, 0, 64)
+	for i := 0; i < 64; i++ {
+		lines = append(lines, fmt.Sprintf("line-%02d=value", i))
+	}
+	content := strings.Join(lines, "\n")
+	if got := buildDiagnosticConfigPreview(content); got != content {
+		t.Fatalf("expected full config preview, got truncated content: %s", got)
+	}
+}
+
 func TestExecuteCollectProcessEventsStep_fallsBackWhenFilteredQueryReturnsEmpty(t *testing.T) {
 	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -492,6 +529,9 @@ func TestDiagnosticBundleHTMLTemplateParsesAndRendersMetricsPanels(t *testing.T)
 		"formatMetricValue": func(unit string, value float64) string {
 			return formatDiagnosticMetricValue(unit, value)
 		},
+		"metricChartSVG": func(points []diagnosticPrometheusPoint, threshold float64, comparator string, unit string) template.HTML {
+			return renderDiagnosticMetricChart(points, threshold, comparator, unit)
+		},
 		"shortHash": func(value string) string {
 			value = strings.TrimSpace(value)
 			if len(value) <= 12 {
@@ -527,6 +567,8 @@ func TestDiagnosticBundleHTMLTemplateParsesAndRendersMetricsPanels(t *testing.T)
 				ThresholdText: "> 0.8",
 				Status:        "warning",
 				Unit:          "ratio",
+				Threshold:     0.8,
+				Comparator:    "gt",
 				Summary:       "cpu summary",
 				Series: []diagnosticPrometheusSeriesSummary{{
 					Instance:  "node-1",
@@ -534,6 +576,13 @@ func TestDiagnosticBundleHTMLTemplateParsesAndRendersMetricsPanels(t *testing.T)
 					MaxValue:  0.9,
 					LastValue: 0.7,
 					Samples:   5,
+					MaxAt:     timePtr(now),
+					Points: []diagnosticPrometheusPoint{
+						{Timestamp: now.Add(-4 * time.Minute), Value: 0.2},
+						{Timestamp: now.Add(-3 * time.Minute), Value: 0.4},
+						{Timestamp: now.Add(-2 * time.Minute), Value: 0.9},
+						{Timestamp: now.Add(-1 * time.Minute), Value: 0.7},
+					},
 				}},
 			}},
 			CollectionNotes: []string{"partial query failed"},
@@ -552,6 +601,13 @@ func TestDiagnosticBundleHTMLTemplateParsesAndRendersMetricsPanels(t *testing.T)
 					Label: "Metrics",
 					Value: "true",
 				}},
+			}},
+			FilePreviews: []diagnosticConfigFilePreview{{
+				HostID:     1,
+				Role:       "master",
+				ConfigType: "seatunnel.yaml",
+				RemotePath: "/opt/seatunnel/config/seatunnel.yaml",
+				Preview:    "metrics:\\n  enabled: true",
 			}},
 			RecentChanges: []diagnosticConfigChangeRecord{{
 				ConfigType: "seatunnel.yaml",
@@ -601,7 +657,7 @@ func TestDiagnosticBundleHTMLTemplateParsesAndRendersMetricsPanels(t *testing.T)
 	if !strings.Contains(buf.String(), "Prometheus") {
 		t.Fatalf("expected rendered html to contain Prometheus panel")
 	}
-	if !strings.Contains(buf.String(), "Key Runtime Settings") || !strings.Contains(buf.String(), "connector-fake.jar") {
+	if !strings.Contains(buf.String(), "Key Runtime Settings") || !strings.Contains(buf.String(), "connector-fake.jar") || !strings.Contains(buf.String(), "<svg") || !strings.Contains(buf.String(), "Threshold") {
 		t.Fatalf("expected rendered html to contain config inventory details")
 	}
 }
