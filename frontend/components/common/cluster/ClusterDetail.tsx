@@ -367,91 +367,6 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
   ]);
 
   /**
-   * Handle start cluster
-   * 处理启动集群
-   */
-  const handleStart = async () => {
-    setIsOperating(true);
-    try {
-      const result = await services.cluster.startClusterSafe(clusterId);
-      if (result.success) {
-        // Check if auto-restart is managing the startup (check both message and node_results)
-        // 检查是否由自动重启托管启动（检查 message 和 node_results）
-        const isAutoRestart =
-          result.data?.message?.includes('auto-restart') ||
-          result.data?.message?.includes('auto-start') ||
-          result.data?.node_results?.some(
-            (nr) =>
-              nr.message?.includes('auto-restart') ||
-              nr.message?.includes('auto-start'),
-          );
-        toast.success(
-          isAutoRestart
-            ? t('cluster.startSuccessAutoRestart')
-            : t('cluster.startSuccess'),
-        );
-        loadClusterData();
-      } else {
-        toast.error(result.error || t('cluster.startError'));
-      }
-    } finally {
-      setIsOperating(false);
-    }
-  };
-
-  /**
-   * Handle stop cluster
-   * 处理停止集群
-   */
-  const handleStop = async () => {
-    setIsOperating(true);
-    try {
-      const result = await services.cluster.stopClusterSafe(clusterId);
-      if (result.success) {
-        toast.success(t('cluster.stopSuccess'));
-        loadClusterData();
-      } else {
-        toast.error(result.error || t('cluster.stopError'));
-      }
-    } finally {
-      setIsOperating(false);
-    }
-  };
-
-  /**
-   * Handle restart cluster
-   * 处理重启集群
-   */
-  const handleRestart = async () => {
-    setIsOperating(true);
-    try {
-      const result = await services.cluster.restartClusterSafe(clusterId);
-      if (result.success) {
-        // Check if auto-restart is managing the startup (check both message and node_results)
-        // 检查是否由自动重启托管启动（检查 message 和 node_results）
-        const isAutoRestart =
-          result.data?.message?.includes('auto-restart') ||
-          result.data?.message?.includes('auto-start') ||
-          result.data?.node_results?.some(
-            (nr) =>
-              nr.message?.includes('auto-restart') ||
-              nr.message?.includes('auto-start'),
-          );
-        toast.success(
-          isAutoRestart
-            ? t('cluster.restartSuccessAutoRestart')
-            : t('cluster.restartSuccess'),
-        );
-        loadClusterData();
-      } else {
-        toast.error(result.error || t('cluster.restartError'));
-      }
-    } finally {
-      setIsOperating(false);
-    }
-  };
-
-  /**
    * Handle delete cluster
    * 处理删除集群
    */
@@ -836,10 +751,6 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
       </div>
     );
   }
-
-  const canStart =
-    cluster.status === ClusterStatus.CREATED ||
-    cluster.status === ClusterStatus.STOPPED;
 
   const canDelete =
     cluster.status !== ClusterStatus.RUNNING &&
@@ -1527,7 +1438,7 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
         open={isDeleteDialogOpen}
         onOpenChange={(open) => {
           setIsDeleteDialogOpen(open);
-          if (!open) setForceDelete(false);
+          if (!open) {setForceDelete(false);}
         }}
       >
         <AlertDialogContent>
@@ -1616,10 +1527,10 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
-                if (confirmBatchOp === 'start') await handleBatchStart();
-                else if (confirmBatchOp === 'stop') await handleBatchStop();
+                if (confirmBatchOp === 'start') {await handleBatchStart();}
+                else if (confirmBatchOp === 'stop') {await handleBatchStop();}
                 else if (confirmBatchOp === 'restart')
-                  await handleBatchRestart();
+                  {await handleBatchRestart();}
                 setConfirmBatchOp(null);
               }}
             >
@@ -1674,12 +1585,12 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
-                if (!confirmNodeOp) return;
+                if (!confirmNodeOp) {return;}
                 if (confirmNodeOp.op === 'start')
-                  await handleNodeStart(confirmNodeOp.node);
+                  {await handleNodeStart(confirmNodeOp.node);}
                 else if (confirmNodeOp.op === 'stop')
-                  await handleNodeStop(confirmNodeOp.node);
-                else await handleNodeRestart(confirmNodeOp.node);
+                  {await handleNodeStop(confirmNodeOp.node);}
+                else {await handleNodeRestart(confirmNodeOp.node);}
                 setConfirmNodeOp(null);
               }}
             >
