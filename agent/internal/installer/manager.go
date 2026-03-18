@@ -2062,6 +2062,10 @@ func (m *InstallerManager) extractPackage(ctx context.Context, packagePath, dest
 		}
 	}
 
+	if err := WriteManagedInstallMarker(destDir); err != nil {
+		return fmt.Errorf("%w: failed to write install marker: %v", ErrExtractionFailed, err)
+	}
+
 	return nil
 }
 
@@ -2586,15 +2590,6 @@ func setYAMLMapValue(root *yaml.Node, path []string, values map[string]string) e
 // Uninstall removes the SeaTunnel installation
 // Uninstall 移除 SeaTunnel 安装
 func (m *InstallerManager) Uninstall(ctx context.Context, installDir string) error {
-	// Check if directory exists / 检查目录是否存在
-	if _, err := os.Stat(installDir); os.IsNotExist(err) {
-		return nil // Already uninstalled / 已经卸载
-	}
-
-	// Remove the installation directory / 移除安装目录
-	if err := os.RemoveAll(installDir); err != nil {
-		return fmt.Errorf("failed to remove installation directory: %w", err)
-	}
-
-	return nil
+	_, err := RemoveManagedInstallDir(installDir)
+	return err
 }

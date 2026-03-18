@@ -2133,24 +2133,14 @@ func (a *Agent) handleRemoveInstallDirCommand(ctx context.Context, cmd *pb.Comma
 		return executor.CreateErrorResponse(cmd.CommandId, msg), fmt.Errorf("%s", msg)
 	}
 
-	clean := filepath.Clean(installDir)
-	if !filepath.IsAbs(clean) {
-		msg := fmt.Sprintf("install_dir must be an absolute path / install_dir 必须为绝对路径: %s", clean)
-		return executor.CreateErrorResponse(cmd.CommandId, msg), fmt.Errorf("%s", msg)
-	}
-	if clean == "/" || clean == "." || strings.Contains(clean, "..") {
-		msg := fmt.Sprintf("install_dir is not allowed / 不允许的 install_dir: %s", clean)
-		return executor.CreateErrorResponse(cmd.CommandId, msg), fmt.Errorf("%s", msg)
+	removedDir, err := installer.RemoveManagedInstallDir(installDir)
+	if err != nil {
+		return executor.CreateErrorResponse(cmd.CommandId, err.Error()), err
 	}
 
-	if err := os.RemoveAll(clean); err != nil {
-		msg := fmt.Sprintf("failed to remove install dir / 删除安装目录失败: %v", err)
-		return executor.CreateErrorResponse(cmd.CommandId, msg), err
-	}
-
-	logger.InfoF(ctx, "[Agent] Removed install directory: %s / 已删除安装目录：%s", clean, clean)
+	logger.InfoF(ctx, "[Agent] Removed install directory: %s / 已删除安装目录：%s", removedDir, removedDir)
 	reporter.Report(100, "Install directory removed / 安装目录已删除")
-	return executor.CreateSuccessResponse(cmd.CommandId, fmt.Sprintf("Install directory removed: %s / 安装目录已删除：%s", clean, clean)), nil
+	return executor.CreateSuccessResponse(cmd.CommandId, fmt.Sprintf("Install directory removed: %s / 安装目录已删除：%s", removedDir, removedDir)), nil
 }
 
 // isProcessAlive checks if a process with the given PID is alive
