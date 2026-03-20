@@ -405,7 +405,6 @@ for arch in "${ARCHES[@]}"; do
     cp "$ROOT_DIR/LICENSE" "$pkg_dir/"
     cp "$ROOT_DIR/NOTICE" "$pkg_dir/"
     cp "$ROOT_DIR/config.example.yaml" "$pkg_dir/config.example.yaml"
-    cp "$ROOT_DIR/config.example.yaml" "$pkg_dir/config.yaml"
     cp "$ROOT_DIR/support-files/release/install.sh" "$pkg_dir/install.sh"
 
     mkdir -p "$pkg_dir/lib/agent"
