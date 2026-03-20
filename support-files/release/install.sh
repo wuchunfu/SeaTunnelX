@@ -29,6 +29,12 @@ Options:
   --no-preserve-config    Do not keep existing config.yaml
   --no-start              Install only, do not auto start
   -h, --help              Show this help
+
+Environment overrides when starting later:
+  CONFIG_PATH                    Backend config path (default: <install-dir>/config.yaml)
+  FRONTEND_PORT                  Frontend listen port (default: 80)
+  FRONTEND_HOST                  Frontend listen host (default: 0.0.0.0)
+  NEXT_PUBLIC_BACKEND_BASE_URL   Frontend API base URL (default: http://127.0.0.1:8000)
 USAGE
 }
 
@@ -82,7 +88,7 @@ else
   exit 1
 fi
 
-for f in seatunnelx bin/start.sh bin/stop.sh bin/status.sh config.example.yaml config.yaml; do
+for f in seatunnelx bin/start.sh bin/stop.sh bin/status.sh config.example.yaml; do
   if [[ ! -e "$SOURCE_DIR/$f" ]]; then
     echo "[ERROR] package payload missing: $f"
     exit 1
@@ -123,6 +129,9 @@ if [[ -n "$BACKUP_CONFIG" && -f "$BACKUP_CONFIG" ]]; then
   cp "$BACKUP_CONFIG" "$INSTALL_DIR/config.yaml"
   rm -f "$BACKUP_CONFIG"
   echo "[INFO] existing config.yaml restored"
+elif [[ ! -f "$INSTALL_DIR/config.yaml" ]]; then
+  cp "$INSTALL_DIR/config.example.yaml" "$INSTALL_DIR/config.yaml"
+  echo "[INFO] generated config.yaml from config.example.yaml"
 fi
 
 chmod +x \
@@ -148,6 +157,12 @@ echo "[OK] install done."
 echo "     start : $INSTALL_DIR/bin/start.sh"
 echo "     stop  : $INSTALL_DIR/bin/stop.sh"
 echo "     status: $INSTALL_DIR/bin/status.sh"
+echo "     config: $INSTALL_DIR/config.yaml"
+echo
+echo "[INFO] port hints:"
+echo "       backend http/grpc ports come from $INSTALL_DIR/config.yaml"
+echo "       frontend port/host can be overridden with FRONTEND_PORT / FRONTEND_HOST"
+echo "       example: CONFIG_PATH=$INSTALL_DIR/config.yaml FRONTEND_PORT=8080 NEXT_PUBLIC_BACKEND_BASE_URL=http://127.0.0.1:8000 $INSTALL_DIR/bin/start.sh"
 
 if [[ "$AUTO_START" == "true" ]]; then
   echo "[INFO] auto starting ..."

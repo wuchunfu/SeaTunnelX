@@ -27,6 +27,14 @@ import {useTranslations} from 'next-intl';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -70,6 +78,8 @@ import type {
   LocalPlugin,
   PluginDownloadProgress,
   InstalledPlugin,
+  PluginDependency,
+  OfficialDependenciesResponse,
 } from '@/lib/services/plugin';
 import type {ClusterInfo} from '@/lib/services/cluster';
 import {Progress} from '@/components/ui/progress';
@@ -77,7 +87,6 @@ import {PluginGrid} from './PluginGrid';
 import {PluginDetailDialog} from './PluginDetailDialog';
 import {InstallPluginDialog} from './InstallPluginDialog';
 import {BatchInstallDialog} from './BatchInstallDialog';
-import {DependencyConfigDialog} from './DependencyConfigDialog';
 import {Pagination} from '@/components/ui/pagination';
 import {
   Table,
@@ -98,6 +107,41 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+
+interface InstallDialogContext {
+  plugin: Plugin;
+  version: string;
+  selectedProfileKeys: string[];
+  attachedConnectors: string[];
+  dependencies: PluginDependency[];
+}
+
+function normalizeProfileKeys(keys?: string[]): string[] {
+  return Array.from(new Set((keys || []).map((item) => item.trim()).filter(Boolean))).sort();
+}
+
+function splitAutomaticAttachments(dependencies?: PluginDependency[]) {
+  const items = dependencies || [];
+  return {
+    attachedConnectors: Array.from(
+      new Set(
+        items
+          .filter((item) => item.target_dir === 'connectors')
+          .map((item) => item.artifact_id),
+      ),
+    ),
+    dependencies: items,
+  };
+}
+
+function pluginDownloadKey(name: string, version: string): string {
+  return `${name}:${version}`;
+}
+
+function pluginClusterInstallKey(name: string, version: string): string {
+  return `${name}:${version}`;
+}
+
 /**
  * Plugin Marketplace Main Component
  * 插件市场主组件
@@ -109,6 +153,8 @@ export function PluginMain() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [refreshingConnectors, setRefreshingConnectors] = useState(false);
+  const [catalogRefreshedAt, setCatalogRefreshedAt] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   // Filter state / 过滤状态
@@ -139,7 +185,15 @@ export function PluginMain() {
   const [selectedPlugin, setSelectedPlugin] = useState<Plugin | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
-  const [pluginToInstall, setPluginToInstall] = useState<Plugin | null>(null);
+  const [installContext, setInstallContext] = useState<InstallDialogContext | null>(null);
+  const [selectedProfileKeysByPlugin, setSelectedProfileKeysByPlugin] = useState<Record<string, string[]>>({});
+  const [isBatchProfileDialogOpen, setIsBatchProfileDialogOpen] = useState(false);
+  const [batchProfilePlugins, setBatchProfilePlugins] = useState<Plugin[]>([]);
+  const [batchProfileOfficialDeps, setBatchProfileOfficialDeps] = useState<
+    Record<string, OfficialDependenciesResponse | null>
+  >({});
+  const [batchProfileLoading, setBatchProfileLoading] = useState(false);
+  const [activeBatchProfileTab, setActiveBatchProfileTab] = useState('');
 
   // Download state / 下载状态
   const [downloadingPlugins, setDownloadingPlugins] = useState<Set<string>>(
@@ -161,13 +215,10 @@ export function PluginMain() {
   );
   const [isBatchInstallOpen, setIsBatchInstallOpen] = useState(false);
 
-  // Dependency config state / 依赖配置状态
-  const [isDependencyDialogOpen, setIsDependencyDialogOpen] = useState(false);
-  const [pluginForDependency, setPluginForDependency] = useState<string>('');
   const lastLoadedAvailableQueryRef = useRef<string | null>(null);
 
   // Plugin installation status per cluster / 每个集群的插件安装状态
-  // Map: pluginName -> { clusterId -> InstalledPlugin }
+  // Map: pluginName:version -> { clusterId -> InstalledPlugin }
   const [pluginClusterStatus, setPluginClusterStatus] = useState<
     Map<string, Map<number, InstalledPlugin>>
   >(new Map());
@@ -178,7 +229,7 @@ export function PluginMain() {
    * 加载可用插件列表
    */
   const buildAvailableQueryKey = useCallback(
-    (version: string, mirror: MirrorSource) => `${version || 'default'}:${mirror}`,
+    (version: string) => `${version || 'default'}`,
     [],
   );
 
@@ -186,7 +237,9 @@ export function PluginMain() {
     let filtered = plugins;
 
     if (filterCategory !== 'all') {
-      filtered = filtered.filter((plugin) => plugin.category === filterCategory);
+      filtered = filtered.filter(
+        (plugin) => plugin.category === filterCategory,
+      );
     }
 
     if (searchKeyword) {
@@ -202,62 +255,65 @@ export function PluginMain() {
     return filtered;
   }, [filterCategory, plugins, searchKeyword]);
 
-  const loadPlugins = useCallback(async (options?: {force?: boolean}) => {
-    const requestVersion = selectedVersion || recommendedVersion || '';
-    const queryKey = buildAvailableQueryKey(requestVersion, selectedMirror);
+  const loadPlugins = useCallback(
+    async (options?: {force?: boolean}) => {
+      const requestVersion = selectedVersion || recommendedVersion || '';
+      const queryKey = buildAvailableQueryKey(requestVersion);
 
-    if (!options?.force && lastLoadedAvailableQueryRef.current === queryKey) {
-      return;
-    }
+      if (!options?.force && lastLoadedAvailableQueryRef.current === queryKey) {
+        return;
+      }
 
-    setLoading(true);
-    setError(null);
+      setLoading(true);
+      setError(null);
 
-    try {
-      const result: AvailablePluginsResponse =
-        await PluginService.listAvailablePlugins(
-          requestVersion || undefined,
-          selectedMirror,
+      try {
+        const result: AvailablePluginsResponse =
+          await PluginService.listAvailablePlugins(
+            requestVersion || undefined,
+            selectedMirror,
+          );
+
+        setPlugins(result.plugins || []);
+        setTotal(result.total || (result.plugins || []).length);
+        setCatalogRefreshedAt(result.catalog_refreshed_at || '');
+        lastLoadedAvailableQueryRef.current = buildAvailableQueryKey(
+          result.version || requestVersion,
         );
 
-      setPlugins(result.plugins || []);
-      setTotal(result.total || (result.plugins || []).length);
-      lastLoadedAvailableQueryRef.current = buildAvailableQueryKey(
-        result.version || requestVersion,
-        selectedMirror,
-      );
+        if (result.version && result.version !== selectedVersion) {
+          setSelectedVersion(result.version);
+        }
 
-      if (result.version && result.version !== selectedVersion) {
-        setSelectedVersion(result.version);
+        if (
+          result.source === 'remote' &&
+          !result.cache_hit &&
+          (result.total || 0) > 0
+        ) {
+          toast.info(t('plugin.loadedFromMaven'), {
+            description: t('plugin.loadedFromMavenDesc'),
+          });
+        }
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : t('plugin.loadError');
+        setError(errorMsg);
+        toast.error(errorMsg);
+        setPlugins([]);
+        setTotal(0);
+        lastLoadedAvailableQueryRef.current = null;
+      } finally {
+        setLoading(false);
       }
-
-      if (
-        result.source === 'remote' &&
-        !result.cache_hit &&
-        (result.total || 0) > 0
-      ) {
-        toast.info(t('plugin.loadedFromMaven'), {
-          description: t('plugin.loadedFromMavenDesc'),
-        });
-      }
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : t('plugin.loadError');
-      setError(errorMsg);
-      toast.error(errorMsg);
-      setPlugins([]);
-      setTotal(0);
-      lastLoadedAvailableQueryRef.current = null;
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    buildAvailableQueryKey,
-    recommendedVersion,
-    selectedMirror,
-    selectedVersion,
-    t,
-  ]);
+    },
+    [
+      buildAvailableQueryKey,
+      recommendedVersion,
+      selectedMirror,
+      selectedVersion,
+      t,
+    ],
+  );
 
   /**
    * Load local downloaded plugins and their cluster installation status
@@ -274,6 +330,11 @@ export function PluginMain() {
       ]);
 
       setLocalPlugins(localResult || []);
+      setDownloadedPlugins(
+        new Set(
+          (localResult || []).map((item) => pluginDownloadKey(item.name, item.version)),
+        ),
+      );
       setActiveDownloads(downloadsResult || []);
 
       // Filter available clusters / 过滤可用集群
@@ -286,7 +347,7 @@ export function PluginMain() {
       const downloading = new Set(
         downloadsResult
           ?.filter((d) => d.status === 'downloading')
-          .map((d) => d.plugin_name) || [],
+          .map((d) => pluginDownloadKey(d.plugin_name, d.version)) || [],
       );
       setDownloadingPlugins(downloading);
 
@@ -299,10 +360,14 @@ export function PluginMain() {
               cluster.id,
             );
             for (const plugin of installedPlugins) {
-              if (!statusMap.has(plugin.plugin_name)) {
-                statusMap.set(plugin.plugin_name, new Map());
+              const statusKey = pluginClusterInstallKey(
+                plugin.plugin_name,
+                plugin.version,
+              );
+              if (!statusMap.has(statusKey)) {
+                statusMap.set(statusKey, new Map());
               }
-              statusMap.get(plugin.plugin_name)!.set(cluster.id, plugin);
+              statusMap.get(statusKey)!.set(cluster.id, plugin);
             }
           } catch {
             // Ignore errors / 忽略错误
@@ -318,12 +383,183 @@ export function PluginMain() {
     }
   }, []);
 
+  const getSelectedProfileKeysForPlugin = useCallback(
+    (pluginName: string) => selectedProfileKeysByPlugin[pluginName] || [],
+    [selectedProfileKeysByPlugin],
+  );
+
+  const setSelectedProfileKeysForPlugin = useCallback(
+    (pluginName: string, keys: string[]) => {
+      setSelectedProfileKeysByPlugin((prev) => ({
+        ...prev,
+        [pluginName]: normalizeProfileKeys(keys),
+      }));
+    },
+    [],
+  );
+
+  const requiresProfileSelection = useCallback((plugin: Plugin) => {
+    return plugin.artifact_id === 'connector-jdbc' || plugin.name === 'jdbc';
+  }, []);
+
+  const applyDefaultBatchProfiles = useCallback(
+    (requiredPlugins: Plugin[], officialDepsMap: Record<string, OfficialDependenciesResponse | null>) => {
+      setSelectedProfileKeysByPlugin((prev) => {
+        const next = {...prev};
+        requiredPlugins.forEach((plugin) => {
+          if ((next[plugin.name] || []).length > 0) {
+            return;
+          }
+          const profiles = officialDepsMap[plugin.name]?.profiles || [];
+          next[plugin.name] = normalizeProfileKeys(
+            profiles.map((profile) => profile.profile_key),
+          );
+        });
+        return next;
+      });
+    },
+    [],
+  );
+
+  const openBatchProfileDialog = useCallback(async () => {
+    const requiredPlugins = plugins.filter(requiresProfileSelection);
+    if (requiredPlugins.length === 0) {
+      return false;
+    }
+
+    setBatchProfilePlugins(requiredPlugins);
+    setActiveBatchProfileTab(requiredPlugins[0]?.name || '');
+    setBatchProfileOfficialDeps({});
+    setBatchProfileLoading(true);
+    setIsBatchProfileDialogOpen(true);
+
+    try {
+      const version = selectedVersion || recommendedVersion || '';
+      const entries = await Promise.all(
+        requiredPlugins.map(async (plugin) => {
+          const data = await PluginService.getOfficialDependencies(
+            plugin.name,
+            version || plugin.version,
+          );
+          return [plugin.name, data] as const;
+        }),
+      );
+      const nextMap = Object.fromEntries(entries);
+      setBatchProfileOfficialDeps(nextMap);
+      applyDefaultBatchProfiles(requiredPlugins, nextMap);
+      return true;
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.loadError');
+      toast.error(errorMsg);
+      setIsBatchProfileDialogOpen(false);
+      return false;
+    } finally {
+      setBatchProfileLoading(false);
+    }
+  }, [
+    applyDefaultBatchProfiles,
+    plugins,
+    recommendedVersion,
+    requiresProfileSelection,
+    selectedVersion,
+    t,
+  ]);
+
+  const executeDownloadAllPlugins = useCallback(
+    async (selectedProfiles?: Record<string, string[]>) => {
+      try {
+        setIsDownloadingAll(true);
+        toast.info(t('plugin.downloadAllStarted', {count: total}));
+
+        const result = await PluginService.downloadAllPlugins(
+          selectedVersion,
+          selectedMirror,
+          selectedProfiles,
+        );
+
+        toast.success(
+          t('plugin.downloadAllSuccess', {
+            total: result.total,
+            downloaded: result.downloaded,
+            skipped: result.skipped,
+          }),
+        );
+        void loadLocalPlugins();
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : t('plugin.downloadAllFailed');
+        toast.error(errorMsg);
+      } finally {
+        setIsDownloadingAll(false);
+      }
+    },
+    [loadLocalPlugins, selectedMirror, selectedVersion, t, total],
+  );
+
+  const handleConfirmBatchProfileDownload = useCallback(async () => {
+    const selectedProfiles = batchProfilePlugins.reduce<Record<string, string[]>>(
+      (acc, plugin) => {
+        const keys = normalizeProfileKeys(selectedProfileKeysByPlugin[plugin.name]);
+        if (keys.length > 0) {
+          acc[plugin.name] = keys;
+        }
+        return acc;
+      },
+      {},
+    );
+    setIsBatchProfileDialogOpen(false);
+    await executeDownloadAllPlugins(selectedProfiles);
+  }, [batchProfilePlugins, executeDownloadAllPlugins, selectedProfileKeysByPlugin]);
+
+  const batchProfileDialogIncomplete = useMemo(
+    () =>
+      batchProfilePlugins.some(
+        (plugin) => normalizeProfileKeys(selectedProfileKeysByPlugin[plugin.name]).length === 0,
+      ),
+    [batchProfilePlugins, selectedProfileKeysByPlugin],
+  );
+
+  const openInstallDialog = useCallback(
+    (
+      plugin: Plugin,
+      version: string,
+      selectedProfileKeys: string[],
+      dependencies: PluginDependency[],
+      attachedConnectors: string[],
+    ) => {
+      setInstallContext({
+        plugin,
+        version,
+        selectedProfileKeys: normalizeProfileKeys(selectedProfileKeys),
+        dependencies,
+        attachedConnectors,
+      });
+      setIsInstallOpen(true);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (activeTab !== 'available') {
       return;
     }
     void loadPlugins();
   }, [activeTab, loadPlugins]);
+
+  useEffect(() => {
+    void PluginService.listLocalPlugins()
+      .then((items) => {
+        setDownloadedPlugins(
+          new Set(
+            (items || []).map((item) => pluginDownloadKey(item.name, item.version)),
+          ),
+        );
+      })
+      .catch(() => {
+        // ignore preload errors
+      });
+  }, [selectedVersion]);
 
   useEffect(() => {
     if (!selectedVersion && recommendedVersion) {
@@ -372,8 +608,31 @@ export function PluginMain() {
     if (activeTab === 'local') {
       loadLocalPlugins();
     } else {
-      lastLoadedAvailableQueryRef.current = null;
-      void loadPlugins({force: true});
+      const requestVersion = selectedVersion || recommendedVersion || '';
+      setRefreshingConnectors(true);
+      setError(null);
+      void PluginService.refreshAvailablePlugins(
+        requestVersion || undefined,
+        selectedMirror,
+      )
+        .then((result) => {
+          setPlugins(result.plugins || []);
+          setTotal(result.total || (result.plugins || []).length);
+          setCatalogRefreshedAt(result.catalog_refreshed_at || '');
+          lastLoadedAvailableQueryRef.current = buildAvailableQueryKey(
+            result.version || requestVersion,
+          );
+          toast.success(t('plugin.refreshConnectorsSuccess'));
+        })
+        .catch((err) => {
+          const errorMsg =
+            err instanceof Error ? err.message : t('plugin.refreshConnectorsFailed');
+          setError(errorMsg);
+          toast.error(errorMsg);
+        })
+        .finally(() => {
+          setRefreshingConnectors(false);
+        });
     }
   };
 
@@ -396,7 +655,7 @@ export function PluginMain() {
       // Also remove from downloadedPlugins set / 同时从已下载集合中移除
       setDownloadedPlugins((prev) => {
         const next = new Set(prev);
-        next.delete(pluginToDelete.name);
+        next.delete(pluginDownloadKey(pluginToDelete.name, pluginToDelete.version));
         return next;
       });
     } catch (err) {
@@ -517,7 +776,8 @@ export function PluginMain() {
         version: p.version,
         description: '',
         group_id: 'org.apache.seatunnel',
-        artifact_id: `connector-${p.name}`,
+        artifact_id: p.artifact_id || `connector-${p.name}`,
+        dependencies: p.dependencies || [],
       }));
   };
 
@@ -544,41 +804,68 @@ export function PluginMain() {
    * 处理安装插件
    */
   const handleInstallPlugin = (plugin: Plugin) => {
-    setPluginToInstall(plugin);
-    setIsInstallOpen(true);
+    const selectedProfileKeys = getSelectedProfileKeysForPlugin(plugin.name);
+    if (requiresProfileSelection(plugin) && selectedProfileKeys.length === 0) {
+      setSelectedPlugin(plugin);
+      setIsDetailOpen(true);
+      toast.info(t('plugin.selectScenarioFirst'));
+      return;
+    }
+
+    const {attachedConnectors, dependencies} = splitAutomaticAttachments(
+      plugin.dependencies || [],
+    );
+    openInstallDialog(
+      plugin,
+      selectedVersion || plugin.version,
+      selectedProfileKeys,
+      dependencies,
+      attachedConnectors,
+    );
   };
 
   /**
    * Handle download plugin
    * 处理下载插件到 Control Plane
    */
-  const handleDownloadPlugin = async (plugin: Plugin) => {
-    try {
-      // Add to downloading set / 添加到下载中集合
-      setDownloadingPlugins((prev) => new Set(prev).add(plugin.name));
+  const handleDownloadPlugin = async (plugin: Plugin, profileKeys?: string[]) => {
+    const pluginVersion = selectedVersion || plugin.version;
+    const downloadKey = pluginDownloadKey(plugin.name, pluginVersion);
+    const selectedProfileKeys = normalizeProfileKeys(
+      profileKeys ?? getSelectedProfileKeysForPlugin(plugin.name),
+    );
 
-      // Call download API / 调用下载 API
+    if (requiresProfileSelection(plugin) && selectedProfileKeys.length === 0) {
+      setSelectedPlugin(plugin);
+      setIsDetailOpen(true);
+      toast.info(t('plugin.selectScenarioFirst'));
+      return;
+    }
+
+    setSelectedProfileKeysForPlugin(plugin.name, selectedProfileKeys);
+
+    try {
+      setDownloadingPlugins((prev) => new Set(prev).add(downloadKey));
+
       await PluginService.downloadPlugin(
         plugin.name,
-        selectedVersion,
+        pluginVersion,
         selectedMirror,
+        selectedProfileKeys,
       );
 
-      // Show queued message / 显示已提交队列提示
       toast.success(t('plugin.downloadStarted'));
 
-      // Remove from downloading set (download is async in backend)
-      // 从下载中集合移除（后端异步下载）
       setDownloadingPlugins((prev) => {
         const next = new Set(prev);
-        next.delete(plugin.name);
+        next.delete(downloadKey);
         return next;
       });
+      void loadLocalPlugins();
     } catch (err) {
-      // Remove from downloading set / 从下载中集合移除
       setDownloadingPlugins((prev) => {
         const next = new Set(prev);
-        next.delete(plugin.name);
+        next.delete(downloadKey);
         return next;
       });
 
@@ -593,29 +880,12 @@ export function PluginMain() {
    * 处理一键下载所有插件
    */
   const handleDownloadAllPlugins = async () => {
-    try {
-      setIsDownloadingAll(true);
-      toast.info(t('plugin.downloadAllStarted', {count: total}));
-
-      const result = await PluginService.downloadAllPlugins(
-        selectedVersion,
-        selectedMirror,
-      );
-
-      toast.success(
-        t('plugin.downloadAllSuccess', {
-          total: result.total,
-          downloaded: result.downloaded,
-          skipped: result.skipped,
-        }),
-      );
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : t('plugin.downloadAllFailed');
-      toast.error(errorMsg);
-    } finally {
-      setIsDownloadingAll(false);
+    const requiredPlugins = plugins.filter(requiresProfileSelection);
+    if (requiredPlugins.length > 0) {
+      await openBatchProfileDialog();
+      return;
     }
+    await executeDownloadAllPlugins();
   };
 
   // Count plugins by category is no longer needed since all are connectors
@@ -641,6 +911,17 @@ export function PluginMain() {
       transition: {duration: 0.6, ease: easeOut},
     },
   };
+
+  const formatCatalogRefreshedAt = useCallback((value: string) => {
+    if (!value) {
+      return '-';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleString();
+  }, []);
 
   return (
     <motion.div
@@ -669,7 +950,7 @@ export function PluginMain() {
           <Button
             variant='default'
             onClick={handleDownloadAllPlugins}
-            disabled={loading || isDownloadingAll || total === 0}
+            disabled={loading || refreshingConnectors || isDownloadingAll || total === 0}
           >
             <DownloadCloud
               className={`h-4 w-4 mr-2 ${isDownloadingAll ? 'animate-pulse' : ''}`}
@@ -678,11 +959,17 @@ export function PluginMain() {
               ? t('plugin.downloadingAll')
               : t('plugin.downloadAll')}
           </Button>
-          <Button variant='outline' onClick={handleRefresh} disabled={loading}>
+          <Button
+            variant='outline'
+            onClick={handleRefresh}
+            disabled={loading || refreshingConnectors || localPluginsLoading}
+          >
             <RefreshCw
-              className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`}
+              className={`h-4 w-4 mr-2 ${(activeTab === 'available' ? refreshingConnectors : localPluginsLoading) ? 'animate-spin' : ''}`}
             />
-            {t('common.refresh')}
+            {activeTab === 'available'
+              ? t('plugin.refreshConnectors')
+              : t('common.refresh')}
           </Button>
         </div>
       </motion.div>
@@ -700,6 +987,14 @@ export function PluginMain() {
           </CardHeader>
           <CardContent>
             <div className='text-2xl font-bold text-blue-600'>{total}</div>
+            {activeTab === 'available' && (
+              <div className='mt-3 space-y-1 text-xs text-muted-foreground'>
+                <div>
+                  {t('plugin.catalogRefreshedAt')}: {formatCatalogRefreshedAt(catalogRefreshedAt)}
+                </div>
+                <div>{t('plugin.catalogSourceHint')}</div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -844,10 +1139,6 @@ export function PluginMain() {
                 showInstallButton={true}
                 onInstall={handleInstallPlugin}
                 onDownload={handleDownloadPlugin}
-                onConfigDependency={(plugin) => {
-                  setPluginForDependency(plugin.name);
-                  setIsDependencyDialogOpen(true);
-                }}
                 downloadingPlugins={downloadingPlugins}
                 downloadedPlugins={downloadedPlugins}
               />
@@ -961,15 +1252,57 @@ export function PluginMain() {
                               <div className='space-y-1'>
                                 <div className='flex items-center justify-between text-sm'>
                                   <span>
-                                    {download.current_step ||
-                                      t('plugin.downloading')}
+                                    {download.current_artifact_kind ===
+                                    'dependency'
+                                      ? t('plugin.downloadingDependencies')
+                                      : t('plugin.downloadingConnector')}
                                   </span>
                                   <span>{download.progress}%</span>
                                 </div>
+                                {download.current_artifact && (
+                                  <div className='text-xs text-muted-foreground'>
+                                    {download.current_artifact_kind === 'dependency'
+                                      ? t('plugin.currentDownloadingDependency', {
+                                          artifact: download.current_artifact,
+                                        })
+                                      : t('plugin.currentDownloadingConnector', {
+                                          artifact: download.current_artifact,
+                                        })}
+                                  </div>
+                                )}
                                 <Progress
                                   value={download.progress}
                                   className='h-2'
                                 />
+                                <div className='flex flex-wrap gap-3 text-xs text-muted-foreground'>
+                                  <span>
+                                    {t('plugin.connectorProgress', {
+                                      completed: download.connector_completed || 0,
+                                      total: download.connector_count || 0,
+                                    })}
+                                  </span>
+                                  <span>
+                                    {t('plugin.dependencyProgress', {
+                                      completed: download.dependency_completed || 0,
+                                      total: download.dependency_count || 0,
+                                    })}
+                                  </span>
+                                </div>
+                                {download.selected_profile_keys &&
+                                  download.selected_profile_keys.length > 0 && (
+                                    <div className='flex flex-wrap gap-2 text-xs text-muted-foreground'>
+                                      <span>{t('plugin.selectedProfiles')}</span>
+                                      {download.selected_profile_keys.map((profileKey) => (
+                                        <Badge
+                                          key={profileKey}
+                                          variant='outline'
+                                          className='text-[11px]'
+                                        >
+                                          {profileKey}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
                                 {download.total_bytes &&
                                   download.total_bytes > 0 && (
                                     <div className='text-xs text-muted-foreground'>
@@ -997,7 +1330,7 @@ export function PluginMain() {
                       {getPaginatedLocalPlugins().map((plugin) => {
                         // Get cluster installation status for this plugin / 获取此插件的集群安装状态
                         const clusterStatusMap = pluginClusterStatus.get(
-                          plugin.name,
+                          pluginClusterInstallKey(plugin.name, plugin.version),
                         );
                         const installedClusters = clusterStatusMap
                           ? clusters.filter((c) => clusterStatusMap.has(c.id))
@@ -1061,10 +1394,17 @@ export function PluginMain() {
                                     version: plugin.version,
                                     description: '',
                                     group_id: 'org.apache.seatunnel',
-                                    artifact_id: `connector-${plugin.name}`,
+                                    artifact_id:
+                                      plugin.artifact_id || `connector-${plugin.name}`,
+                                    dependencies: plugin.dependencies || [],
                                   };
-                                  setPluginToInstall(pluginForInstall);
-                                  setIsInstallOpen(true);
+                                  openInstallDialog(
+                                    pluginForInstall,
+                                    plugin.version,
+                                    plugin.selected_profile_keys || [],
+                                    plugin.dependencies || [],
+                                    plugin.attached_connectors || [],
+                                  );
                                 }}
                               >
                                 <Server className='h-4 w-4 mr-1' />
@@ -1112,22 +1452,11 @@ export function PluginMain() {
 
         <TabsContent value='custom' className='mt-4'>
           <Card>
-            <CardHeader>
-              <CardTitle>{t('plugin.custom')}</CardTitle>
-              <CardDescription>{t('plugin.customDesc')}</CardDescription>
-            </CardHeader>
             <CardContent>
-              <div className='text-center py-8'>
+              <div className='text-center py-10'>
                 <Upload className='h-12 w-12 mx-auto text-muted-foreground mb-4' />
-                <p className='text-muted-foreground mb-4'>
-                  {t('plugin.uploadCustomPlugin')}
-                </p>
-                <Button variant='outline' disabled>
-                  <Upload className='h-4 w-4 mr-2' />
-                  {t('plugin.uploadPlugin')}
-                </Button>
-                <p className='text-xs text-muted-foreground mt-4'>
-                  {t('plugin.customPluginNote')}
+                <p className='text-muted-foreground text-sm'>
+                  {t('plugin.customComingSoon')}
                 </p>
               </div>
             </CardContent>
@@ -1141,18 +1470,187 @@ export function PluginMain() {
           open={isDetailOpen}
           onOpenChange={setIsDetailOpen}
           plugin={selectedPlugin}
+          seatunnelVersion={selectedVersion}
+          selectedProfileKeys={getSelectedProfileKeysForPlugin(selectedPlugin.name)}
+          onSelectedProfileKeysChange={(keys) =>
+            setSelectedProfileKeysForPlugin(selectedPlugin.name, keys)
+          }
+          onDownload={handleDownloadPlugin}
         />
       )}
 
       {/* Install Plugin Dialog / 安装插件对话框 */}
-      {pluginToInstall && (
+      {installContext && (
         <InstallPluginDialog
           open={isInstallOpen}
-          onOpenChange={setIsInstallOpen}
-          plugin={pluginToInstall}
-          version={selectedVersion}
+          onOpenChange={(next) => {
+            setIsInstallOpen(next);
+            if (!next) {
+              setInstallContext(null);
+            }
+          }}
+          plugin={installContext.plugin}
+          version={installContext.version}
+          selectedProfileKeys={installContext.selectedProfileKeys}
+          attachedConnectors={installContext.attachedConnectors}
+          dependencies={installContext.dependencies}
         />
       )}
+
+      <Dialog
+        open={isBatchProfileDialogOpen}
+        onOpenChange={(next) => {
+          if (batchProfileLoading || isDownloadingAll) {
+            return;
+          }
+          setIsBatchProfileDialogOpen(next);
+        }}
+      >
+        <DialogContent className='sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col'>
+          <DialogHeader>
+            <DialogTitle>{t('plugin.downloadAllProfileDialogTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('plugin.downloadAllProfileDialogDescription')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='flex-1 overflow-y-auto pr-1'>
+            {batchProfileLoading ? (
+              <div className='py-8 text-sm text-muted-foreground'>
+                {t('plugin.downloadAllProfileLoading')}
+              </div>
+            ) : batchProfilePlugins.length === 0 ? (
+              <div className='py-8 text-sm text-muted-foreground'>
+                {t('plugin.downloadAllProfileEmpty')}
+              </div>
+            ) : (
+              <Tabs
+                value={activeBatchProfileTab}
+                onValueChange={setActiveBatchProfileTab}
+                className='w-full'
+              >
+                <TabsList className='w-full flex flex-wrap h-auto justify-start'>
+                  {batchProfilePlugins.map((plugin) => (
+                    <TabsTrigger key={plugin.name} value={plugin.name}>
+                      {plugin.display_name || plugin.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {batchProfilePlugins.map((plugin) => {
+                  const officialDeps = batchProfileOfficialDeps[plugin.name];
+                  const profiles = officialDeps?.profiles || [];
+                  const selectedKeys = normalizeProfileKeys(
+                    selectedProfileKeysByPlugin[plugin.name],
+                  );
+
+                  return (
+                    <TabsContent
+                      key={plugin.name}
+                      value={plugin.name}
+                      className='mt-4 space-y-4'
+                    >
+                      <div className='flex items-center justify-between gap-3'>
+                        <div>
+                          <h3 className='font-medium'>
+                            {plugin.display_name || plugin.name}
+                          </h3>
+                          <p className='text-sm text-muted-foreground'>
+                            {t('plugin.downloadAllProfilePluginHint')}
+                          </p>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() =>
+                              setSelectedProfileKeysForPlugin(
+                                plugin.name,
+                                profiles.map((profile) => profile.profile_key),
+                              )
+                            }
+                          >
+                            {t('plugin.selectAllProfiles')}
+                          </Button>
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='sm'
+                            onClick={() => setSelectedProfileKeysForPlugin(plugin.name, [])}
+                          >
+                            {t('plugin.clearAllProfiles')}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {profiles.length === 0 ? (
+                        <div className='rounded-md border border-dashed p-4 text-sm text-muted-foreground'>
+                          {t('plugin.downloadAllProfileEmpty')}
+                        </div>
+                      ) : (
+                        <div className='space-y-3'>
+                          {profiles.map((profile) => {
+                            const checked = selectedKeys.includes(profile.profile_key);
+                            return (
+                              <label
+                                key={profile.profile_key}
+                                className='flex items-start gap-3 rounded-md border p-3 cursor-pointer'
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(nextChecked) => {
+                                    const next = new Set(selectedKeys);
+                                    if (nextChecked) {
+                                      next.add(profile.profile_key);
+                                    } else {
+                                      next.delete(profile.profile_key);
+                                    }
+                                    setSelectedProfileKeysForPlugin(
+                                      plugin.name,
+                                      Array.from(next),
+                                    );
+                                  }}
+                                />
+                                <div className='space-y-1'>
+                                  <div className='font-medium'>
+                                    {profile.profile_name || profile.profile_key}
+                                  </div>
+                                  <div className='text-xs text-muted-foreground'>
+                                    {profile.profile_key}
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setIsBatchProfileDialogOpen(false)}
+              disabled={batchProfileLoading || isDownloadingAll}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type='button'
+              onClick={() => void handleConfirmBatchProfileDownload()}
+              disabled={batchProfileLoading || batchProfileDialogIncomplete || isDownloadingAll}
+            >
+              {t('plugin.downloadAllProfileConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog / 删除确认对话框 */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -1192,12 +1690,6 @@ export function PluginMain() {
         version={selectedVersion}
       />
 
-      {/* Dependency Config Dialog / 依赖配置对话框 */}
-      <DependencyConfigDialog
-        open={isDependencyDialogOpen}
-        onOpenChange={setIsDependencyDialogOpen}
-        pluginName={pluginForDependency}
-      />
     </motion.div>
   );
 }

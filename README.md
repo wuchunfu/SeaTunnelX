@@ -126,6 +126,48 @@ pnpm dev
 - **前端界面**: http://localhost:3000
 - **默认账号**: admin / admin123
 
+## 离线部署 SeaTunnelX
+
+### 1. 打包 CentOS 7 兼容离线包
+
+```bash
+scripts/package-release.sh \
+  --arch amd64 \
+  --bundle-observability without \
+  --node-major 18 \
+  --node-variant glibc217
+```
+
+### 2. 解压并安装
+
+```bash
+tar -xzf seatunnelx-<version>-linux-amd64-node18-glibc217-without-observability.tar.gz
+cd seatunnelx-<version>-linux-amd64-node18-glibc217-without-observability
+sudo ./install.sh
+```
+
+安装包只会携带 `config.example.yaml`，安装时会自动生成 `config.yaml`。
+
+### 3. 端口配置
+
+- **后端 HTTP / gRPC 端口**：修改 `config.yaml`
+  - `app.addr`
+  - `grpc.port`
+- **前端端口 / 监听地址**：启动时通过环境变量覆盖
+  - `FRONTEND_PORT`
+  - `FRONTEND_HOST`
+  - `NEXT_PUBLIC_BACKEND_BASE_URL`
+
+示例：
+
+```bash
+CONFIG_PATH=/opt/seatunnelx/config.yaml \
+FRONTEND_PORT=8080 \
+FRONTEND_HOST=0.0.0.0 \
+NEXT_PUBLIC_BACKEND_BASE_URL=http://127.0.0.1:8000 \
+/opt/seatunnelx/bin/start.sh
+```
+
 ## ⚙️ 配置说明
 
 ### 主要配置项

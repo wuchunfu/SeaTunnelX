@@ -27,6 +27,7 @@ CONFIG_PATH="${CONFIG_PATH:-$BASE_DIR/config.yaml}"
 
 FRONTEND_ENABLE="${FRONTEND_ENABLE:-true}"
 FRONTEND_PORT="${FRONTEND_PORT:-80}"
+FRONTEND_HOST="${FRONTEND_HOST:-0.0.0.0}"
 NEXT_PUBLIC_BACKEND_BASE_URL="${NEXT_PUBLIC_BACKEND_BASE_URL:-http://127.0.0.1:8000}"
 START_OBSERVABILITY="${START_OBSERVABILITY:-auto}"
 
@@ -87,13 +88,14 @@ start_frontend() {
     exit 1
   fi
 
+  HOSTNAME="$FRONTEND_HOST" \
   PORT="$FRONTEND_PORT" \
   NEXT_PUBLIC_BACKEND_BASE_URL="$NEXT_PUBLIC_BACKEND_BASE_URL" \
   nohup "$FRONTEND_NODE_BIN" "$FRONTEND_SERVER" >>"$LOG_DIR/frontend.log" 2>&1 &
   echo $! >"$pidfile"
   sleep 1
   if kill -0 "$(cat "$pidfile")" 2>/dev/null; then
-    echo "frontend started (pid=$(cat "$pidfile"), port=$FRONTEND_PORT)"
+    echo "frontend started (pid=$(cat "$pidfile"), host=$FRONTEND_HOST, port=$FRONTEND_PORT)"
   else
     rm -f "$pidfile"
     echo "frontend failed to start, check log: $LOG_DIR/frontend.log"
@@ -121,7 +123,9 @@ start_observability
 
 echo
 echo "done."
-echo "  backend : http://127.0.0.1:8000"
+echo "  config  : $CONFIG_PATH"
+echo "  backend : follow app.addr in config.yaml"
 if [[ "$FRONTEND_ENABLE" == "true" || "$FRONTEND_ENABLE" == "1" ]]; then
-  echo "  frontend: http://127.0.0.1:$FRONTEND_PORT"
+  echo "  frontend: http://$FRONTEND_HOST:$FRONTEND_PORT"
 fi
+echo "  tips    : set FRONTEND_PORT / FRONTEND_HOST to override frontend binding"

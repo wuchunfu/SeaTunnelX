@@ -49,6 +49,7 @@ import (
 	monitoringapp "github.com/seatunnel/seatunnelX/internal/apps/monitoring"
 	"github.com/seatunnel/seatunnelX/internal/apps/oauth"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
+	"github.com/seatunnel/seatunnelX/internal/apps/releasebundle"
 	"github.com/seatunnel/seatunnelX/internal/apps/stupgrade"
 	"github.com/seatunnel/seatunnelX/internal/apps/task"
 	"github.com/seatunnel/seatunnelX/internal/config"
@@ -487,6 +488,23 @@ func Serve() {
 				agentRouter.GET("/download", agentHandler.DownloadAgent)
 			}
 
+			// SeaTunnelX 离线发布包分发 API（无需认证，供客户机器一键下载安装控制面）。
+			// SeaTunnelX offline release bundle distribution API (no authentication required for one-click control-plane install).
+			releaseBundleHandler := releasebundle.NewHandler(&releasebundle.HandlerConfig{
+				ReleaseDir:    "./dist/releases",
+				BundlePattern: releasebundle.DefaultBundlePattern,
+			})
+			releaseBundleRouter := apiV1Router.Group("/seatunnelx")
+			{
+				// GET /api/v1/seatunnelx/install.sh - 获取控制面一键安装脚本
+				// GET /api/v1/seatunnelx/install.sh - Get control-plane one-click install script
+				releaseBundleRouter.GET("/install.sh", releaseBundleHandler.GetInstallScript)
+
+				// GET /api/v1/seatunnelx/download - 下载最新的 CentOS 7 兼容离线包
+				// GET /api/v1/seatunnelx/download - Download the latest CentOS 7 compatible offline bundle
+				releaseBundleRouter.GET("/download", releaseBundleHandler.DownloadBundle)
+			}
+
 			// Audit 审计日志 API
 			// Audit log API
 			// Initialize audit handler (auditRepo already created above)
@@ -665,6 +683,10 @@ func Serve() {
 				// GET /api/v1/plugins - List available plugins
 				pluginRouter.GET("", pluginHandler.ListAvailablePlugins)
 
+				// POST /api/v1/plugins/refresh - 刷新连接器目录
+				// POST /api/v1/plugins/refresh - Refresh connector catalog
+				pluginRouter.POST("/refresh", pluginHandler.RefreshAvailablePlugins)
+
 				// GET /api/v1/plugins/local - 获取已下载的本地插件列表
 				// GET /api/v1/plugins/local - List locally downloaded plugins
 				pluginRouter.GET("/local", pluginHandler.ListLocalPlugins)
@@ -696,6 +718,26 @@ func Serve() {
 				// GET /api/v1/plugins/:name/dependencies - 获取插件依赖配置
 				// GET /api/v1/plugins/:name/dependencies - Get plugin dependencies
 				pluginRouter.GET("/:name/dependencies", pluginHandler.ListDependencies)
+
+				// POST /api/v1/plugins/:name/dependencies/upload - 上传自定义依赖 Jar
+				// POST /api/v1/plugins/:name/dependencies/upload - Upload a custom dependency Jar
+				pluginRouter.POST("/:name/dependencies/upload", pluginHandler.UploadDependency)
+
+				// POST /api/v1/plugins/:name/dependencies/disables - 禁用官方依赖
+				// POST /api/v1/plugins/:name/dependencies/disables - Disable one official dependency
+				pluginRouter.POST("/:name/dependencies/disables", pluginHandler.DisableDependency)
+
+				// DELETE /api/v1/plugins/:name/dependencies/disables/:disableId - 重新启用官方依赖
+				// DELETE /api/v1/plugins/:name/dependencies/disables/:disableId - Enable one disabled official dependency
+				pluginRouter.DELETE("/:name/dependencies/disables/:disableId", pluginHandler.EnableDependency)
+
+				// GET /api/v1/plugins/:name/official-dependencies - 获取官方依赖基线
+				// GET /api/v1/plugins/:name/official-dependencies - Get official dependency profiles
+				pluginRouter.GET("/:name/official-dependencies", pluginHandler.GetOfficialDependencies)
+
+				// POST /api/v1/plugins/:name/official-dependencies/analyze - 在线分析官方依赖
+				// POST /api/v1/plugins/:name/official-dependencies/analyze - Analyze official dependency profiles
+				pluginRouter.POST("/:name/official-dependencies/analyze", pluginHandler.AnalyzeOfficialDependencies)
 
 				// POST /api/v1/plugins/:name/dependencies - 添加插件依赖
 				// POST /api/v1/plugins/:name/dependencies - Add plugin dependency
