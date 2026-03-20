@@ -49,6 +49,7 @@ import (
 	monitoringapp "github.com/seatunnel/seatunnelX/internal/apps/monitoring"
 	"github.com/seatunnel/seatunnelX/internal/apps/oauth"
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
+	"github.com/seatunnel/seatunnelX/internal/apps/releasebundle"
 	"github.com/seatunnel/seatunnelX/internal/apps/stupgrade"
 	"github.com/seatunnel/seatunnelX/internal/apps/task"
 	"github.com/seatunnel/seatunnelX/internal/config"
@@ -485,6 +486,23 @@ func Serve() {
 				// GET /api/v1/agent/download - 下载 Agent 二进制文件
 				// GET /api/v1/agent/download - Download Agent binary
 				agentRouter.GET("/download", agentHandler.DownloadAgent)
+			}
+
+			// SeaTunnelX 离线发布包分发 API（无需认证，供客户机器一键下载安装控制面）。
+			// SeaTunnelX offline release bundle distribution API (no authentication required for one-click control-plane install).
+			releaseBundleHandler := releasebundle.NewHandler(&releasebundle.HandlerConfig{
+				ReleaseDir:    "./dist/releases",
+				BundlePattern: releasebundle.DefaultBundlePattern,
+			})
+			releaseBundleRouter := apiV1Router.Group("/seatunnelx")
+			{
+				// GET /api/v1/seatunnelx/install.sh - 获取控制面一键安装脚本
+				// GET /api/v1/seatunnelx/install.sh - Get control-plane one-click install script
+				releaseBundleRouter.GET("/install.sh", releaseBundleHandler.GetInstallScript)
+
+				// GET /api/v1/seatunnelx/download - 下载最新的 CentOS 7 兼容离线包
+				// GET /api/v1/seatunnelx/download - Download the latest CentOS 7 compatible offline bundle
+				releaseBundleRouter.GET("/download", releaseBundleHandler.DownloadBundle)
 			}
 
 			// Audit 审计日志 API
