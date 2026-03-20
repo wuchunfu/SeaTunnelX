@@ -67,6 +67,8 @@ FORCE_INSTALL="${FORCE_INSTALL:-0}"
 PRESERVE_CONFIG="${PRESERVE_CONFIG:-1}"
 AUTO_START="${AUTO_START:-1}"
 TMP_ROOT="${TMP_ROOT:-/tmp}"
+LOGIN_USERNAME="${STX_USERNAME:-}"
+LOGIN_PASSWORD="${STX_PASSWORD:-}"
 DOWNLOAD_URL="{{.DownloadURL}}"
 
 log() {
@@ -88,14 +90,40 @@ download_file() {
   local url="$1"
   local output="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$output" "$url"
+    curl -fsSL -u "${LOGIN_USERNAME}:${LOGIN_PASSWORD}" -o "$output" "$url"
     return 0
   fi
   if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$output" "$url"
+    wget -q --user="${LOGIN_USERNAME}" --password="${LOGIN_PASSWORD}" -O "$output" "$url"
     return 0
   fi
   fail "curl or wget is required"
+}
+
+prompt_credentials() {
+  if [[ -n "${LOGIN_USERNAME}" && -n "${LOGIN_PASSWORD}" ]]; then
+    return 0
+  fi
+
+  if [[ ! -r /dev/tty ]]; then
+    fail "set STX_USERNAME and STX_PASSWORD when running non-interactively"
+  fi
+
+  if [[ -z "${LOGIN_USERNAME}" ]]; then
+    printf 'SeaTunnelX username: ' > /dev/tty
+    read -r LOGIN_USERNAME < /dev/tty
+  fi
+  if [[ -z "${LOGIN_PASSWORD}" ]]; then
+    printf 'SeaTunnelX password: ' > /dev/tty
+    stty -echo < /dev/tty
+    read -r LOGIN_PASSWORD < /dev/tty
+    stty echo < /dev/tty
+    printf '\n' > /dev/tty
+  fi
+
+  if [[ -z "${LOGIN_USERNAME}" || -z "${LOGIN_PASSWORD}" ]]; then
+    fail "username and password are required"
+  fi
 }
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -106,6 +134,7 @@ WORK_DIR="$(mktemp -d "${TMP_ROOT%/}/seatunnelx-install.XXXXXX")"
 trap cleanup EXIT
 
 ARCHIVE_PATH="${WORK_DIR}/seatunnelx.tar.gz"
+prompt_credentials
 log "downloading SeaTunnelX bundle ..."
 download_file "${DOWNLOAD_URL}" "${ARCHIVE_PATH}"
 

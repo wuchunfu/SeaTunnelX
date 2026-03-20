@@ -18,6 +18,7 @@
 package releasebundle
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,8 +64,38 @@ func TestGetInstallScriptUsesRequestHost(t *testing.T) {
 	if !strings.Contains(body, "https://cpa.120500.xyz/api/v1/seatunnelx/download") {
 		t.Fatalf("expected install script to contain request host based download url, got: %s", body)
 	}
+	if !strings.Contains(body, "STX_USERNAME") || !strings.Contains(body, "SeaTunnelX username:") {
+		t.Fatalf("expected install script to prompt for credentials, got: %s", body)
+	}
 	if got := w.Header().Get("X-SeaTunnelX-Bundle"); got != bundleName {
 		t.Fatalf("expected bundle header %q, got %q", bundleName, got)
+	}
+}
+
+func TestDownloadBundleRequiresAuth(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "seatunnelx-test-linux-amd64-node18-glibc217-without-observability.tar.gz"), []byte("bundle"), 0o644); err != nil {
+		t.Fatalf("write bundle: %v", err)
+	}
+
+	handler := NewHandler(&HandlerConfig{
+		ReleaseDir:    dir,
+		BundlePattern: "seatunnelx-*.tar.gz",
+		ValidateCredentials: func(ctx context.Context, username, password string) (bool, error) {
+			return username == "admin" && password == "secret", nil
+		},
+	})
+	router := setupTestRouter(handler)
+
+	req, _ := http.NewRequest("GET", "/api/v1/seatunnelx/download", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+	if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, "Basic") {
+		t.Fatalf("expected basic auth challenge, got %q", got)
 	}
 }
 
@@ -89,10 +120,14 @@ func TestDownloadBundleReturnsLatestMatchingBundle(t *testing.T) {
 	handler := NewHandler(&HandlerConfig{
 		ReleaseDir:    dir,
 		BundlePattern: "seatunnelx-*.tar.gz",
+		ValidateCredentials: func(ctx context.Context, username, password string) (bool, error) {
+			return username == "admin" && password == "secret", nil
+		},
 	})
 	router := setupTestRouter(handler)
 
 	req, _ := http.NewRequest("GET", "/api/v1/seatunnelx/download", nil)
+	req.SetBasicAuth("admin", "secret")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
@@ -111,10 +146,14 @@ func TestDownloadBundleReturnsNotFoundWhenMissing(t *testing.T) {
 	handler := NewHandler(&HandlerConfig{
 		ReleaseDir:    t.TempDir(),
 		BundlePattern: "seatunnelx-*.tar.gz",
+		ValidateCredentials: func(ctx context.Context, username, password string) (bool, error) {
+			return username == "admin" && password == "secret", nil
+		},
 	})
 	router := setupTestRouter(handler)
 
 	req, _ := http.NewRequest("GET", "/api/v1/seatunnelx/download", nil)
+	req.SetBasicAuth("admin", "secret")
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

@@ -20,6 +20,7 @@
 package releasebundle
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -30,7 +31,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/seatunnel/seatunnelX/internal/apps/auth"
 	"github.com/seatunnel/seatunnelX/internal/config"
+	"github.com/seatunnel/seatunnelX/internal/db"
 	"github.com/seatunnel/seatunnelX/internal/logger"
 )
 
@@ -58,6 +61,9 @@ type HandlerConfig struct {
 	// BundlePattern narrows the bundle selection to the desired package family.
 	// BundlePattern 用于将可选发布包限制为目标包族。
 	BundlePattern string
+	// ValidateCredentials validates the provided username/password pair.
+	// ValidateCredentials 校验提供的用户名和密码。
+	ValidateCredentials func(ctx context.Context, username, password string) (bool, error)
 }
 
 // Handler exposes temporary download/install endpoints for SeaTunnelX bundles.
@@ -65,6 +71,7 @@ type HandlerConfig struct {
 type Handler struct {
 	releaseDir    string
 	bundlePattern string
+	validateAuth  func(ctx context.Context, username, password string) (bool, error)
 }
 
 // NewHandler creates a new release bundle handler.
@@ -82,6 +89,7 @@ func NewHandler(cfg *HandlerConfig) *Handler {
 	return &Handler{
 		releaseDir:    cfg.ReleaseDir,
 		bundlePattern: cfg.BundlePattern,
+		validateAuth:  coalesceCredentialValidator(cfg.ValidateCredentials),
 	}
 }
 
@@ -117,6 +125,10 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 // DownloadBundle handles GET /api/v1/seatunnelx/download and serves the latest matching bundle.
 // DownloadBundle 处理 GET /api/v1/seatunnelx/download 并返回最新匹配的发布包。
 func (h *Handler) DownloadBundle(c *gin.Context) {
+	if !h.requireDownloadAuth(c) {
+		return
+	}
+
 	bundlePath, bundleName, err := h.resolveLatestBundle()
 	if err != nil {
 		logger.ErrorF(c.Request.Context(), "[ReleaseBundle] Resolve latest bundle failed: %v", err)
@@ -127,6 +139,52 @@ func (h *Handler) DownloadBundle(c *gin.Context) {
 	c.Header("Content-Type", "application/gzip")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", bundleName))
 	c.File(bundlePath)
+}
+
+func (h *Handler) requireDownloadAuth(c *gin.Context) bool {
+	username, password, ok := c.Request.BasicAuth()
+	if !ok {
+		h.respondUnauthorized(c)
+		return false
+	}
+
+	valid, err := h.validateAuth(c.Request.Context(), strings.TrimSpace(username), password)
+	if err != nil {
+		logger.ErrorF(c.Request.Context(), "[ReleaseBundle] Validate credentials failed: %v", err)
+		c.JSON(http.StatusInternalServerError, ErrorResponse{ErrorMsg: "failed to validate credentials"})
+		return false
+	}
+	if !valid {
+		h.respondUnauthorized(c)
+		return false
+	}
+	return true
+}
+
+func (h *Handler) respondUnauthorized(c *gin.Context) {
+	c.Header("WWW-Authenticate", `Basic realm="SeaTunnelX Bundle Download"`)
+	c.JSON(http.StatusUnauthorized, ErrorResponse{ErrorMsg: "authentication required"})
+}
+
+func coalesceCredentialValidator(validator func(ctx context.Context, username, password string) (bool, error)) func(ctx context.Context, username, password string) (bool, error) {
+	if validator != nil {
+		return validator
+	}
+	return defaultCredentialValidator
+}
+
+func defaultCredentialValidator(ctx context.Context, username, password string) (bool, error) {
+	if username == "" || password == "" {
+		return false, nil
+	}
+	user, err := auth.FindByUsername(db.GetDB(ctx), username)
+	if err != nil {
+		return false, nil
+	}
+	if !user.IsActive {
+		return false, nil
+	}
+	return user.CheckPassword(password), nil
 }
 
 func (h *Handler) resolveLatestBundle() (string, string, error) {
