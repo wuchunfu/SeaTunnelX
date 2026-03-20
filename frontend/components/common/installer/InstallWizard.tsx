@@ -27,8 +27,8 @@
 
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
-import { useTranslations } from 'next-intl';
+import {useState, useCallback, useEffect} from 'react';
+import {useTranslations} from 'next-intl';
 import {
   Dialog,
   DialogContent,
@@ -36,9 +36,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
+import {Button} from '@/components/ui/button';
+import {Progress} from '@/components/ui/progress';
+import {cn} from '@/lib/utils';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -46,16 +46,28 @@ import {
   X,
   Loader2,
 } from 'lucide-react';
-import { useInstallWizard, usePrecheck, useInstallation } from '@/hooks/use-installer';
-import { PrecheckStep } from './PrecheckStep';
-import { ConfigStep } from './ConfigStep';
-import { PluginSelectStep } from './PluginSelectStep';
-import { InstallStep } from './InstallStep';
-import { CompleteStep } from './CompleteStep';
-import type { PrecheckResult, InstallationStatus } from '@/lib/services/installer/types';
+import {
+  useInstallWizard,
+  usePrecheck,
+  useInstallation,
+} from '@/hooks/use-installer';
+import {PrecheckStep} from './PrecheckStep';
+import {ConfigStep} from './ConfigStep';
+import {PluginSelectStep} from './PluginSelectStep';
+import {InstallStep} from './InstallStep';
+import {CompleteStep} from './CompleteStep';
+import type {
+  PrecheckResult,
+  InstallationStatus,
+} from '@/lib/services/installer/types';
 
 // Wizard step type / 向导步骤类型
-export type WizardStepType = 'precheck' | 'config' | 'plugins' | 'install' | 'complete';
+export type WizardStepType =
+  | 'precheck'
+  | 'config'
+  | 'plugins'
+  | 'install'
+  | 'complete';
 
 // Step configuration / 步骤配置
 interface StepConfig {
@@ -65,11 +77,31 @@ interface StepConfig {
 }
 
 const WIZARD_STEPS: StepConfig[] = [
-  { id: 'precheck', titleKey: 'installer.precheck', descKey: 'installer.precheckDesc' },
-  { id: 'config', titleKey: 'installer.configuration', descKey: 'installer.configurationDesc' },
-  { id: 'plugins', titleKey: 'installer.pluginSelection', descKey: 'installer.pluginSelectionDesc' },
-  { id: 'install', titleKey: 'installer.installation', descKey: 'installer.installationDesc' },
-  { id: 'complete', titleKey: 'installer.complete', descKey: 'installer.completeDesc' },
+  {
+    id: 'precheck',
+    titleKey: 'installer.precheck',
+    descKey: 'installer.precheckDesc',
+  },
+  {
+    id: 'config',
+    titleKey: 'installer.configuration',
+    descKey: 'installer.configurationDesc',
+  },
+  {
+    id: 'plugins',
+    titleKey: 'installer.pluginSelection',
+    descKey: 'installer.pluginSelectionDesc',
+  },
+  {
+    id: 'install',
+    titleKey: 'installer.installation',
+    descKey: 'installer.installationDesc',
+  },
+  {
+    id: 'complete',
+    titleKey: 'installer.complete',
+    descKey: 'installer.completeDesc',
+  },
 ];
 
 interface InstallWizardProps {
@@ -100,16 +132,14 @@ export function InstallWizard({
 }: InstallWizardProps) {
   const t = useTranslations();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
+  const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(
+    null,
+  );
   const [installationStarted, setInstallationStarted] = useState(false);
 
   // Wizard state management / 向导状态管理
-  const {
-    config,
-    updateConfig,
-    resetWizard,
-    buildInstallRequest,
-  } = useInstallWizard();
+  const {config, updateConfig, resetWizard, buildInstallRequest} =
+    useInstallWizard();
 
   // Precheck hook / 预检查 hook
   const {
@@ -134,14 +164,14 @@ export function InstallWizard({
   // Set initial version if provided / 如果提供了初始版本则设置
   useEffect(() => {
     if (initialVersion) {
-      updateConfig({ version: initialVersion });
+      updateConfig({version: initialVersion});
     }
   }, [initialVersion, updateConfig]);
 
   // Set cluster ID if provided / 如果提供了集群 ID 则设置
   useEffect(() => {
     if (clusterId) {
-      updateConfig({ clusterId: String(clusterId) });
+      updateConfig({clusterId: String(clusterId)});
     }
   }, [clusterId, updateConfig]);
 
@@ -168,19 +198,22 @@ export function InstallWizard({
 
   // Check if can proceed to next step / 检查是否可以进入下一步
   const canProceed = useCallback(() => {
-    const hasProfileSelectionIssue =
-      (config.connector.selected_plugins || []).some(
-        (pluginName) =>
-          pluginName === 'jdbc' &&
-          (config.connector.selected_plugin_profiles?.[pluginName] || [])
-            .length === 0,
-      );
+    const hasProfileSelectionIssue = (
+      config.connector.selected_plugins || []
+    ).some(
+      (pluginName) =>
+        pluginName === 'jdbc' &&
+        (config.connector.selected_plugin_profiles?.[pluginName] || [])
+          .length === 0,
+    );
 
     switch (currentStep.id) {
       case 'precheck':
         // Can proceed if precheck passed or has only warnings / 如果预检查通过或只有警告则可以继续
-        return precheckResult?.overall_status === 'passed' || 
-               precheckResult?.overall_status === 'warning';
+        return (
+          precheckResult?.overall_status === 'passed' ||
+          precheckResult?.overall_status === 'warning'
+        );
       case 'config':
         // Must have version selected / 必须选择版本
         if (!config.version) {
@@ -220,11 +253,20 @@ export function InstallWizard({
     } else if (currentStepIndex < WIZARD_STEPS.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     }
-  }, [currentStep.id, currentStepIndex, buildInstallRequest, startInstallation]);
+  }, [
+    currentStep.id,
+    currentStepIndex,
+    buildInstallRequest,
+    startInstallation,
+  ]);
 
   // Handle previous step / 处理上一步
   const handlePrevious = useCallback(() => {
-    if (currentStepIndex > 0 && currentStep.id !== 'install' && currentStep.id !== 'complete') {
+    if (
+      currentStepIndex > 0 &&
+      currentStep.id !== 'install' &&
+      currentStep.id !== 'complete'
+    ) {
       setCurrentStepIndex(currentStepIndex - 1);
     }
   }, [currentStepIndex, currentStep.id]);
@@ -244,7 +286,15 @@ export function InstallWizard({
     setCurrentStepIndex(0);
     setInstallationStarted(false);
     onOpenChange(false);
-  }, [installationStarted, installStatus, t, cancelInstallation, resetWizard, resetPrecheck, onOpenChange]);
+  }, [
+    installationStarted,
+    installStatus,
+    t,
+    cancelInstallation,
+    resetWizard,
+    resetPrecheck,
+    onOpenChange,
+  ]);
 
   // Handle precheck / 处理预检查
   const handleRunPrecheck = useCallback(async () => {
@@ -273,26 +323,23 @@ export function InstallWizard({
           />
         );
       case 'config':
-        return (
-          <ConfigStep
-            config={config}
-            onConfigChange={updateConfig}
-          />
-        );
+        return <ConfigStep config={config} onConfigChange={updateConfig} />;
       case 'plugins':
         return (
           <PluginSelectStep
             version={config.version}
             mirror={config.mirror}
-            onMirrorChange={(mirror) => updateConfig({ mirror })}
+            onMirrorChange={(mirror) => updateConfig({mirror})}
             selectedPlugins={config.connector.selected_plugins || []}
-            selectedPluginProfiles={config.connector.selected_plugin_profiles || {}}
+            selectedPluginProfiles={
+              config.connector.selected_plugin_profiles || {}
+            }
             onPluginsChange={(plugins: string[]) => {
               const selectedPluginSet = new Set(plugins);
               const nextProfiles = Object.fromEntries(
-                Object.entries(config.connector.selected_plugin_profiles || {}).filter(
-                  ([pluginName]) => selectedPluginSet.has(pluginName),
-                ),
+                Object.entries(
+                  config.connector.selected_plugin_profiles || {},
+                ).filter(([pluginName]) => selectedPluginSet.has(pluginName)),
               );
               updateConfig({
                 connector: {
@@ -346,47 +393,51 @@ export function InstallWizard({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent
+        data-testid='install-wizard-dialog'
+        className='max-w-4xl max-h-[90vh] overflow-hidden flex flex-col'
+      >
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className='flex items-center gap-2'>
             {t('installer.installWizard')}
             {hostName && (
-              <span className="text-muted-foreground font-normal">
+              <span className='text-muted-foreground font-normal'>
                 - {hostName}
               </span>
             )}
           </DialogTitle>
-          <DialogDescription>
-            {t(currentStep.descKey)}
-          </DialogDescription>
+          <DialogDescription>{t(currentStep.descKey)}</DialogDescription>
         </DialogHeader>
 
         {/* Step indicator / 步骤指示器 */}
-        <div className="py-4">
-          <div className="flex items-center justify-between mb-2">
+        <div className='py-4'>
+          <div className='flex items-center justify-between mb-2'>
             {WIZARD_STEPS.map((step, index) => (
               <div
                 key={step.id}
                 className={cn(
                   'flex items-center',
-                  index < WIZARD_STEPS.length - 1 && 'flex-1'
+                  index < WIZARD_STEPS.length - 1 && 'flex-1',
                 )}
               >
                 {/* Step circle / 步骤圆圈 */}
                 <div
                   className={cn(
                     'flex items-center justify-center w-8 h-8 rounded-full border-2 transition-colors',
-                    index < currentStepIndex && 'bg-primary border-primary text-primary-foreground',
+                    index < currentStepIndex &&
+                      'bg-primary border-primary text-primary-foreground',
                     index === currentStepIndex && 'border-primary text-primary',
-                    index > currentStepIndex && 'border-muted-foreground/30 text-muted-foreground/50'
+                    index > currentStepIndex &&
+                      'border-muted-foreground/30 text-muted-foreground/50',
                   )}
                 >
                   {index < currentStepIndex ? (
-                    <CheckCircle2 className="h-5 w-5" />
-                  ) : index === currentStepIndex && (installLoading || precheckLoading) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <CheckCircle2 className='h-5 w-5' />
+                  ) : index === currentStepIndex &&
+                    (installLoading || precheckLoading) ? (
+                    <Loader2 className='h-4 w-4 animate-spin' />
                   ) : (
-                    <span className="text-sm font-medium">{index + 1}</span>
+                    <span className='text-sm font-medium'>{index + 1}</span>
                   )}
                 </div>
 
@@ -395,7 +446,7 @@ export function InstallWizard({
                   className={cn(
                     'ml-2 text-sm font-medium hidden sm:inline',
                     index === currentStepIndex && 'text-primary',
-                    index !== currentStepIndex && 'text-muted-foreground'
+                    index !== currentStepIndex && 'text-muted-foreground',
                   )}
                 >
                   {t(step.titleKey)}
@@ -406,61 +457,69 @@ export function InstallWizard({
                   <div
                     className={cn(
                       'flex-1 h-0.5 mx-4',
-                      index < currentStepIndex ? 'bg-primary' : 'bg-muted-foreground/30'
+                      index < currentStepIndex
+                        ? 'bg-primary'
+                        : 'bg-muted-foreground/30',
                     )}
                   />
                 )}
               </div>
             ))}
           </div>
-          <Progress value={progress} className="h-1" />
+          <Progress value={progress} className='h-1' />
         </div>
 
         {/* Step content / 步骤内容 */}
-        <div className="flex-1 overflow-y-auto min-h-[400px] py-4">
+        <div
+          className='flex-1 overflow-y-auto min-h-[400px] py-4'
+          data-testid={`install-wizard-step-${currentStep.id}`}
+        >
           {renderStepContent()}
         </div>
 
         {/* Footer buttons / 底部按钮 */}
-        <div className="flex items-center justify-between pt-4 border-t">
+        <div className='flex items-center justify-between pt-4 border-t'>
           <Button
-            variant="outline"
+            variant='outline'
             onClick={handlePrevious}
-            disabled={currentStepIndex === 0 || currentStep.id === 'install' || currentStep.id === 'complete'}
+            data-testid='install-wizard-previous'
+            disabled={
+              currentStepIndex === 0 ||
+              currentStep.id === 'install' ||
+              currentStep.id === 'complete'
+            }
           >
-            <ChevronLeft className="h-4 w-4 mr-1" />
+            <ChevronLeft className='h-4 w-4 mr-1' />
             {t('common.previous')}
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className='flex items-center gap-2'>
             {currentStep.id !== 'complete' && (
-              <Button variant="ghost" onClick={handleClose}>
-                <X className="h-4 w-4 mr-1" />
+              <Button variant='ghost' onClick={handleClose}>
+                <X className='h-4 w-4 mr-1' />
                 {t('common.cancel')}
               </Button>
             )}
 
             {currentStep.id === 'complete' ? (
-              <Button onClick={handleClose}>
-                {t('common.close')}
-              </Button>
-            ) : currentStep.id === 'install' ? (
-              // No next button during installation / 安装过程中没有下一步按钮
-              null
-            ) : (
+              <Button onClick={handleClose}>{t('common.close')}</Button>
+            ) : currentStep.id ===
+              'install' ? // No next button during installation / 安装过程中没有下一步按钮
+            null : (
               <Button
                 onClick={handleNext}
+                data-testid='install-wizard-next'
                 disabled={!canProceed() || precheckLoading || installLoading}
               >
                 {currentStep.id === 'plugins' ? (
                   <>
                     {t('installer.startInstallation')}
-                    <ChevronRight className="h-4 w-4 ml-1" />
+                    <ChevronRight className='h-4 w-4 ml-1' />
                   </>
                 ) : (
                   <>
                     {t('common.next')}
-                    <ChevronRight className="h-4 w-4 ml-1" />
+                    <ChevronRight className='h-4 w-4 ml-1' />
                   </>
                 )}
               </Button>

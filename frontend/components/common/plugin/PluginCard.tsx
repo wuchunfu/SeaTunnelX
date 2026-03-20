@@ -22,13 +22,19 @@
 
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Database, ExternalLink, Download, CheckCircle } from 'lucide-react';
-import type { Plugin, PluginCategory } from '@/lib/services/plugin';
-import { getPluginDependencyStatusMeta } from './dependency-status';
+import {useTranslations} from 'next-intl';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {Badge} from '@/components/ui/badge';
+import {Button} from '@/components/ui/button';
+import {Database, ExternalLink, Download, CheckCircle} from 'lucide-react';
+import type {Plugin, PluginCategory} from '@/lib/services/plugin';
+import {getPluginDependencyStatusMeta} from './dependency-status';
 
 interface PluginCardProps {
   plugin: Plugin;
@@ -49,9 +55,9 @@ interface PluginCardProps {
 function getCategoryIcon(category: PluginCategory) {
   switch (category) {
     case 'connector':
-      return <Database className="h-5 w-5" />;
+      return <Database className='h-5 w-5' />;
     default:
-      return <Database className="h-5 w-5" />;
+      return <Database className='h-5 w-5' />;
   }
 }
 
@@ -72,8 +78,8 @@ function getCategoryColor(category: PluginCategory): string {
  * Plugin Card Component
  * 插件卡片组件 - 展示单个插件的基本信息
  */
-export function PluginCard({ 
-  plugin, 
+export function PluginCard({
+  plugin,
   onClick,
   showInstallButton = false,
   isInstalled = false,
@@ -81,7 +87,7 @@ export function PluginCard({
   isDownloading = false,
   downloadProgress = 0,
   onInstall,
-  onDownload
+  onDownload,
 }: PluginCardProps) {
   const t = useTranslations();
   const dependencyMeta = getPluginDependencyStatusMeta(plugin, t);
@@ -104,23 +110,25 @@ export function PluginCard({
     onDownload?.();
   };
 
-
   return (
     <Card
-      className="cursor-pointer hover:shadow-md transition-shadow duration-200 hover:border-primary/50"
+      data-testid={`plugin-card-${plugin.name}`}
+      className='cursor-pointer hover:shadow-md transition-shadow duration-200 hover:border-primary/50'
       onClick={onClick}
     >
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${getCategoryColor(plugin.category)}`}>
+      <CardHeader className='pb-3'>
+        <div className='flex items-start justify-between'>
+          <div className='flex items-center gap-3'>
+            <div
+              className={`p-2 rounded-lg ${getCategoryColor(plugin.category)}`}
+            >
               {getCategoryIcon(plugin.category)}
             </div>
             <div>
-              <CardTitle className="text-base font-semibold line-clamp-1">
+              <CardTitle className='text-base font-semibold line-clamp-1'>
                 {plugin.display_name || plugin.name}
               </CardTitle>
-              <CardDescription className="text-xs mt-0.5">
+              <CardDescription className='text-xs mt-0.5'>
                 {plugin.name}
               </CardDescription>
             </div>
@@ -128,83 +136,86 @@ export function PluginCard({
           {plugin.doc_url && (
             <a
               href={plugin.doc_url}
-              target="_blank"
-              rel="noopener noreferrer"
+              target='_blank'
+              rel='noopener noreferrer'
               onClick={(e) => e.stopPropagation()}
-              className="text-muted-foreground hover:text-primary"
+              className='text-muted-foreground hover:text-primary'
             >
-              <ExternalLink className="h-4 w-4" />
+              <ExternalLink className='h-4 w-4' />
             </a>
           )}
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        <p className="text-sm text-muted-foreground line-clamp-2 mb-3 min-h-[2.5rem]">
+      <CardContent className='pt-0'>
+        <p className='text-sm text-muted-foreground line-clamp-2 mb-3 min-h-[2.5rem]'>
           {plugin.description || t('plugin.noDescription')}
         </p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className={getCategoryColor(plugin.category)}>
+        <div className='flex items-center justify-between'>
+          <div className='flex items-center gap-2'>
+            <Badge
+              variant='outline'
+              className={getCategoryColor(plugin.category)}
+            >
               {t(`plugin.category.${plugin.category}`)}
             </Badge>
           </div>
-          <span className="text-xs text-muted-foreground">
+          <span className='text-xs text-muted-foreground'>
             v{plugin.version}
           </span>
         </div>
-        <div className="mt-3 rounded-md border border-dashed px-3 py-2 min-h-[66px]">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-muted-foreground">
+        <div className='mt-3 rounded-md border border-dashed px-3 py-2 min-h-[66px]'>
+          <div className='flex items-center justify-between gap-2'>
+            <span className='text-xs font-medium text-muted-foreground'>
               {t('plugin.officialDependencyStatus')}
             </span>
-            <Badge variant="outline" className={dependencyMeta.className}>
+            <Badge variant='outline' className={dependencyMeta.className}>
               {dependencyMeta.label}
             </Badge>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+          <p className='mt-1 text-xs text-muted-foreground line-clamp-2'>
             {dependencyMeta.description}
           </p>
         </div>
-        
+
         {/* Install/Download/Status button / 安装/下载/状态按钮 */}
         {showInstallButton && (
-          <div className="mt-3 pt-3 border-t space-y-2">
+          <div className='mt-3 pt-3 border-t space-y-2'>
             {isInstalled ? (
-              <Button variant="outline" size="sm" className="w-full" disabled>
-                <CheckCircle className="h-4 w-4 mr-2 text-green-600" />
+              <Button variant='outline' size='sm' className='w-full' disabled>
+                <CheckCircle className='h-4 w-4 mr-2 text-green-600' />
                 {t('plugin.installed')}
               </Button>
             ) : isDownloading ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <div className='space-y-2'>
+                <div className='flex items-center justify-between text-xs text-muted-foreground'>
                   <span>{t('plugin.downloading')}</span>
                   <span>{downloadProgress}%</span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-1.5 dark:bg-gray-700">
-                  <div 
-                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${downloadProgress}%` }}
+                <div className='w-full bg-gray-200 rounded-full h-1.5 dark:bg-gray-700'>
+                  <div
+                    className='bg-blue-600 h-1.5 rounded-full transition-all duration-300'
+                    style={{width: `${downloadProgress}%`}}
                   />
                 </div>
               </div>
             ) : isDownloaded ? (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full"
+              <Button
+                variant='outline'
+                size='sm'
+                className='w-full'
                 onClick={handleInstallClick}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className='h-4 w-4 mr-2' />
                 {t('plugin.install')}
               </Button>
             ) : (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full"
+              <Button
+                variant='outline'
+                size='sm'
+                className='w-full'
                 onClick={handleDownloadClick}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className='h-4 w-4 mr-2' />
                 {t('plugin.download')}
               </Button>
             )}

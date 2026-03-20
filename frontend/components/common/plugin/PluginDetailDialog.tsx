@@ -119,13 +119,19 @@ function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function buildDependencyActionId(prefix: string, artifactId: string): string {
+  return `${prefix}-${artifactId.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')}`.toLowerCase();
+}
+
 function splitDependencies(items: PluginDependency[]) {
   const attachedConnectors = dedupeStrings(
     items
       .filter((item) => item.target_dir === 'connectors')
       .map((item) => item.artifact_id),
   );
-  const extraDependencies = items.filter((item) => item.target_dir !== 'connectors');
+  const extraDependencies = items.filter(
+    (item) => item.target_dir !== 'connectors',
+  );
   return {attachedConnectors, extraDependencies};
 }
 
@@ -142,7 +148,9 @@ export function PluginDetailDialog({
   const [officialDeps, setOfficialDeps] =
     useState<OfficialDependenciesResponse | null>(null);
   const [loadingOfficialDeps, setLoadingOfficialDeps] = useState(false);
-  const [operatingDependencyKey, setOperatingDependencyKey] = useState<string | null>(null);
+  const [operatingDependencyKey, setOperatingDependencyKey] = useState<
+    string | null
+  >(null);
 
   const loadOfficialDeps = useCallback(async () => {
     if (!plugin?.name) {
@@ -252,14 +260,18 @@ export function PluginDetailDialog({
       await loadOfficialDeps();
     } catch (error) {
       const errorMsg =
-        error instanceof Error ? error.message : t('plugin.disableOfficialDependencyFailed');
+        error instanceof Error
+          ? error.message
+          : t('plugin.disableOfficialDependencyFailed');
       toast.error(errorMsg);
     } finally {
       setOperatingDependencyKey(null);
     }
   };
 
-  const handleEnableOfficialDependency = async (item: PluginDependencyDisable) => {
+  const handleEnableOfficialDependency = async (
+    item: PluginDependencyDisable,
+  ) => {
     const actionKey = `${item.id}:enable`;
     setOperatingDependencyKey(actionKey);
     try {
@@ -268,7 +280,9 @@ export function PluginDetailDialog({
       await loadOfficialDeps();
     } catch (error) {
       const errorMsg =
-        error instanceof Error ? error.message : t('plugin.enableOfficialDependencyFailed');
+        error instanceof Error
+          ? error.message
+          : t('plugin.enableOfficialDependencyFailed');
       toast.error(errorMsg);
     } finally {
       setOperatingDependencyKey(null);
@@ -277,10 +291,15 @@ export function PluginDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='w-[96vw] max-w-[96vw] sm:max-w-[980px] lg:max-w-[1100px] max-h-[88vh] overflow-hidden p-0 gap-0'>
+      <DialogContent
+        data-testid={`plugin-detail-dialog-${plugin.name}`}
+        className='w-[96vw] max-w-[96vw] sm:max-w-[980px] lg:max-w-[1100px] max-h-[88vh] overflow-hidden p-0 gap-0'
+      >
         <DialogHeader className='px-6 pt-6 pb-4'>
           <div className='flex items-center gap-3'>
-            <div className={`p-2 rounded-lg ${getCategoryColor(plugin.category)}`}>
+            <div
+              className={`p-2 rounded-lg ${getCategoryColor(plugin.category)}`}
+            >
               {getCategoryIcon(plugin.category)}
             </div>
             <div>
@@ -298,7 +317,10 @@ export function PluginDetailDialog({
           <div className='space-y-6 px-6 pb-6'>
             <div className='space-y-3'>
               <div className='flex items-center gap-2'>
-                <Badge variant='outline' className={getCategoryColor(plugin.category)}>
+                <Badge
+                  variant='outline'
+                  className={getCategoryColor(plugin.category)}
+                >
                   {t(`plugin.category.${plugin.category}`)}
                 </Badge>
                 <Badge variant='secondary'>v{plugin.version}</Badge>
@@ -310,7 +332,11 @@ export function PluginDetailDialog({
 
               {plugin.doc_url && (
                 <Button variant='outline' size='sm' asChild>
-                  <a href={plugin.doc_url} target='_blank' rel='noopener noreferrer'>
+                  <a
+                    href={plugin.doc_url}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                  >
                     <ExternalLink className='h-4 w-4 mr-2' />
                     {t('plugin.viewDocumentation')}
                   </a>
@@ -327,20 +353,26 @@ export function PluginDetailDialog({
               </h4>
               <div className='bg-muted p-3 rounded-md font-mono text-sm'>
                 <div>
-                  <span className='text-muted-foreground'>groupId:</span> {plugin.group_id}
+                  <span className='text-muted-foreground'>groupId:</span>{' '}
+                  {plugin.group_id}
                 </div>
                 <div>
-                  <span className='text-muted-foreground'>artifactId:</span> {plugin.artifact_id}
+                  <span className='text-muted-foreground'>artifactId:</span>{' '}
+                  {plugin.artifact_id}
                 </div>
                 <div>
-                  <span className='text-muted-foreground'>version:</span> {plugin.version}
+                  <span className='text-muted-foreground'>version:</span>{' '}
+                  {plugin.version}
                 </div>
               </div>
             </div>
 
             <Separator />
 
-            <div className='space-y-3'>
+            <div
+              className='space-y-3'
+              data-testid='plugin-official-dependencies'
+            >
               <div>
                 <h4 className='font-medium flex items-center gap-2'>
                   <Layers3 className='h-4 w-4' />
@@ -372,12 +404,18 @@ export function PluginDetailDialog({
                           return (
                             <label
                               key={profile.id}
+                              data-testid={`plugin-profile-${profile.profile_key}`}
                               className='flex items-center gap-3 rounded-md border bg-muted/20 px-3 py-2'
                             >
                               <Checkbox
-                                checked={selectedProfileKeys.includes(profile.profile_key)}
+                                checked={selectedProfileKeys.includes(
+                                  profile.profile_key,
+                                )}
                                 onCheckedChange={(checked) =>
-                                  handleToggleProfile(profile.profile_key, checked === true)
+                                  handleToggleProfile(
+                                    profile.profile_key,
+                                    checked === true,
+                                  )
                                 }
                               />
                               <div className='flex min-w-0 flex-1 flex-col'>
@@ -386,7 +424,9 @@ export function PluginDetailDialog({
                                 </span>
                                 <span className='text-xs text-muted-foreground'>
                                   {itemCount > 0
-                                    ? t('plugin.profileDependencyCount', {count: itemCount})
+                                    ? t('plugin.profileDependencyCount', {
+                                        count: itemCount,
+                                      })
                                     : t('plugin.noExtraDependencies')}
                                 </span>
                               </div>
@@ -413,11 +453,15 @@ export function PluginDetailDialog({
                   )}
 
                   {extraDependencies.length > 0 ? (
-                    <div className='space-y-3'>
+                    <div
+                      className='space-y-3'
+                      data-testid='plugin-active-official-dependencies'
+                    >
                       <div className='flex items-center justify-between gap-2'>
                         <div>
                           <h5 className='text-sm font-medium'>
-                            {t('plugin.extraDependencies')} ({extraDependencies.length})
+                            {t('plugin.extraDependencies')} (
+                            {extraDependencies.length})
                           </h5>
                           <p className='text-xs text-muted-foreground mt-1'>
                             {t('plugin.extraDependenciesDesc')}
@@ -426,7 +470,11 @@ export function PluginDetailDialog({
                         {dependencyTargetDirs.length > 0 && (
                           <div className='flex flex-wrap justify-end gap-2'>
                             {dependencyTargetDirs.map((targetDir) => (
-                              <Badge key={targetDir} variant='outline' className='max-w-[260px] whitespace-normal break-all'>
+                              <Badge
+                                key={targetDir}
+                                variant='outline'
+                                className='max-w-[260px] whitespace-normal break-all'
+                              >
                                 {targetDir}
                               </Badge>
                             ))}
@@ -445,7 +493,9 @@ export function PluginDetailDialog({
                           </TableHeader>
                           <TableBody>
                             {extraDependencies.map((dep, index) => (
-                              <TableRow key={`${dep.group_id}:${dep.artifact_id}:${index}`}>
+                              <TableRow
+                                key={`${dep.group_id}:${dep.artifact_id}:${index}`}
+                              >
                                 <TableCell className='font-mono text-xs whitespace-nowrap'>
                                   {dep.group_id}
                                 </TableCell>
@@ -501,7 +551,9 @@ export function PluginDetailDialog({
                               <TableHead>{t('plugin.artifactId')}</TableHead>
                               <TableHead>{t('plugin.version')}</TableHead>
                               <TableHead>{t('plugin.targetDir')}</TableHead>
-                              <TableHead className='w-[96px]'>{t('common.actions')}</TableHead>
+                              <TableHead className='w-[96px]'>
+                                {t('common.actions')}
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -509,7 +561,9 @@ export function PluginDetailDialog({
                               const actionKey = `${dep.group_id}:${dep.artifact_id}:${dep.version}:${dep.target_dir}:disable`;
                               const busy = operatingDependencyKey === actionKey;
                               return (
-                                <TableRow key={`${dep.group_id}:${dep.artifact_id}:${dep.version}:${dep.target_dir}`}>
+                                <TableRow
+                                  key={`${dep.group_id}:${dep.artifact_id}:${dep.version}:${dep.target_dir}`}
+                                >
                                   <TableCell className='font-mono text-xs whitespace-nowrap'>
                                     {dep.group_id}
                                   </TableCell>
@@ -526,11 +580,22 @@ export function PluginDetailDialog({
                                     <Button
                                       variant='ghost'
                                       size='sm'
+                                      aria-label={`${t('plugin.disable')} ${dep.artifact_id}`}
+                                      data-testid={buildDependencyActionId(
+                                        'plugin-disable-official',
+                                        dep.artifact_id,
+                                      )}
                                       className='text-amber-600 hover:text-amber-700'
                                       disabled={busy}
-                                      onClick={() => handleDisableOfficialDependency(dep)}
+                                      onClick={() =>
+                                        handleDisableOfficialDependency(dep)
+                                      }
                                     >
-                                      {busy ? <RefreshCw className='h-4 w-4 animate-spin' /> : <Ban className='h-4 w-4' />}
+                                      {busy ? (
+                                        <RefreshCw className='h-4 w-4 animate-spin' />
+                                      ) : (
+                                        <Ban className='h-4 w-4' />
+                                      )}
                                     </Button>
                                   </TableCell>
                                 </TableRow>
@@ -543,7 +608,10 @@ export function PluginDetailDialog({
                   )}
 
                   {disabledDependencies.length > 0 && (
-                    <div className='space-y-3'>
+                    <div
+                      className='space-y-3'
+                      data-testid='plugin-disabled-official-dependencies'
+                    >
                       <div>
                         <h5 className='text-sm font-medium'>
                           {t('plugin.disabledOfficialDependencies')}
@@ -560,7 +628,9 @@ export function PluginDetailDialog({
                               <TableHead>{t('plugin.artifactId')}</TableHead>
                               <TableHead>{t('plugin.version')}</TableHead>
                               <TableHead>{t('plugin.targetDir')}</TableHead>
-                              <TableHead className='w-[96px]'>{t('common.actions')}</TableHead>
+                              <TableHead className='w-[96px]'>
+                                {t('common.actions')}
+                              </TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -585,11 +655,22 @@ export function PluginDetailDialog({
                                     <Button
                                       variant='ghost'
                                       size='sm'
+                                      aria-label={`${t('plugin.enable')} ${item.artifact_id}`}
+                                      data-testid={buildDependencyActionId(
+                                        'plugin-enable-official',
+                                        item.artifact_id,
+                                      )}
                                       className='text-emerald-600 hover:text-emerald-700'
                                       disabled={busy}
-                                      onClick={() => handleEnableOfficialDependency(item)}
+                                      onClick={() =>
+                                        handleEnableOfficialDependency(item)
+                                      }
                                     >
-                                      {busy ? <RefreshCw className='h-4 w-4 animate-spin' /> : <RotateCcw className='h-4 w-4' />}
+                                      {busy ? (
+                                        <RefreshCw className='h-4 w-4 animate-spin' />
+                                      ) : (
+                                        <RotateCcw className='h-4 w-4' />
+                                      )}
                                     </Button>
                                   </TableCell>
                                 </TableRow>
@@ -623,7 +704,9 @@ export function PluginDetailDialog({
               <div className='text-sm space-y-2'>
                 <div className='flex items-start gap-2'>
                   <Badge variant='outline'>{t('plugin.connectorPath')}</Badge>
-                  <code className='text-xs bg-muted px-2 py-1 rounded'>connectors/</code>
+                  <code className='text-xs bg-muted px-2 py-1 rounded'>
+                    connectors/
+                  </code>
                 </div>
                 {dependencyTargetDirs.length > 0 ? (
                   dependencyTargetDirs.map((targetDir) => (

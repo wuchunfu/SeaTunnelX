@@ -342,7 +342,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
   );
 
   return (
-    <div className='space-y-6'>
+    <div className='space-y-6' data-testid='upgrade-prepare-page'>
       <div className='flex flex-wrap items-center justify-between gap-4'>
         <div className='space-y-2'>
           <div className='flex items-center gap-3'>
@@ -373,7 +373,11 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
           <Button variant='outline' onClick={handleClearDraft}>
             {t('clearDraft')}
           </Button>
-          <Button onClick={handleContinue} disabled={!canContinueToConfig}>
+          <Button
+            onClick={handleContinue}
+            data-testid='upgrade-prepare-continue'
+            disabled={!canContinueToConfig}
+          >
             {t('continueToConfig')}
           </Button>
         </div>
@@ -464,6 +468,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
               </Button>
               <Button
                 onClick={handleRunPrecheck}
+                data-testid='upgrade-prepare-run-precheck'
                 disabled={runningPrecheck || loading}
               >
                 <ShieldAlert className='mr-2 h-4 w-4' />
@@ -478,7 +483,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
         </Card>
 
         <div className='space-y-6'>
-          <Card>
+          <Card data-testid='upgrade-prepare-summary'>
             <CardHeader>
               <CardTitle>{t('precheckSummary')}</CardTitle>
               <CardDescription>
@@ -493,7 +498,10 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
               ) : (
                 <>
                   <div className='flex flex-wrap items-center gap-2'>
-                    <Badge variant={precheck.ready ? 'default' : 'destructive'}>
+                    <Badge
+                      data-testid='upgrade-prepare-ready-badge'
+                      variant={precheck.ready ? 'default' : 'destructive'}
+                    >
                       {precheck.ready ? t('readyToPlan') : t('blocked')}
                     </Badge>
                     <span className='text-sm text-muted-foreground'>
@@ -549,7 +557,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
           </Card>
 
           {precheck ? (
-            <Card>
+            <Card data-testid='upgrade-prepare-issues'>
               <CardHeader>
                 <CardTitle>{t('issuesTitle')}</CardTitle>
                 <CardDescription>{t('issuesDescription')}</CardDescription>
@@ -600,6 +608,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
                       <Button
                         variant='outline'
                         onClick={() => router.push('/packages')}
+                        data-testid='upgrade-prepare-go-packages'
                       >
                         <Package className='mr-2 h-4 w-4' />
                         {t('goPackages')}
@@ -609,6 +618,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
                       <Button
                         variant='outline'
                         onClick={() => router.push('/plugins')}
+                        data-testid='upgrade-prepare-go-plugins'
                       >
                         <PlugZap className='mr-2 h-4 w-4' />
                         {t('goPlugins')}
@@ -618,6 +628,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
                       <Button
                         variant='outline'
                         onClick={() => router.push(`/clusters/${clusterId}`)}
+                        data-testid='upgrade-prepare-resolve-node-issues'
                       >
                         <ServerCog className='mr-2 h-4 w-4' />
                         {t('resolveNodeIssues')}
@@ -627,6 +638,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
                       <Button
                         variant='outline'
                         onClick={() => void handleInitClusterConfigs()}
+                        data-testid='upgrade-prepare-init-configs'
                         disabled={
                           initializingConfigs ||
                           runningPrecheck ||
@@ -645,7 +657,7 @@ export function ClusterUpgradePrepare({clusterId}: ClusterUpgradePrepareProps) {
           ) : null}
 
           {precheck?.node_targets?.length ? (
-            <Card>
+            <Card data-testid='upgrade-prepare-node-targets'>
               <CardHeader>
                 <CardTitle>{t('nodeTargets')}</CardTitle>
                 <CardDescription>

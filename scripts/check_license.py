@@ -58,7 +58,7 @@ APACHE_MARKERS = (
 )
 MIT_MARKERS = ("MIT License",)
 HEADER_SCAN_BYTES = 4096
-DEFAULT_ALLOWLIST = "license/legacy_mit_files.txt"
+DEFAULT_ALLOWLIST = "licenses/legacy_mit_files.txt"
 
 
 @dataclass(frozen=True)
