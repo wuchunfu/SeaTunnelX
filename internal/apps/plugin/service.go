@@ -19,13 +19,17 @@ package plugin
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1417,6 +1421,55 @@ func (s *Service) DownloadPluginSync(ctx context.Context, pluginName, version, m
 
 	// DownloadPlugin downloads both connector and dependencies / DownloadPlugin 同时下载连接器和依赖
 	return s.downloader.DownloadPlugin(ctx, plugin, downloadMirror, selectedProfiles, connectorReady, dependenciesReady, nil)
+}
+
+// GetPluginPreparationFingerprint returns a stable fingerprint for the plugin's effective dependency set.
+// GetPluginPreparationFingerprint 返回插件当前生效依赖集合的稳定指纹。
+// This implements the installer.PluginTransferer interface.
+// 这实现了 installer.PluginTransferer 接口。
+func (s *Service) GetPluginPreparationFingerprint(ctx context.Context, pluginName, version string, profileKeys []string) (string, error) {
+	deps, err := s.GetPluginDependenciesForVersionAndProfiles(ctx, pluginName, version, profileKeys)
+	if err != nil {
+		return "", err
+	}
+	return buildPluginPreparationFingerprint(deps)
+}
+
+func buildPluginPreparationFingerprint(deps []PluginDependency) (string, error) {
+	type dependencyFingerprintEntry struct {
+		GroupID          string                 `json:"group_id"`
+		ArtifactID       string                 `json:"artifact_id"`
+		Version          string                 `json:"version"`
+		TargetDir        string                 `json:"target_dir"`
+		SourceType       PluginDependencySource `json:"source_type,omitempty"`
+		OriginalFileName string                 `json:"original_file_name,omitempty"`
+		StoredPath       string                 `json:"stored_path,omitempty"`
+	}
+
+	entries := make([]dependencyFingerprintEntry, 0, len(deps))
+	for _, dep := range deps {
+		entries = append(entries, dependencyFingerprintEntry{
+			GroupID:          dep.GroupID,
+			ArtifactID:       dep.ArtifactID,
+			Version:          dep.Version,
+			TargetDir:        dep.TargetDir,
+			SourceType:       dep.SourceType,
+			OriginalFileName: dep.OriginalFileName,
+			StoredPath:       dep.StoredPath,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		left := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", entries[i].GroupID, entries[i].ArtifactID, entries[i].Version, entries[i].TargetDir, entries[i].SourceType, entries[i].OriginalFileName, entries[i].StoredPath)
+		right := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", entries[j].GroupID, entries[j].ArtifactID, entries[j].Version, entries[j].TargetDir, entries[j].SourceType, entries[j].OriginalFileName, entries[j].StoredPath)
+		return left < right
+	})
+
+	payload, err := json.Marshal(entries)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // RecordInstalledPlugin records a plugin as installed for a cluster.

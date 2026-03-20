@@ -834,3 +834,50 @@ func TestUploadDependencyStoresJarAndParticipatesInEffectiveDependencies(t *test
 		t.Fatalf("expected stored file path to be valid")
 	}
 }
+
+func TestBuildPluginPreparationFingerprint_IsStableAndDetectsChanges(t *testing.T) {
+	depsA := []PluginDependency{
+		{
+			GroupID:    "mysql",
+			ArtifactID: "mysql-connector-java",
+			Version:    "8.0.27",
+			TargetDir:  "plugins/connector-jdbc",
+			SourceType: PluginDependencySourceOfficial,
+		},
+		{
+			GroupID:          "uploaded",
+			ArtifactID:       "custom-driver",
+			Version:          "1.0.0",
+			TargetDir:        "plugins/connector-jdbc",
+			SourceType:       PluginDependencySourceUpload,
+			OriginalFileName: "custom-driver-1.0.0.jar",
+			StoredPath:       "/tmp/custom-driver-1.0.0.jar",
+		},
+	}
+	depsB := []PluginDependency{
+		depsA[1],
+		depsA[0],
+	}
+
+	hashA, err := buildPluginPreparationFingerprint(depsA)
+	if err != nil {
+		t.Fatalf("buildPluginPreparationFingerprint returned error: %v", err)
+	}
+	hashB, err := buildPluginPreparationFingerprint(depsB)
+	if err != nil {
+		t.Fatalf("buildPluginPreparationFingerprint returned error: %v", err)
+	}
+	if hashA != hashB {
+		t.Fatalf("expected fingerprint to be order-independent, got %s vs %s", hashA, hashB)
+	}
+
+	depsC := append([]PluginDependency(nil), depsA...)
+	depsC[1].StoredPath = "/tmp/custom-driver-1.0.1.jar"
+	hashC, err := buildPluginPreparationFingerprint(depsC)
+	if err != nil {
+		t.Fatalf("buildPluginPreparationFingerprint returned error: %v", err)
+	}
+	if hashC == hashA {
+		t.Fatalf("expected fingerprint to change when uploaded dependency payload changes")
+	}
+}

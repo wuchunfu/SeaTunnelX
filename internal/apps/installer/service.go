@@ -105,6 +105,10 @@ type PluginTransferer interface {
 	// DownloadPluginSync 同步下载插件（阻塞）
 	DownloadPluginSync(ctx context.Context, pluginName, version, mirror string, profileKeys []string) error
 
+	// GetPluginPreparationFingerprint returns a stable fingerprint for the plugin's effective dependency set.
+	// GetPluginPreparationFingerprint 返回插件当前生效依赖集合的稳定指纹。
+	GetPluginPreparationFingerprint(ctx context.Context, pluginName, version string, profileKeys []string) (string, error)
+
 	// RecordInstalledPlugin records a plugin as installed for a cluster
 	// RecordInstalledPlugin 记录插件已安装到集群
 	RecordInstalledPlugin(ctx context.Context, clusterID uint, pluginName, version string) error
@@ -1868,13 +1872,25 @@ func (s *Service) runInstallation(ctx context.Context, req *InstallationRequest,
 			selectedProfileKeys := normalizeProfileKeys(req.Connector.SelectedPluginProfiles[pluginName])
 			logger.InfoF(ctx, "[Installer] 传输插件 / Transferring plugin: %s (%d/%d)", pluginName, i+1, len(req.Connector.SelectedPlugins))
 
-			if s.hasPreparedPlugin(agentID, pluginName, req.Version, installDir, selectedProfileKeys) {
+			preparedPluginFingerprint, fingerprintErr := s.resolvePreparedPluginFingerprint(ctx, pluginName, req.Version, selectedProfileKeys)
+			if fingerprintErr != nil {
+				logger.WarnF(
+					ctx,
+					"[Installer] 计算插件依赖指纹失败，将跳过缓存复用 / Failed to compute plugin dependency fingerprint, cache reuse disabled: plugin=%s, profiles=%v, error=%v",
+					pluginName,
+					selectedProfileKeys,
+					fingerprintErr,
+				)
+			}
+
+			if s.hasPreparedPlugin(agentID, pluginName, req.Version, installDir, selectedProfileKeys, preparedPluginFingerprint) {
 				logger.InfoF(
 					ctx,
-					"[Installer] 复用已准备插件 / Reusing prepared plugin: %s, profiles=%v, agent=%s",
+					"[Installer] 复用已准备插件 / Reusing prepared plugin: %s, profiles=%v, agent=%s, fingerprint=%s",
 					pluginName,
 					selectedProfileKeys,
 					agentID,
+					preparedPluginFingerprint,
 				)
 				s.installMu.Lock()
 				status.Message = fmt.Sprintf(
@@ -1914,7 +1930,19 @@ func (s *Service) runInstallation(ctx context.Context, req *InstallationRequest,
 			}
 
 			logger.InfoF(ctx, "[Installer] 插件传输成功 / Plugin transferred successfully: %s", pluginName)
-			s.rememberPreparedPlugin(agentID, pluginName, req.Version, installDir, selectedProfileKeys)
+			if preparedPluginFingerprint == "" {
+				preparedPluginFingerprint, fingerprintErr = s.resolvePreparedPluginFingerprint(ctx, pluginName, req.Version, selectedProfileKeys)
+				if fingerprintErr != nil {
+					logger.WarnF(
+						ctx,
+						"[Installer] 传输后重新计算插件依赖指纹失败，将不记录缓存 / Failed to recompute plugin dependency fingerprint after transfer, skip cache record: plugin=%s, profiles=%v, error=%v",
+						pluginName,
+						selectedProfileKeys,
+						fingerprintErr,
+					)
+				}
+			}
+			s.rememberPreparedPlugin(agentID, pluginName, req.Version, installDir, selectedProfileKeys, preparedPluginFingerprint)
 		}
 	}
 
@@ -2374,14 +2402,15 @@ func preparedPackageCacheKey(agentID, version, localPath string) string {
 	return fmt.Sprintf("%s|%s|%s", agentID, version, filepath.Base(localPath))
 }
 
-func preparedPluginCacheKey(agentID, pluginName, version, installDir string, profileKeys []string) string {
+func preparedPluginCacheKey(agentID, pluginName, version, installDir string, profileKeys []string, dependencyFingerprint string) string {
 	return fmt.Sprintf(
-		"%s|%s|%s|%s|%s",
+		"%s|%s|%s|%s|%s|%s",
 		agentID,
 		pluginName,
 		version,
 		filepath.Clean(installDir),
 		strings.Join(normalizeProfileKeys(profileKeys), ","),
+		strings.TrimSpace(dependencyFingerprint),
 	)
 }
 
@@ -2424,24 +2453,39 @@ func (s *Service) rememberPreparedPackage(agentID, version, localPath, remotePat
 	}
 }
 
-func (s *Service) hasPreparedPlugin(agentID, pluginName, version, installDir string, profileKeys []string) bool {
+func (s *Service) hasPreparedPlugin(agentID, pluginName, version, installDir string, profileKeys []string, dependencyFingerprint string) bool {
+	if strings.TrimSpace(dependencyFingerprint) == "" {
+		return false
+	}
+
 	s.preparedAssetMu.Lock()
 	defer s.preparedAssetMu.Unlock()
 
 	now := time.Now()
 	s.prunePreparedAssetCacheLocked(now)
 
-	_, ok := s.preparedPlugins[preparedPluginCacheKey(agentID, pluginName, version, installDir, profileKeys)]
+	_, ok := s.preparedPlugins[preparedPluginCacheKey(agentID, pluginName, version, installDir, profileKeys, dependencyFingerprint)]
 	return ok
 }
 
-func (s *Service) rememberPreparedPlugin(agentID, pluginName, version, installDir string, profileKeys []string) {
+func (s *Service) rememberPreparedPlugin(agentID, pluginName, version, installDir string, profileKeys []string, dependencyFingerprint string) {
+	if strings.TrimSpace(dependencyFingerprint) == "" {
+		return
+	}
+
 	s.preparedAssetMu.Lock()
 	defer s.preparedAssetMu.Unlock()
 
 	now := time.Now()
 	s.prunePreparedAssetCacheLocked(now)
-	s.preparedPlugins[preparedPluginCacheKey(agentID, pluginName, version, installDir, profileKeys)] = now
+	s.preparedPlugins[preparedPluginCacheKey(agentID, pluginName, version, installDir, profileKeys, dependencyFingerprint)] = now
+}
+
+func (s *Service) resolvePreparedPluginFingerprint(ctx context.Context, pluginName, version string, profileKeys []string) (string, error) {
+	if s.pluginTransferer == nil {
+		return "", nil
+	}
+	return s.pluginTransferer.GetPluginPreparationFingerprint(ctx, pluginName, version, profileKeys)
 }
 
 func normalizeProfileKeys(keys []string) []string {

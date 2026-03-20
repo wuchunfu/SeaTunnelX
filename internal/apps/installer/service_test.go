@@ -318,6 +318,23 @@ func TestService_resolveInstallationJVM_usesNodeResolverWhenRequestJVMIsEmpty(t 
 	}
 }
 
+func TestService_preparedPluginCacheRequiresDependencyFingerprint(t *testing.T) {
+	service := NewService(t.TempDir(), nil)
+
+	if service.hasPreparedPlugin("agent-a", "jdbc", "2.3.13", "/opt/seatunnel-2.3.13", []string{"mysql"}, "") {
+		t.Fatalf("expected empty fingerprint to disable prepared plugin reuse")
+	}
+
+	service.rememberPreparedPlugin("agent-a", "jdbc", "2.3.13", "/opt/seatunnel-2.3.13", []string{"mysql"}, "deps-hash-a")
+
+	if !service.hasPreparedPlugin("agent-a", "jdbc", "2.3.13", "/opt/seatunnel-2.3.13", []string{"mysql"}, "deps-hash-a") {
+		t.Fatalf("expected prepared plugin cache hit for identical dependency fingerprint")
+	}
+	if service.hasPreparedPlugin("agent-a", "jdbc", "2.3.13", "/opt/seatunnel-2.3.13", []string{"mysql"}, "deps-hash-b") {
+		t.Fatalf("expected dependency fingerprint change to invalidate prepared plugin cache")
+	}
+}
+
 func createUploadFileHeader(t *testing.T, fieldName, fileName string, content []byte) *multipart.FileHeader {
 	t.Helper()
 
