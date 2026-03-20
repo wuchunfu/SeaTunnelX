@@ -38,6 +38,7 @@ import type {
   PluginDependencyDisable,
   OfficialDependenciesResponse,
   AnalyzeOfficialDependenciesRequest,
+  DownloadAllPluginsRequest,
 } from './types';
 
 // Import DownloadAllPluginsProgress type / 导入下载所有插件进度类型
@@ -263,11 +264,16 @@ export class PluginService extends BaseService {
    */
   static async downloadAllPlugins(
     version: string,
-    mirror?: MirrorSource
+    mirror?: MirrorSource,
+    selectedPluginProfiles?: Record<string, string[]>,
   ): Promise<DownloadAllPluginsProgress> {
+    const request: DownloadAllPluginsRequest = {version, mirror};
+    if (selectedPluginProfiles && Object.keys(selectedPluginProfiles).length > 0) {
+      request.selected_plugin_profiles = selectedPluginProfiles;
+    }
     return this.post<DownloadAllPluginsProgress>(
       '/plugins/download-all',
-      { version, mirror }
+      request,
     );
   }
 

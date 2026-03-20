@@ -775,7 +775,7 @@ type DownloadAllPluginsProgress struct {
 
 // DownloadAllPlugins downloads all available plugins for a version.
 // DownloadAllPlugins 下载指定版本的所有可用插件。
-func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror MirrorSource) (*DownloadAllPluginsProgress, error) {
+func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror MirrorSource, selectedProfilesByPlugin map[string][]string) (*DownloadAllPluginsProgress, error) {
 	if version == "" {
 		version = seatunnel.DefaultVersion()
 	}
@@ -800,6 +800,7 @@ func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror
 		downloadCtx := context.Background()
 		for i := range plugins {
 			plugin := &plugins[i]
+			selectedProfiles := normalizeProfileKeys(selectedProfilesByPlugin[plugin.Name])
 
 			// Check if already downloaded / 检查是否已下载
 			if s.downloader.IsConnectorDownloaded(plugin.Name, version) {
@@ -807,14 +808,20 @@ func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror
 				continue
 			}
 
+			if requiresExplicitProfileSelection(plugin) && len(selectedProfiles) == 0 {
+				progress.Skipped++
+				fmt.Printf("[DownloadAllPlugins] Skipped %s because profile selection is required\n", plugin.Name)
+				continue
+			}
+
 			// Load configured dependencies from database / 从数据库加载配置的依赖
-			deps, err := s.GetPluginDependenciesForVersion(downloadCtx, plugin.Name, version)
+			deps, err := s.GetPluginDependenciesForVersionAndProfiles(downloadCtx, plugin.Name, version, selectedProfiles)
 			if err == nil && len(deps) > 0 {
 				plugin.Dependencies = deps
 			}
 
 			// Download plugin / 下载插件
-			err = s.downloader.DownloadPlugin(downloadCtx, plugin, mirror, nil, false, false, nil)
+			err = s.downloader.DownloadPlugin(downloadCtx, plugin, mirror, selectedProfiles, false, false, nil)
 			if err != nil {
 				progress.Failed++
 				fmt.Printf("[DownloadAllPlugins] Failed to download %s: %v\n", plugin.Name, err)
@@ -830,6 +837,13 @@ func (s *Service) DownloadAllPlugins(ctx context.Context, version string, mirror
 	}()
 
 	return progress, nil
+}
+
+func requiresExplicitProfileSelection(plugin *Plugin) bool {
+	if plugin == nil {
+		return false
+	}
+	return plugin.ArtifactID == "connector-jdbc" || plugin.Name == "jdbc"
 }
 
 // DeleteLocalPlugin deletes a locally downloaded plugin.

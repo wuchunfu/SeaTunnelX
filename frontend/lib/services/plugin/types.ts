@@ -306,6 +306,12 @@ export interface DownloadPluginRequest {
   profile_keys?: string[];
 }
 
+export interface DownloadAllPluginsRequest {
+  version: string;
+  mirror?: MirrorSource;
+  selected_plugin_profiles?: Record<string, string[]>;
+}
+
 /**
  * Download plugin response
  * 下载插件响应

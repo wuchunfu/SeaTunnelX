@@ -27,6 +27,14 @@ import {useTranslations} from 'next-intl';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -71,6 +79,7 @@ import type {
   PluginDownloadProgress,
   InstalledPlugin,
   PluginDependency,
+  OfficialDependenciesResponse,
 } from '@/lib/services/plugin';
 import type {ClusterInfo} from '@/lib/services/cluster';
 import {Progress} from '@/components/ui/progress';
@@ -178,6 +187,13 @@ export function PluginMain() {
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [installContext, setInstallContext] = useState<InstallDialogContext | null>(null);
   const [selectedProfileKeysByPlugin, setSelectedProfileKeysByPlugin] = useState<Record<string, string[]>>({});
+  const [isBatchProfileDialogOpen, setIsBatchProfileDialogOpen] = useState(false);
+  const [batchProfilePlugins, setBatchProfilePlugins] = useState<Plugin[]>([]);
+  const [batchProfileOfficialDeps, setBatchProfileOfficialDeps] = useState<
+    Record<string, OfficialDependenciesResponse | null>
+  >({});
+  const [batchProfileLoading, setBatchProfileLoading] = useState(false);
+  const [activeBatchProfileTab, setActiveBatchProfileTab] = useState('');
 
   // Download state / 下载状态
   const [downloadingPlugins, setDownloadingPlugins] = useState<Set<string>>(
@@ -385,6 +401,124 @@ export function PluginMain() {
   const requiresProfileSelection = useCallback((plugin: Plugin) => {
     return plugin.artifact_id === 'connector-jdbc' || plugin.name === 'jdbc';
   }, []);
+
+  const applyDefaultBatchProfiles = useCallback(
+    (requiredPlugins: Plugin[], officialDepsMap: Record<string, OfficialDependenciesResponse | null>) => {
+      setSelectedProfileKeysByPlugin((prev) => {
+        const next = {...prev};
+        requiredPlugins.forEach((plugin) => {
+          if ((next[plugin.name] || []).length > 0) {
+            return;
+          }
+          const profiles = officialDepsMap[plugin.name]?.profiles || [];
+          next[plugin.name] = normalizeProfileKeys(
+            profiles.map((profile) => profile.profile_key),
+          );
+        });
+        return next;
+      });
+    },
+    [],
+  );
+
+  const openBatchProfileDialog = useCallback(async () => {
+    const requiredPlugins = plugins.filter(requiresProfileSelection);
+    if (requiredPlugins.length === 0) {
+      return false;
+    }
+
+    setBatchProfilePlugins(requiredPlugins);
+    setActiveBatchProfileTab(requiredPlugins[0]?.name || '');
+    setBatchProfileOfficialDeps({});
+    setBatchProfileLoading(true);
+    setIsBatchProfileDialogOpen(true);
+
+    try {
+      const version = selectedVersion || recommendedVersion || '';
+      const entries = await Promise.all(
+        requiredPlugins.map(async (plugin) => {
+          const data = await PluginService.getOfficialDependencies(
+            plugin.name,
+            version || plugin.version,
+          );
+          return [plugin.name, data] as const;
+        }),
+      );
+      const nextMap = Object.fromEntries(entries);
+      setBatchProfileOfficialDeps(nextMap);
+      applyDefaultBatchProfiles(requiredPlugins, nextMap);
+      return true;
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.loadError');
+      toast.error(errorMsg);
+      setIsBatchProfileDialogOpen(false);
+      return false;
+    } finally {
+      setBatchProfileLoading(false);
+    }
+  }, [
+    applyDefaultBatchProfiles,
+    plugins,
+    recommendedVersion,
+    requiresProfileSelection,
+    selectedVersion,
+    t,
+  ]);
+
+  const executeDownloadAllPlugins = useCallback(
+    async (selectedProfiles?: Record<string, string[]>) => {
+      try {
+        setIsDownloadingAll(true);
+        toast.info(t('plugin.downloadAllStarted', {count: total}));
+
+        const result = await PluginService.downloadAllPlugins(
+          selectedVersion,
+          selectedMirror,
+          selectedProfiles,
+        );
+
+        toast.success(
+          t('plugin.downloadAllSuccess', {
+            total: result.total,
+            downloaded: result.downloaded,
+            skipped: result.skipped,
+          }),
+        );
+        void loadLocalPlugins();
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : t('plugin.downloadAllFailed');
+        toast.error(errorMsg);
+      } finally {
+        setIsDownloadingAll(false);
+      }
+    },
+    [loadLocalPlugins, selectedMirror, selectedVersion, t, total],
+  );
+
+  const handleConfirmBatchProfileDownload = useCallback(async () => {
+    const selectedProfiles = batchProfilePlugins.reduce<Record<string, string[]>>(
+      (acc, plugin) => {
+        const keys = normalizeProfileKeys(selectedProfileKeysByPlugin[plugin.name]);
+        if (keys.length > 0) {
+          acc[plugin.name] = keys;
+        }
+        return acc;
+      },
+      {},
+    );
+    setIsBatchProfileDialogOpen(false);
+    await executeDownloadAllPlugins(selectedProfiles);
+  }, [batchProfilePlugins, executeDownloadAllPlugins, selectedProfileKeysByPlugin]);
+
+  const batchProfileDialogIncomplete = useMemo(
+    () =>
+      batchProfilePlugins.some(
+        (plugin) => normalizeProfileKeys(selectedProfileKeysByPlugin[plugin.name]).length === 0,
+      ),
+    [batchProfilePlugins, selectedProfileKeysByPlugin],
+  );
 
   const openInstallDialog = useCallback(
     (
@@ -746,29 +880,12 @@ export function PluginMain() {
    * 处理一键下载所有插件
    */
   const handleDownloadAllPlugins = async () => {
-    try {
-      setIsDownloadingAll(true);
-      toast.info(t('plugin.downloadAllStarted', {count: total}));
-
-      const result = await PluginService.downloadAllPlugins(
-        selectedVersion,
-        selectedMirror,
-      );
-
-      toast.success(
-        t('plugin.downloadAllSuccess', {
-          total: result.total,
-          downloaded: result.downloaded,
-          skipped: result.skipped,
-        }),
-      );
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : t('plugin.downloadAllFailed');
-      toast.error(errorMsg);
-    } finally {
-      setIsDownloadingAll(false);
+    const requiredPlugins = plugins.filter(requiresProfileSelection);
+    if (requiredPlugins.length > 0) {
+      await openBatchProfileDialog();
+      return;
     }
+    await executeDownloadAllPlugins();
   };
 
   // Count plugins by category is no longer needed since all are connectors
@@ -1379,6 +1496,161 @@ export function PluginMain() {
           dependencies={installContext.dependencies}
         />
       )}
+
+      <Dialog
+        open={isBatchProfileDialogOpen}
+        onOpenChange={(next) => {
+          if (batchProfileLoading || isDownloadingAll) {
+            return;
+          }
+          setIsBatchProfileDialogOpen(next);
+        }}
+      >
+        <DialogContent className='sm:max-w-3xl max-h-[85vh] overflow-hidden flex flex-col'>
+          <DialogHeader>
+            <DialogTitle>{t('plugin.downloadAllProfileDialogTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('plugin.downloadAllProfileDialogDescription')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='flex-1 overflow-y-auto pr-1'>
+            {batchProfileLoading ? (
+              <div className='py-8 text-sm text-muted-foreground'>
+                {t('plugin.downloadAllProfileLoading')}
+              </div>
+            ) : batchProfilePlugins.length === 0 ? (
+              <div className='py-8 text-sm text-muted-foreground'>
+                {t('plugin.downloadAllProfileEmpty')}
+              </div>
+            ) : (
+              <Tabs
+                value={activeBatchProfileTab}
+                onValueChange={setActiveBatchProfileTab}
+                className='w-full'
+              >
+                <TabsList className='w-full flex flex-wrap h-auto justify-start'>
+                  {batchProfilePlugins.map((plugin) => (
+                    <TabsTrigger key={plugin.name} value={plugin.name}>
+                      {plugin.display_name || plugin.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {batchProfilePlugins.map((plugin) => {
+                  const officialDeps = batchProfileOfficialDeps[plugin.name];
+                  const profiles = officialDeps?.profiles || [];
+                  const selectedKeys = normalizeProfileKeys(
+                    selectedProfileKeysByPlugin[plugin.name],
+                  );
+
+                  return (
+                    <TabsContent
+                      key={plugin.name}
+                      value={plugin.name}
+                      className='mt-4 space-y-4'
+                    >
+                      <div className='flex items-center justify-between gap-3'>
+                        <div>
+                          <h3 className='font-medium'>
+                            {plugin.display_name || plugin.name}
+                          </h3>
+                          <p className='text-sm text-muted-foreground'>
+                            {t('plugin.downloadAllProfilePluginHint')}
+                          </p>
+                        </div>
+                        <div className='flex items-center gap-2'>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() =>
+                              setSelectedProfileKeysForPlugin(
+                                plugin.name,
+                                profiles.map((profile) => profile.profile_key),
+                              )
+                            }
+                          >
+                            {t('plugin.selectAllProfiles')}
+                          </Button>
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='sm'
+                            onClick={() => setSelectedProfileKeysForPlugin(plugin.name, [])}
+                          >
+                            {t('plugin.clearAllProfiles')}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {profiles.length === 0 ? (
+                        <div className='rounded-md border border-dashed p-4 text-sm text-muted-foreground'>
+                          {t('plugin.downloadAllProfileEmpty')}
+                        </div>
+                      ) : (
+                        <div className='space-y-3'>
+                          {profiles.map((profile) => {
+                            const checked = selectedKeys.includes(profile.profile_key);
+                            return (
+                              <label
+                                key={profile.profile_key}
+                                className='flex items-start gap-3 rounded-md border p-3 cursor-pointer'
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(nextChecked) => {
+                                    const next = new Set(selectedKeys);
+                                    if (nextChecked) {
+                                      next.add(profile.profile_key);
+                                    } else {
+                                      next.delete(profile.profile_key);
+                                    }
+                                    setSelectedProfileKeysForPlugin(
+                                      plugin.name,
+                                      Array.from(next),
+                                    );
+                                  }}
+                                />
+                                <div className='space-y-1'>
+                                  <div className='font-medium'>
+                                    {profile.profile_name || profile.profile_key}
+                                  </div>
+                                  <div className='text-xs text-muted-foreground'>
+                                    {profile.profile_key}
+                                  </div>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => setIsBatchProfileDialogOpen(false)}
+              disabled={batchProfileLoading || isDownloadingAll}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type='button'
+              onClick={() => void handleConfirmBatchProfileDownload()}
+              disabled={batchProfileLoading || batchProfileDialogIncomplete || isDownloadingAll}
+            >
+              {t('plugin.downloadAllProfileConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog / 删除确认对话框 */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

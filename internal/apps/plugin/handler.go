@@ -393,8 +393,9 @@ func (h *Handler) DownloadPlugin(c *gin.Context) {
 // DownloadAllPluginsRequest represents a request to download all plugins.
 // DownloadAllPluginsRequest 表示下载所有插件的请求。
 type DownloadAllPluginsRequest struct {
-	Version string       `json:"version" binding:"required"` // 版本号 / Version
-	Mirror  MirrorSource `json:"mirror,omitempty"`           // 镜像源 / Mirror source
+	Version                string              `json:"version" binding:"required"`                   // 版本号 / Version
+	Mirror                 MirrorSource        `json:"mirror,omitempty"`                             // 镜像源 / Mirror source
+	SelectedPluginProfiles map[string][]string `json:"selected_plugin_profiles,omitempty"`           // 按插件传入的画像选择 / Profile selections keyed by plugin
 }
 
 // DownloadAllPluginsResponse represents the response for downloading all plugins.
@@ -419,7 +420,7 @@ func (h *Handler) DownloadAllPlugins(c *gin.Context) {
 		return
 	}
 
-	progress, err := h.service.DownloadAllPlugins(c.Request.Context(), req.Version, req.Mirror)
+	progress, err := h.service.DownloadAllPlugins(c.Request.Context(), req.Version, req.Mirror, req.SelectedPluginProfiles)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, DownloadAllPluginsResponse{ErrorMsg: err.Error()})
 		return
