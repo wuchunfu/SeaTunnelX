@@ -207,3 +207,53 @@ Implemented end-to-end package chunk upload (backend route/handler/service/tests
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Plugin baseline and release bundle delivery
+
+**Date**: 2026-03-20
+**Task**: Plugin baseline and release bundle delivery
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Description |
+|------|-------------|
+| Plugin baseline | Switched plugin baseline seed to `seatunnel-plugins.json`, added reviewed version metadata, refined JDBC profiles, added batch-download profile selection, and aligned plugin catalog refresh/source behavior. |
+| Upgrade | Added managed `plugins/` sync to upgrade flow and clarified upgrade asset handling/prompting. |
+| Release bundle | Built CentOS 7 compatible SeaTunnelX offline bundle, removed packaged `config.yaml`, generated config at install time, fixed frontend host binding for bad `HOSTNAME`, and documented port overrides. |
+| Temporary delivery endpoints | Added `/api/v1/seatunnelx/install.sh` and `/api/v1/seatunnelx/download`, fixed forwarded host/proto handling, and required account/password auth for bundle download. |
+
+**Verification**:
+- `go test ./internal/apps/plugin/... ./internal/apps/stupgrade/... ./internal/router/...`
+- `cd agent && go test ./cmd ./internal/installer/...`
+- `cd frontend && pnpm lint && pnpm exec tsc --noEmit && pnpm run pack:standalone`
+- Release bundle install/start smoke tests on CentOS7-compatible glibc217 runtime
+- Temporary bundle download endpoint auth + install flow smoke tests
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d454b60` | (see git log) |
+| `4553b8a` | (see git log) |
+| `76940ed` | (see git log) |
+| `a026745` | (see git log) |
+| `bd6499e` | (see git log) |
+| `38100c6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
