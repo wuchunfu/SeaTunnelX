@@ -257,3 +257,51 @@ Implemented end-to-end package chunk upload (backend route/handler/service/tests
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Plugin baseline merged to main
+
+**Date**: 2026-03-20
+**Task**: Plugin baseline merged to main
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Feature | Description |
+|---------|-------------|
+| PR merge | Merged plugin dependency baseline and release bundle work into `main` via PR #15 |
+| Review fix | Added prepared-plugin dependency fingerprint so installer cache invalidates when official deps are disabled or custom deps/uploads change |
+| CI | Triggered `main` CI, fixed missing Apache headers, and verified checks all passed before merge |
+| Branch sync | Synced local `main` to remote merged state and checked remaining unmerged feature branches |
+
+**Updated Areas**:
+- `internal/apps/installer/` prepared plugin cache invalidation
+- `internal/apps/plugin/` official seed loading, dependency baseline, batch download profile handling
+- `internal/apps/releasebundle/` temporary authenticated bundle download/install endpoints
+- `.trellis/workspace/` journal and session index
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `10a5507` | (see git log) |
+| `e4ea436` | (see git log) |
+| `8fa8fc4` | (see git log) |
+| `f42d1d4` | (see git log) |
+| `46620ce` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

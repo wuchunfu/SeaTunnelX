@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-03-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~259 | Active |
+| `journal-1.md` | ~307 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 6 | 2026-03-20 | Plugin baseline merged to main | `10a5507`, `e4ea436`, `8fa8fc4`, `f42d1d4`, `46620ce` |
 | 5 | 2026-03-20 | Plugin baseline and release bundle delivery | `d454b60`, `4553b8a`, `76940ed`, `a026745`, `bd6499e`, `38100c6` |
 | 4 | 2026-03-15 | 完成 diagnostics 中英文切换改造 | `9fca0a9`, `8ddd9f6` |
 | 3 | 2026-03-10 | Chunk upload and cluster config cleanup | `926cfce`, `2bd0f7b`, `4e914f6`, `19cdb76` |
