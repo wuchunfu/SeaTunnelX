@@ -29,8 +29,7 @@ const backendServer =
   apiMode === 'real'
     ? {
         command:
-          'zsh -lc \'source "$HOME/.zshrc" >/dev/null 2>&1 || true; ' +
-          'CONFIG_PATH=../config.e2e.yaml "${GO_BIN:-go}" run .. api\'',
+          'bash -lc \'CONFIG_PATH=../config.e2e.yaml "${GO_BIN:-go}" run .. api\'',
         url: `${backendBaseURL}/api/v1/health`,
         reuseExistingServer: !process.env.CI,
         timeout: 300_000,
