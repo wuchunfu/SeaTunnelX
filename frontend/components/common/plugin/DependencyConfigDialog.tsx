@@ -58,10 +58,14 @@ interface DependencyConfigDialogProps {
   seatunnelVersion?: string;
 }
 
-function parseMavenXml(xml: string): {groupId: string; artifactId: string; version: string} | null {
+function parseMavenXml(
+  xml: string,
+): {groupId: string; artifactId: string; version: string} | null {
   try {
     const groupIdMatch = xml.match(/<groupId>\s*([^<]+)\s*<\/groupId>/);
-    const artifactIdMatch = xml.match(/<artifactId>\s*([^<]+)\s*<\/artifactId>/);
+    const artifactIdMatch = xml.match(
+      /<artifactId>\s*([^<]+)\s*<\/artifactId>/,
+    );
     const versionMatch = xml.match(/<version>\s*([^<]+)\s*<\/version>/);
 
     if (!groupIdMatch || !artifactIdMatch) {
@@ -78,7 +82,10 @@ function parseMavenXml(xml: string): {groupId: string; artifactId: string; versi
   }
 }
 
-function inferJarCoordinates(fileName: string): {artifactId: string; version: string} {
+function inferJarCoordinates(fileName: string): {
+  artifactId: string;
+  version: string;
+} {
   const normalized = fileName.replace(/\.jar$/i, '').trim();
   const match = normalized.match(/^(.*)-([0-9][A-Za-z0-9._+-]*)$/);
   if (!match) {
@@ -110,6 +117,13 @@ function getDependencyFileName(dep: PluginDependencyConfig): string {
   return depVersion ? `${artifact}-${depVersion}.jar` : `${artifact}.jar`;
 }
 
+function buildCustomDependencyActionId(
+  prefix: string,
+  artifactId: string,
+): string {
+  return `${prefix}-${artifactId.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '')}`.toLowerCase();
+}
+
 export function PluginDependencyConfigSection({
   pluginName,
   seatunnelVersion,
@@ -117,7 +131,9 @@ export function PluginDependencyConfigSection({
   onChanged,
 }: PluginDependencyConfigSectionProps) {
   const t = useTranslations();
-  const [dependencies, setDependencies] = useState<PluginDependencyConfig[]>([]);
+  const [dependencies, setDependencies] = useState<PluginDependencyConfig[]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [groupId, setGroupId] = useState('');
@@ -140,7 +156,10 @@ export function PluginDependencyConfigSection({
     }
     setLoading(true);
     try {
-      const deps = await PluginService.listDependencies(pluginName, seatunnelVersion);
+      const deps = await PluginService.listDependencies(
+        pluginName,
+        seatunnelVersion,
+      );
       setDependencies(deps || []);
     } catch (err) {
       console.error('Failed to load dependencies:', err);
@@ -194,7 +213,8 @@ export function PluginDependencyConfigSection({
       resetForms();
       await afterMutation();
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t('plugin.addDependencyFailed');
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.addDependencyFailed');
       toast.error(errorMsg);
     } finally {
       setAdding(false);
@@ -220,7 +240,8 @@ export function PluginDependencyConfigSection({
       resetForms();
       await afterMutation();
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t('plugin.uploadDependencyFailed');
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.uploadDependencyFailed');
       toast.error(errorMsg);
     } finally {
       setUploading(false);
@@ -233,7 +254,8 @@ export function PluginDependencyConfigSection({
       toast.success(t('plugin.deleteDependencySuccess'));
       await afterMutation();
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t('plugin.deleteDependencyFailed');
+      const errorMsg =
+        err instanceof Error ? err.message : t('plugin.deleteDependencyFailed');
       toast.error(errorMsg);
     }
   };
@@ -277,7 +299,10 @@ export function PluginDependencyConfigSection({
     : 'space-y-4';
 
   return (
-    <div className={containerClassName}>
+    <div
+      className={containerClassName}
+      data-testid='plugin-custom-dependencies'
+    >
       <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
         <div>
           <h4 className='font-medium'>{t('plugin.configDependency')}</h4>
@@ -312,6 +337,7 @@ export function PluginDependencyConfigSection({
           </Button>
           <Button
             size='sm'
+            data-testid='plugin-upload-dependency-trigger'
             onClick={() => {
               setShowUploadForm((prev) => !prev);
               setShowAddForm(false);
@@ -348,7 +374,9 @@ export function PluginDependencyConfigSection({
             >
               {t('common.cancel')}
             </Button>
-            <Button onClick={handleParseMavenXml}>{t('plugin.parseAndFill')}</Button>
+            <Button onClick={handleParseMavenXml}>
+              {t('plugin.parseAndFill')}
+            </Button>
           </div>
         </div>
       )}
@@ -356,7 +384,9 @@ export function PluginDependencyConfigSection({
       {showAddForm && (
         <div className='space-y-4 rounded-lg border bg-background p-4'>
           <div>
-            <h5 className='text-sm font-medium'>{t('plugin.addDependencyDesc')}</h5>
+            <h5 className='text-sm font-medium'>
+              {t('plugin.addDependencyDesc')}
+            </h5>
             <p className='mt-1 text-xs text-muted-foreground'>
               {t('plugin.dependenciesDesc')}
             </p>
@@ -395,7 +425,11 @@ export function PluginDependencyConfigSection({
               {t('common.cancel')}
             </Button>
             <Button onClick={handleAddDependency} disabled={adding}>
-              {adding ? <RefreshCw className='mr-2 h-4 w-4 animate-spin' /> : <Plus className='mr-2 h-4 w-4' />}
+              {adding ? (
+                <RefreshCw className='mr-2 h-4 w-4 animate-spin' />
+              ) : (
+                <Plus className='mr-2 h-4 w-4' />
+              )}
               {t('plugin.addDependency')}
             </Button>
           </div>
@@ -403,7 +437,10 @@ export function PluginDependencyConfigSection({
       )}
 
       {showUploadForm && (
-        <div className='space-y-4 rounded-lg border bg-background p-4'>
+        <div
+          className='space-y-4 rounded-lg border bg-background p-4'
+          data-testid='plugin-upload-dependency-form'
+        >
           <div>
             <h5 className='text-sm font-medium'>{t('plugin.uploadJarDesc')}</h5>
             <p className='mt-1 text-xs text-muted-foreground'>
@@ -417,6 +454,7 @@ export function PluginDependencyConfigSection({
                 id='uploadJar'
                 type='file'
                 accept='.jar'
+                data-testid='plugin-upload-jar-input'
                 onChange={(e) => handleSelectFile(e.target.files?.[0] || null)}
               />
             </div>
@@ -458,7 +496,11 @@ export function PluginDependencyConfigSection({
               {t('common.cancel')}
             </Button>
             <Button onClick={handleUploadDependency} disabled={uploading}>
-              {uploading ? <RefreshCw className='mr-2 h-4 w-4 animate-spin' /> : <Upload className='mr-2 h-4 w-4' />}
+              {uploading ? (
+                <RefreshCw className='mr-2 h-4 w-4 animate-spin' />
+              ) : (
+                <Upload className='mr-2 h-4 w-4' />
+              )}
               {t('plugin.uploadJar')}
             </Button>
           </div>
@@ -485,21 +527,39 @@ export function PluginDependencyConfigSection({
                 <TableHead>{t('plugin.version')}</TableHead>
                 <TableHead>{t('plugin.targetDir')}</TableHead>
                 <TableHead>{t('plugin.fileName')}</TableHead>
-                <TableHead className='w-[80px]'>{t('common.actions')}</TableHead>
+                <TableHead className='w-[80px]'>
+                  {t('common.actions')}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {dependencies.map((dep) => (
-                <TableRow key={dep.id}>
+                <TableRow
+                  key={dep.id}
+                  data-testid={buildCustomDependencyActionId(
+                    'plugin-custom-dependency',
+                    dep.artifact_id,
+                  )}
+                >
                   <TableCell>
                     <Badge variant={getSourceBadgeVariant(dep.source_type)}>
-                      {dep.source_type === 'upload' ? t('plugin.sourceUpload') : t('plugin.sourceMaven')}
+                      {dep.source_type === 'upload'
+                        ? t('plugin.sourceUpload')
+                        : t('plugin.sourceMaven')}
                     </Badge>
                   </TableCell>
-                  <TableCell className='font-mono text-xs whitespace-nowrap'>{dep.group_id}</TableCell>
-                  <TableCell className='font-mono text-xs whitespace-nowrap'>{dep.artifact_id}</TableCell>
-                  <TableCell className='font-mono text-xs whitespace-nowrap'>{dep.version}</TableCell>
-                  <TableCell className='font-mono text-xs break-all'>{dep.target_dir}</TableCell>
+                  <TableCell className='font-mono text-xs whitespace-nowrap'>
+                    {dep.group_id}
+                  </TableCell>
+                  <TableCell className='font-mono text-xs whitespace-nowrap'>
+                    {dep.artifact_id}
+                  </TableCell>
+                  <TableCell className='font-mono text-xs whitespace-nowrap'>
+                    {dep.version}
+                  </TableCell>
+                  <TableCell className='font-mono text-xs break-all'>
+                    {dep.target_dir}
+                  </TableCell>
                   <TableCell className='text-xs break-all'>
                     {getDependencyFileName(dep)}
                   </TableCell>
@@ -507,6 +567,11 @@ export function PluginDependencyConfigSection({
                     <Button
                       variant='ghost'
                       size='sm'
+                      aria-label={`${t('common.delete')} ${dep.artifact_id}`}
+                      data-testid={buildCustomDependencyActionId(
+                        'plugin-delete-custom-dependency',
+                        dep.artifact_id,
+                      )}
                       className='text-destructive hover:text-destructive'
                       onClick={() => handleDeleteDependency(dep)}
                     >
@@ -535,8 +600,12 @@ export function DependencyConfigDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-w-4xl'>
         <DialogHeader>
-          <DialogTitle>{t('plugin.configDependency')} - {pluginName}</DialogTitle>
-          <DialogDescription>{t('plugin.configuredDependenciesDesc')}</DialogDescription>
+          <DialogTitle>
+            {t('plugin.configDependency')} - {pluginName}
+          </DialogTitle>
+          <DialogDescription>
+            {t('plugin.configuredDependenciesDesc')}
+          </DialogDescription>
         </DialogHeader>
         <PluginDependencyConfigSection
           pluginName={pluginName}

@@ -57,6 +57,11 @@ app.pid
 frontend-next.pid
 frontend/dist-standalone/
 seatunnelx
+frontend/playwright-report/
+frontend/test-results/
+frontend/.playwright/
+frontend/tmp/
+tmp/e2e/
 
 # downloaded observability dependencies
 deps/grafana-12.3.3/

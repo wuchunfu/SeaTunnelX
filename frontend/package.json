@@ -15,6 +15,17 @@
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:coverage": "vitest --run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:install": "playwright install chromium",
+    "test:e2e:install-wizard-negative": "playwright test e2e/install-wizard-negative.spec.ts",
+    "test:e2e:install-wizard-template": "playwright test e2e/install-wizard-template.spec.ts",
+    "test:e2e:plugin-template": "playwright test e2e/plugin-dependency-template.spec.ts",
+    "test:e2e:real": "E2E_API_MODE=real playwright test",
+    "test:e2e:select": "node ./scripts/e2e/select-e2e-specs.mjs",
+    "test:e2e:mock": "E2E_API_MODE=mock playwright test",
+    "test:e2e:upgrade-prepare-negative": "playwright test e2e/upgrade-prepare-negative.spec.ts",
+    "test:e2e:upgrade-prepare-template": "playwright test e2e/upgrade-prepare-template.spec.ts",
     "lint:fix-staged": "eslint --fix $(git diff --cached --name-only --diff-filter=ACM | grep -E '\\.(js|jsx|ts|tsx)$' | sed 's|^frontend/||' | xargs) "
   },
   "dependencies": {
@@ -75,6 +86,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",

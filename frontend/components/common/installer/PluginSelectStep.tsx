@@ -26,17 +26,29 @@
 'use client';
 
 import {useState, useMemo, useCallback} from 'react';
-import { useTranslations } from 'next-intl';
-import { useAvailablePlugins } from '@/hooks/use-plugin';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { cn } from '@/lib/utils';
+import {useTranslations} from 'next-intl';
+import {useAvailablePlugins} from '@/hooks/use-plugin';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {Input} from '@/components/ui/input';
+import {Button} from '@/components/ui/button';
+import {Badge} from '@/components/ui/badge';
+import {Checkbox} from '@/components/ui/checkbox';
+import {ScrollArea} from '@/components/ui/scroll-area';
+import {Label} from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {cn} from '@/lib/utils';
 import {
   Search,
   Package,
@@ -45,11 +57,10 @@ import {
   CheckCircle2,
   Layers3,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import type { Plugin, MirrorSource } from '@/lib/services/plugin/types';
-import { PluginDetailDialog } from '@/components/common/plugin/PluginDetailDialog';
-import { getPluginDependencyStatusMeta } from '@/components/common/plugin/dependency-status';
-
+import {toast} from 'sonner';
+import type {Plugin, MirrorSource} from '@/lib/services/plugin/types';
+import {PluginDetailDialog} from '@/components/common/plugin/PluginDetailDialog';
+import {getPluginDependencyStatusMeta} from '@/components/common/plugin/dependency-status';
 
 function normalizePluginDescription(description: string): string {
   return description
@@ -93,16 +104,13 @@ export function PluginSelectStep({
   );
 
   const requiresProfileSelection = useCallback(
-    (plugin: Plugin) => plugin.artifact_id === 'connector-jdbc' || plugin.name === 'jdbc',
+    (plugin: Plugin) =>
+      plugin.artifact_id === 'connector-jdbc' || plugin.name === 'jdbc',
     [],
   );
 
   // Fetch available plugins / 获取可用插件
-  const {
-    plugins,
-    loading,
-    error,
-  } = useAvailablePlugins(version, mirror);
+  const {plugins, loading, error} = useAvailablePlugins(version, mirror);
 
   // Filter and search plugins / 过滤和搜索插件
   const filteredPlugins = useMemo(() => {
@@ -113,7 +121,7 @@ export function PluginSelectStep({
         (p) =>
           p.name.toLowerCase().includes(lowerQuery) ||
           p.display_name.toLowerCase().includes(lowerQuery) ||
-          p.description?.toLowerCase().includes(lowerQuery)
+          p.description?.toLowerCase().includes(lowerQuery),
       );
     }
 
@@ -144,11 +152,12 @@ export function PluginSelectStep({
     return (
       <div
         key={plugin.name}
+        data-testid={`install-plugin-card-${plugin.name}`}
         className={cn(
           'relative flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer',
           isSelected
             ? 'border-primary bg-primary/5'
-            : 'border-muted hover:border-muted-foreground/50'
+            : 'border-muted hover:border-muted-foreground/50',
         )}
         onClick={handleToggle}
       >
@@ -156,38 +165,43 @@ export function PluginSelectStep({
         <Checkbox
           checked={isSelected}
           onCheckedChange={() => handleToggle()}
-          className="mt-1"
+          className='mt-1'
         />
 
         {/* Plugin info / 插件信息 */}
-        <div className="flex-1 min-w-0">
-          <div className="mb-1 flex items-center gap-2">
-            <span className="font-medium text-sm truncate">
+        <div className='flex-1 min-w-0'>
+          <div className='mb-1 flex items-center gap-2'>
+            <span className='font-medium text-sm truncate'>
               {plugin.display_name || plugin.name}
             </span>
           </div>
 
-          <p className="text-xs text-muted-foreground line-clamp-2">
-            {(plugin.description ? normalizePluginDescription(plugin.description) : t('plugin.noDescription'))}
+          <p className='text-xs text-muted-foreground line-clamp-2'>
+            {plugin.description
+              ? normalizePluginDescription(plugin.description)
+              : t('plugin.noDescription')}
           </p>
 
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Badge variant="outline" className={cn('text-xs', dependencyMeta.className)}>
+          <div className='mt-2 flex flex-wrap items-center gap-2'>
+            <Badge
+              variant='outline'
+              className={cn('text-xs', dependencyMeta.className)}
+            >
               {dependencyMeta.label}
             </Badge>
             {selectedProfileKeys.length > 0 && (
-              <Badge variant="secondary" className="text-xs">
-                <Layers3 className="mr-1 h-3 w-3" />
+              <Badge variant='secondary' className='text-xs'>
+                <Layers3 className='mr-1 h-3 w-3' />
                 {t('plugin.selectedProfiles')}: {selectedProfileKeys.length}
               </Badge>
             )}
           </div>
           {profileMissing && isSelected ? (
-            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+            <p className='mt-2 text-xs text-amber-600 dark:text-amber-400'>
               {t('plugin.selectProfilesToPreview')}
             </p>
           ) : (
-            <p className="mt-2 text-xs text-muted-foreground line-clamp-2">
+            <p className='mt-2 text-xs text-muted-foreground line-clamp-2'>
               {dependencyMeta.description}
             </p>
           )}
@@ -195,56 +209,59 @@ export function PluginSelectStep({
 
         {/* Info button / 信息按钮 */}
         <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 flex-shrink-0"
+          variant='ghost'
+          size='icon'
+          data-testid={`install-plugin-details-${plugin.name}`}
+          className='h-6 w-6 flex-shrink-0'
           onClick={(e) => {
             e.stopPropagation();
             setDetailPlugin(plugin);
           }}
         >
-          <Info className="h-4 w-4" />
+          <Info className='h-4 w-4' />
         </Button>
       </div>
     );
   };
 
   return (
-    <div className="space-y-4">
+    <div className='space-y-4'>
       {/* Header / 头部 */}
       <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+        <CardHeader className='pb-3'>
+          <div className='flex items-center justify-between'>
             <div>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Package className="h-5 w-5" />
+              <CardTitle className='text-lg flex items-center gap-2'>
+                <Package className='h-5 w-5' />
                 {t('installer.pluginSelection') || 'Plugin Selection'}
               </CardTitle>
               <CardDescription>
-                {t('installer.pluginSelectionDesc') || 'Select plugins to install with SeaTunnel'}
+                {t('installer.pluginSelectionDesc') ||
+                  'Select plugins to install with SeaTunnel'}
               </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                <CheckCircle2 className="h-3 w-3" />
-                {selectedPlugins.length} {t('plugin.selectedCount') || 'selected'}
+            <div className='flex flex-wrap items-center gap-2'>
+              <Badge variant='outline' className='gap-1'>
+                <CheckCircle2 className='h-3 w-3' />
+                {selectedPlugins.length}{' '}
+                {t('plugin.selectedCount') || 'selected'}
               </Badge>
             </div>
           </div>
         </CardHeader>
         <CardContent>
           {/* Search and mirror selection / 搜索与镜像源选择 */}
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className='flex flex-col gap-4 lg:flex-row lg:items-end'>
+            <div className='relative flex-1'>
+              <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
               <Input
                 placeholder={t('plugin.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className='pl-9'
               />
             </div>
-            <div className="space-y-2 lg:w-[220px]">
+            <div className='space-y-2 lg:w-[220px]'>
               <Label>{t('installer.mirrorSource')}</Label>
               <Select
                 value={mirror}
@@ -254,35 +271,41 @@ export function PluginSelectStep({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="aliyun">{t('installer.mirrors.aliyun')}</SelectItem>
-                  <SelectItem value="huaweicloud">{t('installer.mirrors.huaweicloud')}</SelectItem>
-                  <SelectItem value="apache">{t('installer.mirrors.apache')}</SelectItem>
+                  <SelectItem value='aliyun'>
+                    {t('installer.mirrors.aliyun')}
+                  </SelectItem>
+                  <SelectItem value='huaweicloud'>
+                    {t('installer.mirrors.huaweicloud')}
+                  </SelectItem>
+                  <SelectItem value='apache'>
+                    {t('installer.mirrors.apache')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
-      </CardContent>
+        </CardContent>
       </Card>
 
       {/* Plugin list / 插件列表 */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className='pt-6'>
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <div className='flex items-center justify-center py-12'>
+              <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
             </div>
           ) : error ? (
-            <div className="text-center py-12 text-destructive">
+            <div className='text-center py-12 text-destructive'>
               <p>{error}</p>
             </div>
           ) : filteredPlugins.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <div className='text-center py-12 text-muted-foreground'>
+              <Package className='h-12 w-12 mx-auto mb-4 opacity-50' />
               <p>{t('plugin.noPluginsFound')}</p>
             </div>
           ) : (
-            <ScrollArea className="h-[350px] pr-4">
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <ScrollArea className='h-[350px] pr-4'>
+              <div className='grid grid-cols-1 gap-2 md:grid-cols-2'>
                 {filteredPlugins.map(renderPluginCard)}
               </div>
             </ScrollArea>
