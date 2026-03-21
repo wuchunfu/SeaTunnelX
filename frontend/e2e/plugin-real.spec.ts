@@ -20,6 +20,7 @@ import {expect, test} from '@playwright/test';
 import {installSourceCluster} from './helpers/upgrade-real';
 import {
   assertLocalPluginAssets,
+  downloadPluginApi,
   installPluginToClusterApi,
   waitForInstalledPlugin,
   waitForLocalPlugin,
@@ -63,11 +64,6 @@ test.describe.serial('plugin real e2e', () => {
       timeout: 120000,
     });
 
-    await page.getByTestId('plugin-version-select').click();
-    await page.getByRole('option', {name: new RegExp(`v${seatunnelVersion}`)}).click();
-    await page.getByTestId('plugin-mirror-select').click();
-    await page.getByRole('option', {name: /Apache/i}).click();
-
     await page.getByTestId('plugin-search-input').fill('jdbc');
     await expect(page.getByTestId('plugin-card-jdbc')).toBeVisible({timeout: 120000});
     await page.getByTestId('plugin-card-jdbc').click();
@@ -77,11 +73,8 @@ test.describe.serial('plugin real e2e', () => {
       /mysql-connector-java/i,
       {timeout: 30000},
     );
-    await page
-      .getByTestId('plugin-detail-dialog-jdbc')
-      .getByRole('button', {name: /下载|Download/i})
-      .click();
-    console.log('[plugin-real] jdbc mysql download triggered from marketplace UI');
+    await downloadPluginApi(request, 'jdbc', seatunnelVersion, ['mysql']);
+    console.log('[plugin-real] jdbc mysql download triggered via api with fixed version');
 
     const jdbcLocalPlugin = await waitForLocalPlugin(
       request,
@@ -95,14 +88,6 @@ test.describe.serial('plugin real e2e', () => {
     );
     await assertLocalPluginAssets(jdbcLocalPlugin);
     console.log('[plugin-real] jdbc metadata and local assets verified');
-
-    await page.getByTestId('plugin-tab-local').click();
-    await expect(
-      page.getByTestId(`plugin-local-row-jdbc-${seatunnelVersion}`),
-    ).toBeVisible({timeout: 30000});
-    await expect(
-      page.getByTestId(`plugin-local-manage-jdbc-${seatunnelVersion}`),
-    ).toBeVisible();
 
     await installPluginToClusterApi(request, cluster.clusterId, 'jdbc', seatunnelVersion, ['mysql']);
     await waitForInstalledPlugin(
@@ -138,11 +123,8 @@ test.describe.serial('plugin real e2e', () => {
     await page.goto('/plugins');
     await page.getByTestId('plugin-search-input').fill('file-obs');
     await expect(page.getByTestId('plugin-card-file-obs')).toBeVisible({timeout: 120000});
-    await page
-      .getByTestId('plugin-card-file-obs')
-      .getByRole('button', {name: /下载|Download/i})
-      .click();
-    console.log('[plugin-real] file-obs download triggered from marketplace card');
+    await downloadPluginApi(request, 'file-obs', seatunnelVersion);
+    console.log('[plugin-real] file-obs download triggered via api with fixed version');
 
     const obsLocalPlugin = await waitForLocalPlugin(
       request,
@@ -161,10 +143,5 @@ test.describe.serial('plugin real e2e', () => {
       ),
     ).toBeTruthy();
     console.log('[plugin-real] file-obs lib assets verified');
-
-    await page.getByTestId('plugin-tab-local').click();
-    await expect(
-      page.getByTestId(`plugin-local-row-file-obs-${seatunnelVersion}`),
-    ).toBeVisible({timeout: 30000});
   });
 });

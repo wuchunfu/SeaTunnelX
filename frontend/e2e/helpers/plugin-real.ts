@@ -141,6 +141,27 @@ export async function installPluginToClusterApi(
   expect(payload.error_msg ?? '').toBe('');
 }
 
+export async function downloadPluginApi(
+  request: APIRequestContext,
+  pluginName: string,
+  version: string,
+  profileKeys?: string[],
+): Promise<void> {
+  const response = await request.post(
+    `${backendBaseURL}/api/v1/plugins/${pluginName}/download`,
+    {
+      data: {
+        version,
+        mirror: 'apache',
+        profile_keys: profileKeys,
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json()) as ErrorResponse;
+  expect(payload.error_msg ?? '').toBe('');
+}
+
 export async function waitForInstalledPlugin(
   request: APIRequestContext,
   clusterId: number,
