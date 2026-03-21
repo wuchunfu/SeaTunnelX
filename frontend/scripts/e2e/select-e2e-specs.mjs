@@ -34,6 +34,10 @@ const allSpecs = [
   'e2e/upgrade-prepare-negative.spec.ts',
 ];
 
+const smokeExcludedSpecs = new Set([
+  'e2e/install-wizard-real.spec.ts',
+]);
+
 const globalPatterns = [
   /^frontend\/playwright\.config\.ts$/,
   /^frontend\/package\.json$/,
@@ -176,7 +180,8 @@ function matchesAnyPattern(file, patterns) {
 function normalizeExplicitSpecs(changedFiles) {
   return changedFiles
     .filter((file) => /^frontend\/e2e\/.+\.spec\.ts$/.test(file))
-    .map((file) => file.replace(/^frontend\//, ''));
+    .map((file) => file.replace(/^frontend\//, ''))
+    .filter((file) => !smokeExcludedSpecs.has(file));
 }
 
 function unique(items) {
