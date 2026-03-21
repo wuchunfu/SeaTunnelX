@@ -38,6 +38,7 @@ const smokeExcludedSpecs = new Set([
   'e2e/install-wizard-real.spec.ts',
   'e2e/config-real.spec.ts',
   'e2e/upgrade-real.spec.ts',
+  'e2e/plugin-real.spec.ts',
 ]);
 
 const globalPatterns = [

@@ -199,7 +199,10 @@ export function ClusterPlugins({clusterId}: ClusterPluginsProps) {
                 {plugins.map((plugin) => {
                   const isOperating = operating === plugin.plugin_name;
                   return (
-                    <TableRow key={plugin.id}>
+                    <TableRow
+                      key={plugin.id}
+                      data-testid={`cluster-plugin-row-${plugin.plugin_name}-${plugin.version}`}
+                    >
                       <TableCell className="font-medium">{plugin.plugin_name}</TableCell>
                       <TableCell>
                         {plugin.category ? (
@@ -219,6 +222,7 @@ export function ClusterPlugins({clusterId}: ClusterPluginsProps) {
                           <Button
                             variant="outline"
                             size="sm"
+                            data-testid={`cluster-plugin-view-${plugin.plugin_name}-${plugin.version}`}
                             onClick={() => setDetailPlugin(plugin)}
                           >
                             <Eye className="h-4 w-4 mr-1" />
@@ -324,7 +328,10 @@ function InstalledPluginDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] sm:max-w-[980px] lg:max-w-[1100px] max-h-[90vh]">
+      <DialogContent
+        data-testid={`cluster-plugin-detail-dialog-${plugin?.plugin_name || 'empty'}`}
+        className="w-[96vw] sm:max-w-[980px] lg:max-w-[1100px] max-h-[90vh]"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Puzzle className="h-5 w-5" />

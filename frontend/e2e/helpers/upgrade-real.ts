@@ -164,9 +164,9 @@ export async function installSourceCluster(
           job_log_mode: 'per_job',
         },
         jvm: {
-          hybrid_heap_size: 2,
-          master_heap_size: 2,
-          worker_heap_size: 2,
+          hybrid_heap_size: 1,
+          master_heap_size: 1,
+          worker_heap_size: 1,
         },
         checkpoint: {
           storage_type: 'LOCAL_FILE',
@@ -238,9 +238,9 @@ export async function installSourceCluster(
         scheduled_deletion_enable: true,
         job_log_mode: 'per_job',
         jvm: {
-          hybrid_heap_size: 2,
-          master_heap_size: 2,
-          worker_heap_size: 2,
+          hybrid_heap_size: 1,
+          master_heap_size: 1,
+          worker_heap_size: 1,
         },
         checkpoint: {
           storage_type: 'LOCAL_FILE',

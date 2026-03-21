@@ -550,6 +550,7 @@ export function ConfigStep({
                 <div className='space-y-2'>
                   <Label>{t('installer.hybridHeapSize')} (GB)</Label>
                   <Input
+                    data-testid='install-jvm-hybrid-heap'
                     type='number'
                     value={config.jvm.hybrid_heap_size}
                     onChange={(e) =>
@@ -568,6 +569,7 @@ export function ConfigStep({
                   <div className='space-y-2'>
                     <Label>{t('installer.masterHeapSize')} (GB)</Label>
                     <Input
+                      data-testid='install-jvm-master-heap'
                       type='number'
                       value={config.jvm.master_heap_size}
                       onChange={(e) =>
@@ -584,6 +586,7 @@ export function ConfigStep({
                   <div className='space-y-2'>
                     <Label>{t('installer.workerHeapSize')} (GB)</Label>
                     <Input
+                      data-testid='install-jvm-worker-heap'
                       type='number'
                       value={config.jvm.worker_heap_size}
                       onChange={(e) =>
