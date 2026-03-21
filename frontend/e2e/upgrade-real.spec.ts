@@ -184,7 +184,7 @@ test.describe.serial('upgrade real e2e', () => {
     await assertFileContains(files.hazelcast, ['enabled: false']);
     await assertFileContains(files.hazelcastClient, [
       'cluster-members:',
-      `- 127.0.0.1:${clusterPort}`,
+      `- ${cluster.hostIP}:${clusterPort}`,
     ]);
     await assertFileContains(files.log4j2, [
       'rootLogger.appenderRef.file.ref = routingAppender',
