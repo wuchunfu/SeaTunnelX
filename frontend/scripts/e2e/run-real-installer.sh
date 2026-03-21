@@ -23,11 +23,20 @@ BASE_TMP_DIR="${ROOT_DIR}/tmp/e2e"
 TMP_DIR=""
 MINIO_NAME="${E2E_INSTALLER_REAL_MINIO_NAME:-stx-installer-real-minio}"
 KEEP_ARTIFACTS="${E2E_INSTALLER_REAL_KEEP_ARTIFACTS:-0}"
+SKIP_LOCAL_CLEANUP="${E2E_INSTALLER_REAL_SKIP_LOCAL_CLEANUP:-}"
 BACKEND_TEMPLATE="${ROOT_DIR}/config.e2e.installer-real.yaml"
 AGENT_TEMPLATE="${ROOT_DIR}/config.e2e.agent-real.yaml"
 MINIO_MC_IMAGE="${E2E_INSTALLER_REAL_MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-03-12T17-29-24Z}"
 PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-}"
 PLAYWRIGHT_GREP="${PLAYWRIGHT_GREP:-}"
+
+if [[ -z "${SKIP_LOCAL_CLEANUP}" ]]; then
+  if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    SKIP_LOCAL_CLEANUP="1"
+  else
+    SKIP_LOCAL_CLEANUP="0"
+  fi
+fi
 
 pick_port() {
   local start_port="$1"
@@ -52,8 +61,8 @@ PY
 
 cleanup() {
   docker rm -f "${MINIO_NAME}" >/dev/null 2>&1 || true
-  if [[ -n "${TMP_DIR}" && "${KEEP_ARTIFACTS}" != "1" ]]; then
-    rm -rf "${TMP_DIR}"
+  if [[ -n "${TMP_DIR}" && "${KEEP_ARTIFACTS}" != "1" && "${SKIP_LOCAL_CLEANUP}" != "1" ]]; then
+    rm -rf "${TMP_DIR}" || true
   fi
 }
 
