@@ -123,6 +123,7 @@ const groups = [
 
 function parseArgs(argv) {
   const parsed = {
+    all: false,
     base: '',
     head: 'HEAD',
     githubOutput: '',
@@ -136,6 +137,10 @@ function parseArgs(argv) {
     if (current === '--base' && next) {
       parsed.base = next;
       index += 1;
+      continue;
+    }
+    if (current === '--all') {
+      parsed.all = true;
       continue;
     }
     if (current === '--head' && next) {
@@ -232,16 +237,23 @@ function writeGithubOutputs(outputPath, selection) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (args.changedFiles.length === 0 && !args.base) {
+  if (!args.all && args.changedFiles.length === 0 && !args.base) {
     throw new Error(
-      'Either --base or one or more --changed-file arguments is required.',
+      'Either --all, --base, or one or more --changed-file arguments is required.',
     );
   }
-  const changedFiles =
-    args.changedFiles.length > 0
+  const changedFiles = args.all
+    ? []
+    : args.changedFiles.length > 0
       ? args.changedFiles
       : readChangedFiles(args.base, args.head);
-  const selection = selectSpecs(changedFiles);
+  const selection = args.all
+    ? {
+        mode: 'all',
+        specs: unique([...allSpecs]),
+        matchedGroups: ['global'],
+      }
+    : selectSpecs(changedFiles);
 
   const payload = {
     ...selection,
