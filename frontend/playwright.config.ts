@@ -21,7 +21,9 @@ import {defineConfig, devices} from '@playwright/test';
 const apiMode = process.env.E2E_API_MODE ?? 'real';
 const installerRealMode = process.env.E2E_INSTALLER_REAL === '1';
 const frontendPort = process.env.E2E_FRONTEND_PORT ?? '3000';
-const frontendHost = process.env.E2E_FRONTEND_HOST ?? '127.0.0.1';
+const frontendHost =
+  process.env.E2E_FRONTEND_HOST ??
+  (installerRealMode ? '127.0.0.1' : 'localhost');
 const frontendBaseURL =
   process.env.E2E_FRONTEND_BASE_URL ??
   `http://${frontendHost}:${installerRealMode ? frontendPort : '3000'}`;
