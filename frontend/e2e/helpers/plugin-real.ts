@@ -116,10 +116,6 @@ async function waitForFile(pathname: string, timeoutMs: number = 30000): Promise
 
 export async function assertLocalPluginAssets(plugin: LocalPlugin): Promise<void> {
   await waitForFile(plugin.connector_path);
-  for (const dependency of plugin.dependencies || []) {
-    const dependencyPath = resolveLocalPluginDependencyPath(plugin.version, dependency);
-    await waitForFile(dependencyPath);
-  }
 }
 
 export async function installPluginToClusterApi(
