@@ -1202,33 +1202,69 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           className='space-y-4'
         >
           <TabsList className='h-auto w-full flex-wrap justify-start gap-1 rounded-xl p-1'>
-            <TabsTrigger value='nodes' className='flex-none px-3'>
+            <TabsTrigger
+              value='nodes'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-nodes'
+            >
               {t('cluster.detailTabs.nodes')}
             </TabsTrigger>
-            <TabsTrigger value='storage' className='flex-none px-3'>
+            <TabsTrigger
+              value='storage'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-storage'
+            >
               {t('cluster.detailTabs.storage')}
             </TabsTrigger>
-            <TabsTrigger value='monitoring' className='flex-none px-3'>
+            <TabsTrigger
+              value='monitoring'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-monitoring'
+            >
               {t('cluster.detailTabs.monitoring')}
             </TabsTrigger>
             {webUINode && (
-              <TabsTrigger value='webui' className='flex-none px-3'>
+              <TabsTrigger
+                value='webui'
+                className='flex-none px-3'
+                data-testid='cluster-detail-tab-webui'
+              >
                 {t('cluster.detailTabs.webui')}
               </TabsTrigger>
             )}
-            <TabsTrigger value='overview' className='flex-none px-3'>
+            <TabsTrigger
+              value='overview'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-overview'
+            >
               {t('cluster.detailTabs.overview')}
             </TabsTrigger>
-            <TabsTrigger value='plugins' className='flex-none px-3'>
+            <TabsTrigger
+              value='plugins'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-plugins'
+            >
               {t('cluster.detailTabs.plugins')}
             </TabsTrigger>
-            <TabsTrigger value='configs' className='flex-none px-3'>
+            <TabsTrigger
+              value='configs'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-configs'
+            >
               {t('cluster.detailTabs.configs')}
             </TabsTrigger>
-            <TabsTrigger value='diagnostics' className='flex-none px-3'>
+            <TabsTrigger
+              value='diagnostics'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-diagnostics'
+            >
               {t('cluster.detailTabs.diagnostics')}
             </TabsTrigger>
-            <TabsTrigger value='upgrades' className='flex-none px-3'>
+            <TabsTrigger
+              value='upgrades'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-upgrades'
+            >
               {t('cluster.detailTabs.upgrades')}
             </TabsTrigger>
           </TabsList>

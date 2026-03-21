@@ -330,7 +330,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
   };
 
   return (
-    <Card>
+    <Card data-testid="cluster-configs-root">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Settings className="h-5 w-5" />
@@ -338,14 +338,14 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
         </CardTitle>
         <div className="flex items-center gap-2">
           <Select value={selectedConfigType} onValueChange={(v) => setSelectedConfigType(v as ConfigType)}>
-            <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-[200px]" data-testid="cluster-configs-type-select"><SelectValue /></SelectTrigger>
             <SelectContent>
               {availableConfigTypes.map((type) => (
                 <SelectItem key={type} value={type}>{ConfigTypeNames[type]}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={handleOpenInitDialog} disabled={loading || nodes.length === 0}>
+          <Button variant="outline" size="sm" onClick={handleOpenInitDialog} disabled={loading || nodes.length === 0} data-testid="cluster-configs-init-button">
             <FolderSync className="h-4 w-4 mr-1" />
             {t('config.initFromNode')}
           </Button>
@@ -374,10 +374,10 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
         ) : (
           <Tabs defaultValue="template" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="template" className="flex items-center gap-2">
+              <TabsTrigger value="template" className="flex items-center gap-2" data-testid="cluster-configs-tab-template">
                 <FileText className="h-4 w-4" />{t('config.clusterTemplate')}
               </TabsTrigger>
-              <TabsTrigger value="nodes" className="flex items-center gap-2">
+              <TabsTrigger value="nodes" className="flex items-center gap-2" data-testid="cluster-configs-tab-nodes">
                 <Server className="h-4 w-4" />{t('config.nodeConfigs')}
                 {nodeConfigs.length > 0 && <Badge variant="secondary" className="ml-1">{nodeConfigs.length}</Badge>}
               </TabsTrigger>
@@ -388,11 +388,11 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                 <p className="mt-1">{t('config.templateSectionDesc')}</p>
               </div>
               {templateConfig && mismatchedNodeCount > 0 && (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200" data-testid="cluster-configs-pending-sync">
                   <p className="font-medium">{t('config.pendingSyncTitle', {count: mismatchedNodeCount})}</p>
                   <p className="mt-1">{t('config.pendingSyncDesc')}</p>
                   <div className="mt-3">
-                    <Button variant="outline" size="sm" onClick={handleSyncToAllNodes} disabled={syncAllLoading}>
+                    <Button variant="outline" size="sm" onClick={handleSyncToAllNodes} disabled={syncAllLoading} data-testid="cluster-configs-template-sync-all-banner">
                       {syncAllLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                       {t('config.syncToAllNodes')}
                     </Button>
@@ -410,7 +410,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                     <div className="flex gap-1">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(templateConfig)}>
+                          <Button variant="outline" size="sm" onClick={() => handleEdit(templateConfig)} data-testid="cluster-configs-template-edit">
                             <Edit className="h-4 w-4 mr-1" />{t('common.edit')}
                           </Button>
                         </TooltipTrigger>
@@ -418,7 +418,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={() => handleViewVersions(templateConfig)}>
+                          <Button variant="outline" size="sm" onClick={() => handleViewVersions(templateConfig)} data-testid="cluster-configs-template-versions">
                             <History className="h-4 w-4 mr-1" />{t('config.versions')}
                           </Button>
                         </TooltipTrigger>
@@ -426,7 +426,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button variant="outline" size="sm" onClick={handleSyncToAllNodes} disabled={syncAllLoading || nodeConfigs.length === 0}>
+                          <Button variant="outline" size="sm" onClick={handleSyncToAllNodes} disabled={syncAllLoading || nodeConfigs.length === 0} data-testid="cluster-configs-template-sync-all">
                             {syncAllLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
                             {t('config.syncToAllNodes')}
                           </Button>
@@ -435,7 +435,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                       </Tooltip>
                     </div>
                   </div>
-                  <pre className="p-3 bg-muted rounded-md text-xs font-mono max-h-[300px] overflow-auto">{templateConfig.content}</pre>
+                  <pre className="p-3 bg-muted rounded-md text-xs font-mono max-h-[300px] overflow-auto" data-testid="cluster-configs-template-content">{templateConfig.content}</pre>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground py-4 text-center">{t('config.noTemplate')}</p>
@@ -467,16 +467,16 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                         <div className="flex flex-wrap justify-end gap-2">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="outline" size="sm" onClick={() => handleEdit(config)}>
-                                <Edit className="h-4 w-4 mr-1" />
-                                {t('common.edit')}
-                              </Button>
+                                  <Button variant="outline" size="sm" onClick={() => handleEdit(config)} data-testid={`cluster-configs-node-edit-${config.id}`}>
+                                    <Edit className="h-4 w-4 mr-1" />
+                                    {t('common.edit')}
+                                  </Button>
                             </TooltipTrigger>
                             <TooltipContent>{t('config.editNodeHint')}</TooltipContent>
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="outline" size="sm" onClick={() => handleViewVersions(config)}>
+                              <Button variant="outline" size="sm" onClick={() => handleViewVersions(config)} data-testid={`cluster-configs-node-versions-${config.id}`}>
                                 <History className="h-4 w-4 mr-1" />
                                 {t('config.versions')}
                               </Button>
@@ -487,7 +487,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                             <>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="outline" size="sm" onClick={() => handlePromote(config)}>
+                                  <Button variant="outline" size="sm" onClick={() => handlePromote(config)} data-testid={`cluster-configs-node-promote-${config.id}`}>
                                     <Upload className="h-4 w-4 mr-1" />
                                     {t('config.promoteToCluster')}
                                   </Button>
@@ -496,7 +496,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                               </Tooltip>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button variant="outline" size="sm" onClick={() => handleSyncFromTemplate(config)}>
+                                  <Button variant="outline" size="sm" onClick={() => handleSyncFromTemplate(config)} data-testid={`cluster-configs-node-sync-${config.id}`}>
                                     <Download className="h-4 w-4 mr-1" />
                                     {t('config.syncFromTemplate')}
                                   </Button>
@@ -535,6 +535,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                         key={node.id}
                         type="button"
                         onClick={() => setSelectedNodeId(String(node.id))}
+                        data-testid={`cluster-configs-init-node-${node.id}`}
                         className={`w-full rounded-md border p-3 text-left transition-colors ${
                           selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
                         }`}
@@ -571,7 +572,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInitDialogOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={handleInitConfigs} disabled={initLoading || !selectedNodeId}>
+            <Button onClick={handleInitConfigs} disabled={initLoading || !selectedNodeId} data-testid="cluster-configs-init-confirm">
               {initLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               {t('config.initConfirm')}
             </Button>
@@ -583,6 +584,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent
           className="!max-w-5xl max-h-[90vh]"
+          data-testid="cluster-configs-edit-dialog"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             window.requestAnimationFrame(() => {
@@ -619,6 +621,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                     size="sm"
                     onClick={handleSmartRepair}
                     disabled={repairing || saving}
+                    data-testid="cluster-configs-smart-repair"
                   >
                     {repairing ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -634,6 +637,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 className="font-mono text-sm h-[500px]"
+                data-testid="cluster-configs-edit-content"
               />
               {isYamlConfigType(editingConfig?.config_type) && (
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -649,12 +653,12 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>{t('common.cancel')}</Button>
             {editingConfig?.is_template && (
-              <Button variant="outline" onClick={() => handleSave(false)} disabled={saving}>
+              <Button variant="outline" onClick={() => handleSave(false)} disabled={saving} data-testid="cluster-configs-save-only">
                 {saving && saveMode === 'save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {t('config.saveOnly')}
               </Button>
             )}
-            <Button onClick={() => handleSave(editingConfig?.is_template)} disabled={saving}>
+            <Button onClick={() => handleSave(editingConfig?.is_template)} disabled={saving} data-testid="cluster-configs-save-primary">
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingConfig?.is_template ? t('config.saveAndSync') : t('common.save')}
             </Button>
@@ -664,7 +668,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
 
       {/* Version History Dialog */}
       <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>
-        <DialogContent className="w-[96vw] sm:max-w-7xl max-h-[90vh]">
+        <DialogContent className="w-[96vw] sm:max-w-7xl max-h-[90vh]" data-testid="cluster-configs-versions-dialog">
           <DialogHeader>
             <DialogTitle>{t('config.versionHistory')}</DialogTitle>
             <DialogDescription>{versionConfig?.is_template ? t('config.clusterTemplate') : versionConfig?.host_name}</DialogDescription>
@@ -694,16 +698,16 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                             {version.comment || t('config.noComment')}
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <Button variant="outline" size="sm" onClick={() => handlePreviewVersion(version.id)}>
+                            <Button variant="outline" size="sm" onClick={() => handlePreviewVersion(version.id)} data-testid={`cluster-configs-version-preview-${version.id}`}>
                               <Eye className="h-4 w-4 mr-1" />
                               {t('config.preview')}
                             </Button>
-                            <Button variant="outline" size="sm" onClick={() => handleCompareVersion(version.id)} disabled={isCurrent}>
+                            <Button variant="outline" size="sm" onClick={() => handleCompareVersion(version.id)} disabled={isCurrent} data-testid={`cluster-configs-version-compare-${version.id}`}>
                               <GitCompareArrows className="h-4 w-4 mr-1" />
                               {t('config.compareWithCurrent')}
                             </Button>
                             {!isCurrent && (
-                              <Button variant="outline" size="sm" onClick={() => handleRollback(version.version)}>
+                              <Button variant="outline" size="sm" onClick={() => handleRollback(version.version)} data-testid={`cluster-configs-version-rollback-${version.id}`}>
                                 {t('config.rollback')}
                               </Button>
                             )}
@@ -741,7 +745,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                         </div>
                         <TabsContent value="preview" className="mt-0 min-h-0 flex-1">
                           <ScrollArea className="h-full">
-                            <pre className="min-h-full whitespace-pre-wrap break-all p-4 text-xs font-mono">
+                            <pre className="min-h-full whitespace-pre-wrap break-all p-4 text-xs font-mono" data-testid="cluster-configs-version-preview-content">
                               {selectedVersion.content}
                             </pre>
                           </ScrollArea>
@@ -761,7 +765,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
                                   {t('config.versionLabel', {version: selectedVersion.version})}
                                 </div>
                               </div>
-                              <ScrollArea className="h-full">
+                              <ScrollArea className="h-full" data-testid="cluster-configs-version-compare-content">
                                 <div className="grid min-w-[920px] grid-cols-2 text-xs font-mono">
                                   <div className="border-r">
                                     {diffRows.map((row, index) => (
