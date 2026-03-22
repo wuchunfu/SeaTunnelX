@@ -1417,7 +1417,7 @@
       "description": "Show optional history cleanup and slot scheduling settings based on the selected SeaTunnel version.",
       "selectVersionHint": "Select a SeaTunnel version before configuring advanced runtime settings.",
       "slotSectionTitle": "Slot Scheduling",
-      "slotSectionDescription": "Dynamic Slot remains the recommended default for most resource-aware elastic allocation scenarios. If you want slot allocation strategy behavior to take effect more completely and predictably, it is usually more suitable with Static Slot.",
+      "slotSectionDescription": "Configure slot mode, slot-allocation-strategy, and insufficient-resource scheduling in one place. Dynamic Slot fits most elastic allocation scenarios, while Static Slot is better when you want clearer resource boundaries and more predictable strategy behavior.",
       "slotMode": "Slot mode",
       "dynamicSlot": "Dynamic Slot (Recommended)",
       "staticSlot": "Static Slot",

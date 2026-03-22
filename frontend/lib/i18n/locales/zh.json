@@ -1417,7 +1417,7 @@
       "description": "根据目标 SeaTunnel 版本显示可选的历史清理与 Slot 调度参数。",
       "selectVersionHint": "请先选择 SeaTunnel 版本后再配置高级运行时参数。",
       "slotSectionTitle": "Slot 调度",
-      "slotSectionDescription": "默认仍推荐动态 Slot，适合大多数按剩余资源弹性分配的场景；如果你希望 Slot 分配策略更完整、更可预期地生效，通常更适用于静态 slot 模式。",
+      "slotSectionDescription": "在这里统一配置 Slot 模式、slot-allocation-strategy 与资源不足时的调度策略。动态 Slot 适合大多数弹性分配场景；静态 Slot 更适合需要明确资源边界和策略行为更可预期的场景。",
       "slotMode": "Slot 模式",
       "dynamicSlot": "动态 Slot（推荐）",
       "staticSlot": "静态 Slot",

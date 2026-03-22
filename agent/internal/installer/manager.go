@@ -1068,14 +1068,17 @@ func (c *CheckpointConfig) Validate() error {
 			return errors.New("namespace is required for LOCAL_FILE storage")
 		}
 	case CheckpointStorageHDFS:
-		if c.Namespace == "" {
-			return errors.New("namespace is required for HDFS storage")
-		}
-		if c.HDFSNameNodeHost == "" {
-			return errors.New("hdfs_namenode_host is required for HDFS storage")
-		}
-		if c.HDFSNameNodePort == 0 {
-			return errors.New("hdfs_namenode_port is required for HDFS storage")
+		if err := validateHDFSStorageConfig(
+			c.Namespace,
+			c.HDFSNameNodeHost,
+			c.HDFSNameNodePort,
+			c.HDFSHAEnabled,
+			c.HDFSNameServices,
+			c.HDFSHANamenodes,
+			c.HDFSNamenodeRPCAddress1,
+			c.HDFSNamenodeRPCAddress2,
+		); err != nil {
+			return err
 		}
 	case CheckpointStorageOSS, CheckpointStorageS3:
 		if c.Namespace == "" {
@@ -1110,23 +1113,17 @@ func (c *IMAPConfig) Validate() error {
 			return errors.New("namespace is required for LOCAL_FILE storage")
 		}
 	case IMAPStorageHDFS:
-		if c.Namespace == "" {
-			return errors.New("namespace is required for HDFS storage")
-		}
-		if c.HDFSHAEnabled {
-			if strings.TrimSpace(c.HDFSNameServices) == "" {
-				return errors.New("hdfs_name_services is required for HDFS HA storage")
-			}
-			if strings.TrimSpace(c.HDFSHANamenodes) == "" {
-				return errors.New("hdfs_ha_namenodes is required for HDFS HA storage")
-			}
-		} else {
-			if c.HDFSNameNodeHost == "" {
-				return errors.New("hdfs_namenode_host is required for HDFS storage")
-			}
-			if c.HDFSNameNodePort == 0 {
-				return errors.New("hdfs_namenode_port is required for HDFS storage")
-			}
+		if err := validateHDFSStorageConfig(
+			c.Namespace,
+			c.HDFSNameNodeHost,
+			c.HDFSNameNodePort,
+			c.HDFSHAEnabled,
+			c.HDFSNameServices,
+			c.HDFSHANamenodes,
+			c.HDFSNamenodeRPCAddress1,
+			c.HDFSNamenodeRPCAddress2,
+		); err != nil {
+			return err
 		}
 	case IMAPStorageOSS, IMAPStorageS3:
 		if c.Namespace == "" {
@@ -1146,6 +1143,39 @@ func (c *IMAPConfig) Validate() error {
 		}
 	default:
 		return fmt.Errorf("unsupported imap storage type: %s", c.StorageType)
+	}
+	return nil
+}
+
+func validateHDFSStorageConfig(
+	namespace string,
+	host string,
+	port int,
+	haEnabled bool,
+	nameServices string,
+	haNamenodes string,
+	rpcAddress1 string,
+	rpcAddress2 string,
+) error {
+	if strings.TrimSpace(namespace) == "" {
+		return errors.New("namespace is required for HDFS storage")
+	}
+	if haEnabled {
+		if strings.TrimSpace(nameServices) == "" {
+			return errors.New("hdfs_name_services is required for HDFS HA storage")
+		}
+		_, err := seatunnelmeta.ResolveHDFSHARPCAddresses(
+			haNamenodes,
+			rpcAddress1,
+			rpcAddress2,
+		)
+		return err
+	}
+	if strings.TrimSpace(host) == "" {
+		return errors.New("hdfs_namenode_host is required for HDFS storage")
+	}
+	if port == 0 {
+		return errors.New("hdfs_namenode_port is required for HDFS storage")
 	}
 	return nil
 }
@@ -1867,22 +1897,24 @@ func (m *InstallerManager) configureCheckpointStorage(params *InstallParams) err
 		pluginConfig["namespace"] = namespace
 
 		// Check if HA mode is enabled / 检查是否启用 HA 模式
-		if params.Checkpoint.HDFSHAEnabled && params.Checkpoint.HDFSNameServices != "" {
+		if params.Checkpoint.HDFSHAEnabled {
+			if strings.TrimSpace(params.Checkpoint.HDFSNameServices) == "" {
+				return fmt.Errorf("%w: hdfs_name_services is required for HDFS HA storage", ErrConfigGenerationFailed)
+			}
+			haEndpoints, err := seatunnelmeta.ResolveHDFSHARPCAddresses(
+				params.Checkpoint.HDFSHANamenodes,
+				params.Checkpoint.HDFSNamenodeRPCAddress1,
+				params.Checkpoint.HDFSNamenodeRPCAddress2,
+			)
+			if err != nil {
+				return fmt.Errorf("%w: %v", ErrConfigGenerationFailed, err)
+			}
 			// HA mode configuration / HA 模式配置
 			pluginConfig["fs.defaultFS"] = fmt.Sprintf("hdfs://%s", params.Checkpoint.HDFSNameServices)
 			pluginConfig["seatunnel.hadoop.dfs.nameservices"] = params.Checkpoint.HDFSNameServices
-
-			if params.Checkpoint.HDFSHANamenodes != "" {
-				pluginConfig[fmt.Sprintf("seatunnel.hadoop.dfs.ha.namenodes.%s", params.Checkpoint.HDFSNameServices)] = params.Checkpoint.HDFSHANamenodes
-
-				// Parse namenodes (e.g., "nn1,nn2") / 解析 namenodes
-				namenodes := strings.Split(params.Checkpoint.HDFSHANamenodes, ",")
-				if len(namenodes) >= 1 && params.Checkpoint.HDFSNamenodeRPCAddress1 != "" {
-					pluginConfig[fmt.Sprintf("seatunnel.hadoop.dfs.namenode.rpc-address.%s.%s", params.Checkpoint.HDFSNameServices, strings.TrimSpace(namenodes[0]))] = params.Checkpoint.HDFSNamenodeRPCAddress1
-				}
-				if len(namenodes) >= 2 && params.Checkpoint.HDFSNamenodeRPCAddress2 != "" {
-					pluginConfig[fmt.Sprintf("seatunnel.hadoop.dfs.namenode.rpc-address.%s.%s", params.Checkpoint.HDFSNameServices, strings.TrimSpace(namenodes[1]))] = params.Checkpoint.HDFSNamenodeRPCAddress2
-				}
+			pluginConfig[fmt.Sprintf("seatunnel.hadoop.dfs.ha.namenodes.%s", params.Checkpoint.HDFSNameServices)] = params.Checkpoint.HDFSHANamenodes
+			for _, endpoint := range haEndpoints {
+				pluginConfig[fmt.Sprintf("seatunnel.hadoop.dfs.namenode.rpc-address.%s.%s", params.Checkpoint.HDFSNameServices, endpoint.Name)] = endpoint.Address
 			}
 
 			// Failover proxy provider / 故障转移代理提供者
@@ -2023,7 +2055,10 @@ func (m *InstallerManager) configureIMAPStorage(params *InstallParams) error {
 				namespace += "/"
 			}
 
-			properties := buildIMAPProperties(params.IMAP, namespace, clusterName)
+			properties, buildErr := buildIMAPProperties(params.IMAP, namespace, clusterName)
+			if buildErr != nil {
+				return fmt.Errorf("%w: failed to build IMAP storage properties: %v", ErrConfigGenerationFailed, buildErr)
+			}
 			setMappingScalarValue(mapStoreNode, "enabled", true)
 			setMappingScalarValue(mapStoreNode, "initial-mode", "EAGER")
 			setMappingScalarValue(mapStoreNode, "factory-class-name", "org.apache.seatunnel.engine.server.persistence.FileMapStoreFactory")
@@ -2078,7 +2113,7 @@ func ensureHazelcastMapStoreNode(root *yaml.Node) (*yaml.Node, *yaml.Node, error
 	return hazelcastNode, mapStoreNode, nil
 }
 
-func buildIMAPProperties(cfg *IMAPConfig, namespace string, clusterName string) map[string]string {
+func buildIMAPProperties(cfg *IMAPConfig, namespace string, clusterName string) (map[string]string, error) {
 	properties := map[string]string{
 		"type":        "hdfs",
 		"namespace":   namespace,
@@ -2091,18 +2126,23 @@ func buildIMAPProperties(cfg *IMAPConfig, namespace string, clusterName string) 
 		properties["fs.defaultFS"] = "file:///"
 	case IMAPStorageHDFS:
 		properties["storage.type"] = "hdfs"
-		if cfg.HDFSHAEnabled && strings.TrimSpace(cfg.HDFSNameServices) != "" {
+		if cfg.HDFSHAEnabled {
+			if strings.TrimSpace(cfg.HDFSNameServices) == "" {
+				return nil, errors.New("hdfs_name_services is required for HDFS HA storage")
+			}
+			haEndpoints, err := seatunnelmeta.ResolveHDFSHARPCAddresses(
+				cfg.HDFSHANamenodes,
+				cfg.HDFSNamenodeRPCAddress1,
+				cfg.HDFSNamenodeRPCAddress2,
+			)
+			if err != nil {
+				return nil, err
+			}
 			properties["fs.defaultFS"] = fmt.Sprintf("hdfs://%s", cfg.HDFSNameServices)
 			properties["seatunnel.hadoop.dfs.nameservices"] = cfg.HDFSNameServices
-			if cfg.HDFSHANamenodes != "" {
-				properties[fmt.Sprintf("seatunnel.hadoop.dfs.ha.namenodes.%s", cfg.HDFSNameServices)] = cfg.HDFSHANamenodes
-				namenodes := strings.Split(cfg.HDFSHANamenodes, ",")
-				if len(namenodes) >= 1 && cfg.HDFSNamenodeRPCAddress1 != "" {
-					properties[fmt.Sprintf("seatunnel.hadoop.dfs.namenode.rpc-address.%s.%s", cfg.HDFSNameServices, strings.TrimSpace(namenodes[0]))] = cfg.HDFSNamenodeRPCAddress1
-				}
-				if len(namenodes) >= 2 && cfg.HDFSNamenodeRPCAddress2 != "" {
-					properties[fmt.Sprintf("seatunnel.hadoop.dfs.namenode.rpc-address.%s.%s", cfg.HDFSNameServices, strings.TrimSpace(namenodes[1]))] = cfg.HDFSNamenodeRPCAddress2
-				}
+			properties[fmt.Sprintf("seatunnel.hadoop.dfs.ha.namenodes.%s", cfg.HDFSNameServices)] = cfg.HDFSHANamenodes
+			for _, endpoint := range haEndpoints {
+				properties[fmt.Sprintf("seatunnel.hadoop.dfs.namenode.rpc-address.%s.%s", cfg.HDFSNameServices, endpoint.Name)] = endpoint.Address
 			}
 			failoverProvider := cfg.HDFSFailoverProxyProvider
 			if failoverProvider == "" {
@@ -2150,7 +2190,7 @@ func buildIMAPProperties(cfg *IMAPConfig, namespace string, clusterName string) 
 		properties["fs.s3a.aws.credentials.provider"] = "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
 	}
 
-	return properties
+	return properties, nil
 }
 
 func (m *InstallerManager) ensureOSSLibraryDependencies(ctx context.Context, installDir string, preferredMirror MirrorSource) error {

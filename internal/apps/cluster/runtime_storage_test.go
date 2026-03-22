@@ -17,7 +17,12 @@
 
 package cluster
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+)
 
 func TestParseCheckpointStorageFromYAMLLocalFile(t *testing.T) {
 	content := `
@@ -154,5 +159,89 @@ func TestRuntimeSpecFromClusterConfigDisabledIMAP(t *testing.T) {
 func TestAsStringNilReturnsEmpty(t *testing.T) {
 	if got := asString(nil); got != "" {
 		t.Fatalf("expected empty string for nil, got %q", got)
+	}
+}
+
+type mockRuntimeStorageAgentSender struct {
+	responses map[string]string
+	commands  []mockAgentCommand
+}
+
+func (m *mockRuntimeStorageAgentSender) SendCommand(ctx context.Context, agentID string, commandType string, params map[string]string) (bool, string, error) {
+	m.commands = append(m.commands, mockAgentCommand{
+		agentID:     agentID,
+		commandType: commandType,
+		params:      params,
+	})
+	return true, m.responses[agentID], nil
+}
+
+func TestFillLocalRuntimeStorageStatsDeduplicatesHosts(t *testing.T) {
+	now := time.Now()
+	hostProvider := NewMockHostProvider()
+	hostProvider.AddHost(&HostInfo{ID: 1, Name: "host-1", AgentID: "agent-1", LastHeartbeat: &now})
+	hostProvider.AddHost(&HostInfo{ID: 2, Name: "host-2", AgentID: "agent-2", LastHeartbeat: &now})
+
+	payload1, err := json.Marshal(map[string]any{
+		"success": true,
+		"message": "ok",
+		"details": map[string]string{
+			"exists":     "true",
+			"path":       "/tmp/runtime",
+			"size_bytes": "100",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal payload1: %v", err)
+	}
+	payload2, err := json.Marshal(map[string]any{
+		"success": true,
+		"message": "ok",
+		"details": map[string]string{
+			"exists":     "true",
+			"path":       "/tmp/runtime",
+			"size_bytes": "200",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal payload2: %v", err)
+	}
+
+	agentSender := &mockRuntimeStorageAgentSender{
+		responses: map[string]string{
+			"agent-1": string(payload1),
+			"agent-2": string(payload2),
+		},
+	}
+
+	svc := &Service{
+		hostProvider:     hostProvider,
+		agentSender:      agentSender,
+		heartbeatTimeout: time.Minute,
+	}
+
+	spec := &RuntimeStorageSpec{
+		Kind:        "imap",
+		Enabled:     true,
+		StorageType: "LOCAL_FILE",
+		Namespace:   "/tmp/runtime",
+	}
+
+	nodes := []*NodeInfo{
+		{ID: 1, HostID: 1, HostName: "host-1", Role: NodeRoleMaster},
+		{ID: 2, HostID: 1, HostName: "host-1", Role: NodeRoleWorker},
+		{ID: 3, HostID: 2, HostName: "host-2", Role: NodeRoleWorker},
+	}
+
+	svc.fillLocalRuntimeStorageStats(context.Background(), nodes, spec)
+
+	if len(spec.Nodes) != 2 {
+		t.Fatalf("expected one runtime storage entry per host, got %d", len(spec.Nodes))
+	}
+	if spec.TotalSizeBytes != 300 {
+		t.Fatalf("expected deduplicated total size 300, got %d", spec.TotalSizeBytes)
+	}
+	if len(agentSender.commands) != 2 {
+		t.Fatalf("expected stat_path to run once per host, got %d commands", len(agentSender.commands))
 	}
 }

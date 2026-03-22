@@ -30,39 +30,39 @@ import (
 // RuntimeStorageDetails summarizes checkpoint and IMAP runtime storage.
 // RuntimeStorageDetails 汇总 checkpoint 与 IMAP 运行时存储信息。
 type RuntimeStorageDetails struct {
-	ClusterID   uint                `json:"cluster_id"`
-	Checkpoint  *RuntimeStorageSpec `json:"checkpoint,omitempty"`
-	IMAP        *RuntimeStorageSpec `json:"imap,omitempty"`
-	ConfigSource string             `json:"config_source,omitempty"`
+	ClusterID    uint                `json:"cluster_id"`
+	Checkpoint   *RuntimeStorageSpec `json:"checkpoint,omitempty"`
+	IMAP         *RuntimeStorageSpec `json:"imap,omitempty"`
+	ConfigSource string              `json:"config_source,omitempty"`
 }
 
 // RuntimeStorageSpec describes one runtime storage area.
 // RuntimeStorageSpec 描述一类运行时存储。
 type RuntimeStorageSpec struct {
-	Kind            string                    `json:"kind"`
-	Enabled         bool                      `json:"enabled"`
-	StorageType     string                    `json:"storage_type"`
-	Namespace       string                    `json:"namespace,omitempty"`
-	Endpoint        string                    `json:"endpoint,omitempty"`
-	Bucket          string                    `json:"bucket,omitempty"`
-	External        bool                      `json:"external"`
-	SizeAvailable   bool                      `json:"size_available"`
-	TotalSizeBytes  int64                     `json:"total_size_bytes"`
-	CleanupSupported bool                     `json:"cleanup_supported"`
-	Warning         string                    `json:"warning,omitempty"`
-	Nodes           []*RuntimeStorageNodeStat `json:"nodes,omitempty"`
+	Kind             string                    `json:"kind"`
+	Enabled          bool                      `json:"enabled"`
+	StorageType      string                    `json:"storage_type"`
+	Namespace        string                    `json:"namespace,omitempty"`
+	Endpoint         string                    `json:"endpoint,omitempty"`
+	Bucket           string                    `json:"bucket,omitempty"`
+	External         bool                      `json:"external"`
+	SizeAvailable    bool                      `json:"size_available"`
+	TotalSizeBytes   int64                     `json:"total_size_bytes"`
+	CleanupSupported bool                      `json:"cleanup_supported"`
+	Warning          string                    `json:"warning,omitempty"`
+	Nodes            []*RuntimeStorageNodeStat `json:"nodes,omitempty"`
 }
 
 // RuntimeStorageNodeStat describes one node's runtime storage usage.
 // RuntimeStorageNodeStat 描述单个节点的运行时存储使用情况。
 type RuntimeStorageNodeStat struct {
-	NodeID     uint   `json:"node_id"`
-	HostID     uint   `json:"host_id"`
-	HostName   string `json:"host_name"`
-	Path       string `json:"path,omitempty"`
-	Exists     bool   `json:"exists"`
-	SizeBytes  int64  `json:"size_bytes"`
-	Message    string `json:"message,omitempty"`
+	NodeID    uint   `json:"node_id"`
+	HostID    uint   `json:"host_id"`
+	HostName  string `json:"host_name"`
+	Path      string `json:"path,omitempty"`
+	Exists    bool   `json:"exists"`
+	SizeBytes int64  `json:"size_bytes"`
+	Message   string `json:"message,omitempty"`
 }
 
 // RuntimeStorageCleanupResult describes a cleanup operation result.
@@ -140,13 +140,14 @@ func (s *Service) CleanupIMAPStorage(ctx context.Context, clusterID uint) (*Runt
 	if err != nil {
 		return nil, err
 	}
+	uniqueNodes := uniqueNodesByHost(nodes)
 	result := &RuntimeStorageCleanupResult{
 		ClusterID: clusterID,
 		Success:   true,
 		Message:   "IMAP cleanup completed",
-		Nodes:     make([]*RuntimeStorageNodeCleanup, 0, len(nodes)),
+		Nodes:     make([]*RuntimeStorageNodeCleanup, 0, len(uniqueNodes)),
 	}
-	for _, node := range nodes {
+	for _, node := range uniqueNodes {
 		if node == nil {
 			continue
 		}
@@ -264,11 +265,12 @@ func (s *Service) fillLocalRuntimeStorageStats(ctx context.Context, nodes []*Nod
 	if spec == nil || !spec.Enabled || !strings.EqualFold(spec.StorageType, "LOCAL_FILE") || s.agentSender == nil {
 		return
 	}
+	uniqueNodes := uniqueNodesByHost(nodes)
 	spec.SizeAvailable = true
 	spec.CleanupSupported = spec.Kind == "imap"
-	spec.Nodes = make([]*RuntimeStorageNodeStat, 0, len(nodes))
+	spec.Nodes = make([]*RuntimeStorageNodeStat, 0, len(uniqueNodes))
 	var total int64
-	for _, node := range nodes {
+	for _, node := range uniqueNodes {
 		if node == nil {
 			continue
 		}
@@ -312,6 +314,22 @@ func (s *Service) fillLocalRuntimeStorageStats(ctx context.Context, nodes []*Nod
 		spec.Nodes = append(spec.Nodes, nodeStat)
 	}
 	spec.TotalSizeBytes = total
+}
+
+func uniqueNodesByHost(nodes []*NodeInfo) []*NodeInfo {
+	unique := make([]*NodeInfo, 0, len(nodes))
+	seenHosts := make(map[uint]struct{}, len(nodes))
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		if _, ok := seenHosts[node.HostID]; ok {
+			continue
+		}
+		seenHosts[node.HostID] = struct{}{}
+		unique = append(unique, node)
+	}
+	return unique
 }
 
 func parseCheckpointStorageFromYAML(content string) *RuntimeStorageSpec {

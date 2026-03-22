@@ -1499,7 +1499,10 @@ func (s *Service) validateCheckpointStorageOnHost(ctx context.Context, host *Hos
 		return s.runPathReadyCheck(ctx, host.AgentID, strings.TrimSpace(cfg.Namespace))
 	case CheckpointStorageHDFS:
 		if cfg.HDFSHAEnabled {
-			return s.validateHDFSHAOnHost(ctx, host.AgentID, cfg.HDFSNamenodeRPCAddress1, cfg.HDFSNamenodeRPCAddress2)
+			if strings.TrimSpace(cfg.HDFSNameServices) == "" {
+				return &RuntimeStorageValidationHostResult{Success: false, Message: "hdfs_name_services is required for HDFS HA storage"}
+			}
+			return s.validateHDFSHAOnHost(ctx, host.AgentID, cfg.HDFSHANamenodes, cfg.HDFSNamenodeRPCAddress1, cfg.HDFSNamenodeRPCAddress2)
 		}
 		return s.runTCPCheck(ctx, host.AgentID, strings.TrimSpace(cfg.HDFSNameNodeHost), cfg.HDFSNameNodePort)
 	case CheckpointStorageOSS, CheckpointStorageS3:
@@ -1524,7 +1527,10 @@ func (s *Service) validateIMAPStorageOnHost(ctx context.Context, host *HostInfo,
 		return s.runPathReadyCheck(ctx, host.AgentID, strings.TrimSpace(cfg.Namespace))
 	case IMAPStorageHDFS:
 		if cfg.HDFSHAEnabled {
-			return s.validateHDFSHAOnHost(ctx, host.AgentID, cfg.HDFSNamenodeRPCAddress1, cfg.HDFSNamenodeRPCAddress2)
+			if strings.TrimSpace(cfg.HDFSNameServices) == "" {
+				return &RuntimeStorageValidationHostResult{Success: false, Message: "hdfs_name_services is required for HDFS HA storage"}
+			}
+			return s.validateHDFSHAOnHost(ctx, host.AgentID, cfg.HDFSHANamenodes, cfg.HDFSNamenodeRPCAddress1, cfg.HDFSNamenodeRPCAddress2)
 		}
 		return s.runTCPCheck(ctx, host.AgentID, strings.TrimSpace(cfg.HDFSNameNodeHost), cfg.HDFSNameNodePort)
 	case IMAPStorageOSS, IMAPStorageS3:
@@ -1534,19 +1540,20 @@ func (s *Service) validateIMAPStorageOnHost(ctx context.Context, host *HostInfo,
 	}
 }
 
-func (s *Service) validateHDFSHAOnHost(ctx context.Context, agentID string, addr1, addr2 string) *RuntimeStorageValidationHostResult {
-	endpoints := []string{strings.TrimSpace(addr1), strings.TrimSpace(addr2)}
+func (s *Service) validateHDFSHAOnHost(ctx context.Context, agentID string, rawNamenodes string, addr1, addr2 string) *RuntimeStorageValidationHostResult {
+	endpoints, err := seatunnel.ResolveHDFSHARPCAddresses(rawNamenodes, addr1, addr2)
+	if err != nil {
+		return &RuntimeStorageValidationHostResult{Success: false, Message: err.Error()}
+	}
 	details := map[string]string{}
 	allSuccess := true
 	messages := make([]string, 0, len(endpoints))
 	for idx, endpoint := range endpoints {
-		if endpoint == "" {
-			continue
-		}
-		host, port := splitHostPortWithDefault(endpoint, 8020)
+		host, port := splitHostPortWithDefault(endpoint.Address, 8020)
 		result := s.runTCPCheck(ctx, agentID, host, port)
 		key := fmt.Sprintf("namenode_%d", idx+1)
-		details[key] = endpoint
+		details[key] = endpoint.Address
+		details[fmt.Sprintf("%s_alias", key)] = endpoint.Name
 		if !result.Success {
 			allSuccess = false
 		}
@@ -1554,9 +1561,6 @@ func (s *Service) validateHDFSHAOnHost(ctx context.Context, agentID string, addr
 		for k, v := range result.Details {
 			details[fmt.Sprintf("%s_%s", key, k)] = v
 		}
-	}
-	if len(messages) == 0 {
-		return &RuntimeStorageValidationHostResult{Success: false, Message: "at least one HDFS HA RPC address is required"}
 	}
 	return &RuntimeStorageValidationHostResult{
 		Success: allSuccess,
