@@ -1,3 +1,20 @@
+<!--
+Licensed to the Apache Software Foundation (ASF) under one or more
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
 ## Context
 
 我们已经把 `tools/seatunnelx-java-proxy` 引入到 SeaTunnelX 仓库，并新增了 `probe-once` CLI 模式。CLI 支持通过 request/response JSON 文件一次性执行 checkpoint 或 IMAP 探测，无需维护常驻 HTTP 服务。

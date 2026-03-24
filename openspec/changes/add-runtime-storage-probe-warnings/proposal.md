@@ -1,3 +1,20 @@
+<!--
+Licensed to the Apache Software Foundation (ASF) under one or more
+contributor license agreements.  See the NOTICE file distributed with
+this work for additional information regarding copyright ownership.
+The ASF licenses this file to You under the Apache License, Version 2.0
+(the "License"); you may not use this file except in compliance with
+the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
 ## Why
 
 SeaTunnelX 目前对 checkpoint 和 IMAP 的“运行时存储校验”仍然只做到本地路径就绪或远端端点可达，无法真实验证凭证、bucket、HDFS/对象存储读写权限是否可用。我们已经引入了 `seatunnelx-java-proxy` 并补齐了 one-shot CLI 能力，但还没有把这条能力接入实际安装链路。
