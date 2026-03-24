@@ -343,12 +343,37 @@ export async function listClusterRuntimeStorage(
   return payload.data!;
 }
 
-function resolveSeatunnelXJavaProxyAssets(version: string) {
-  return {
-    script: path.join(repoRoot, 'scripts', 'seatunnelx-java-proxy.sh'),
-    jar: path.join(repoRoot, 'lib', `seatunnelx-java-proxy-${version}.jar`),
-    home: repoRoot,
-  };
+async function resolveSeatunnelXJavaProxyAssets(version: string) {
+  const script = path.join(repoRoot, 'scripts', 'seatunnelx-java-proxy.sh');
+  const candidates = [
+    path.join(repoRoot, 'lib', `seatunnelx-java-proxy-${version}.jar`),
+    path.join(repoRoot, 'lib', 'seatunnelx-java-proxy.jar'),
+    path.join(
+      repoRoot,
+      'tools',
+      'seatunnelx-java-proxy',
+      'target',
+      `seatunnelx-java-proxy-${version}-2.12.15.jar`,
+    ),
+  ];
+
+  await fs.access(script);
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return {
+        script,
+        jar: candidate,
+        home: repoRoot,
+      };
+    } catch {
+      // try next candidate
+    }
+  }
+
+  throw new Error(
+    `seatunnelx-java-proxy jar not found, checked: ${candidates.join(', ')}`,
+  );
 }
 
 export async function expectSeatunnelXJavaProxyProbeSuccess(options: {
@@ -357,9 +382,7 @@ export async function expectSeatunnelXJavaProxyProbeSuccess(options: {
   kind: 'checkpoint' | 'imap';
   request: Record<string, unknown>;
 }) {
-  const {script, jar, home} = resolveSeatunnelXJavaProxyAssets(options.version);
-  await fs.access(script);
-  await fs.access(jar);
+  const {script, jar, home} = await resolveSeatunnelXJavaProxyAssets(options.version);
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stx-java-proxy-e2e-'));
   const requestFile = path.join(tempDir, `${options.kind}.request.json`);
