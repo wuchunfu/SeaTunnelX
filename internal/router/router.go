@@ -244,7 +244,16 @@ func Serve() {
 				clusterRouter.POST("/:id/stop", clusterHandler.StopCluster)
 				clusterRouter.POST("/:id/restart", clusterHandler.RestartCluster)
 				clusterRouter.GET("/:id/status", clusterHandler.GetClusterStatus)
+				clusterRouter.GET("/:id/seatunnelx-java-proxy/status", clusterHandler.GetSeatunnelXJavaProxyStatus)
+				clusterRouter.POST("/:id/seatunnelx-java-proxy/start", clusterHandler.StartSeatunnelXJavaProxy)
+				clusterRouter.POST("/:id/seatunnelx-java-proxy/stop", clusterHandler.StopSeatunnelXJavaProxy)
+				clusterRouter.POST("/:id/seatunnelx-java-proxy/restart", clusterHandler.RestartSeatunnelXJavaProxy)
 				clusterRouter.GET("/:id/runtime-storage", clusterHandler.GetRuntimeStorage)
+				clusterRouter.POST("/:id/runtime-storage/:kind/validate", clusterHandler.ValidateRuntimeStorage)
+				clusterRouter.POST("/:id/runtime-storage/:kind/list", clusterHandler.ListRuntimeStorage)
+				clusterRouter.POST("/:id/runtime-storage/:kind/preview", clusterHandler.PreviewRuntimeStorage)
+				clusterRouter.POST("/:id/runtime-storage/checkpoint/inspect", clusterHandler.InspectCheckpointRuntimeStorage)
+				clusterRouter.POST("/:id/runtime-storage/imap/inspect", clusterHandler.InspectIMAPRuntimeStorage)
 				clusterRouter.POST("/:id/runtime-storage/imap/cleanup", clusterHandler.CleanupIMAPStorage)
 				clusterRouter.Any("/:id/webui", clusterHandler.ProxyWebUI)
 				clusterRouter.Any("/:id/webui/*proxyPath", clusterHandler.ProxyWebUI)
@@ -471,12 +480,12 @@ func Serve() {
 			// Agent 分发 API（无需认证，供目标主机下载安装）
 			// Agent distribution API (no authentication required, for target hosts to download and install)
 			agentHandler := agent.NewHandler(&agent.HandlerConfig{
-				ControlPlaneAddr:          config.GetExternalURL(),
-				AgentBinaryDir:            "./lib/agent",
-				CapabilityProxyJarPath:    "./lib/seatunnel-capability-proxy-2.3.13.jar",
-				CapabilityProxyScriptPath: "./scripts/seatunnel-capability-proxy.sh",
-				GRPCPort:                  fmt.Sprintf("%d", config.GetGRPCPort()),
-				HeartbeatInterval:         config.Config.GRPC.HeartbeatInterval,
+				ControlPlaneAddr:              config.GetExternalURL(),
+				AgentBinaryDir:                "./lib/agent",
+				SeatunnelXJavaProxyJarPath:    "./lib/seatunnelx-java-proxy-2.3.13.jar",
+				SeatunnelXJavaProxyScriptPath: "./scripts/seatunnelx-java-proxy.sh",
+				GRPCPort:                      fmt.Sprintf("%d", config.GetGRPCPort()),
+				HeartbeatInterval:             config.Config.GRPC.HeartbeatInterval,
 			})
 
 			agentRouter := apiV1Router.Group("/agent")
@@ -493,13 +502,13 @@ func Serve() {
 				// GET /api/v1/agent/download - Download Agent binary
 				agentRouter.GET("/download", agentHandler.DownloadAgent)
 
-				// GET /api/v1/agent/assets/capability-proxy.jar - 下载 capability proxy 薄 jar
-				// GET /api/v1/agent/assets/capability-proxy.jar - Download capability proxy thin jar
-				agentRouter.GET("/assets/capability-proxy.jar", agentHandler.DownloadCapabilityProxyJar)
+				// GET /api/v1/agent/assets/seatunnelx-java-proxy.jar - 下载 seatunnelx-java-proxy 薄 jar
+				// GET /api/v1/agent/assets/seatunnelx-java-proxy.jar - Download seatunnelx-java-proxy thin jar
+				agentRouter.GET("/assets/seatunnelx-java-proxy.jar", agentHandler.DownloadSeatunnelXJavaProxyJar)
 
-				// GET /api/v1/agent/assets/capability-proxy.sh - 下载 capability proxy 启动脚本
-				// GET /api/v1/agent/assets/capability-proxy.sh - Download capability proxy launcher script
-				agentRouter.GET("/assets/capability-proxy.sh", agentHandler.DownloadCapabilityProxyScript)
+				// GET /api/v1/agent/assets/seatunnelx-java-proxy.sh - 下载 seatunnelx-java-proxy 启动脚本
+				// GET /api/v1/agent/assets/seatunnelx-java-proxy.sh - Download seatunnelx-java-proxy launcher script
+				agentRouter.GET("/assets/seatunnelx-java-proxy.sh", agentHandler.DownloadSeatunnelXJavaProxyScript)
 			}
 
 			// SeaTunnelX 离线发布包分发 API（无需认证，供客户机器一键下载安装控制面）。
@@ -1085,7 +1094,7 @@ func (a *agentCommandSenderAdapter) SendCommand(ctx context.Context, agentID str
 // stringToCommandType 将命令类型字符串转换为 pb.CommandType。
 func (a *agentCommandSenderAdapter) stringToCommandType(cmdType string) pb.CommandType {
 	switch cmdType {
-	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "full":
+	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "seatunnelx_java_proxy_probe", "seatunnelx_java_proxy_stat", "seatunnelx_java_proxy_list", "seatunnelx_java_proxy_preview", "seatunnelx_java_proxy_inspect_checkpoint", "seatunnelx_java_proxy_inspect_imap_wal", "full":
 		return pb.CommandType_PRECHECK
 	case "install":
 		return pb.CommandType_INSTALL
@@ -1330,7 +1339,7 @@ func (a *installerAgentManagerAdapter) SendCommand(ctx context.Context, agentID 
 // stringToCommandType 将命令类型字符串转换为 pb.CommandType。
 func (a *installerAgentManagerAdapter) stringToCommandType(cmdType string) pb.CommandType {
 	switch cmdType {
-	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "full":
+	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "seatunnelx_java_proxy_probe", "seatunnelx_java_proxy_stat", "seatunnelx_java_proxy_list", "seatunnelx_java_proxy_preview", "seatunnelx_java_proxy_inspect_checkpoint", "seatunnelx_java_proxy_inspect_imap_wal", "full":
 		return pb.CommandType_PRECHECK
 	case "install":
 		return pb.CommandType_INSTALL
