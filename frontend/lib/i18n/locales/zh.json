@@ -2734,7 +2734,6 @@
       "autoStartTaskLabel": "自动开始执行诊断任务（关闭时仅自动创建任务，不会立即运行）",
       "conditionsLabel": "触发条件",
       "cronExprLabel": "Cron 表达式",
-      "cronEditorLabel": "可视化 Cron 编辑器",
       "cronExprHint": "留空则使用默认值：{defaultExpr}",
       "cronExprInvalid": "Cron 表达式不合法，请输入标准 5 段 Cron 表达式",
       "thresholdLabel": "阈值（默认 {value}）",

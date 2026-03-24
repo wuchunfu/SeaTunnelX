@@ -19,7 +19,6 @@ import {describe, expect, it} from 'vitest';
 import {
   applyConditionTextOverride,
   getCronConditionError,
-  getCronEditorValue,
   normalizeConditionItemsForSave,
   shouldRenderCronExprInput,
   validateCronExpression,
@@ -119,15 +118,5 @@ describe('AutoPolicyConfigPanel helpers', () => {
         template,
       ),
     ).toBe('invalid');
-    expect(
-      getCronEditorValue(
-        {
-          template_code: 'SCHEDULED',
-          enabled: true,
-          cron_expr_override: '* * *',
-        },
-        template,
-      ),
-    ).toBe('0 0 * * *');
   });
 });

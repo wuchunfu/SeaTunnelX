@@ -2734,7 +2734,6 @@
       "autoStartTaskLabel": "Automatically start the diagnostic task after creation (when off, the task is only created and not run immediately)",
       "conditionsLabel": "Trigger Conditions",
       "cronExprLabel": "Cron Expression",
-      "cronEditorLabel": "Visual Cron Editor",
       "cronExprHint": "Leave blank to use the default: {defaultExpr}",
       "cronExprInvalid": "Invalid cron expression. Please enter a standard 5-field cron expression.",
       "thresholdLabel": "Threshold (default {value})",

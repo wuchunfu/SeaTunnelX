@@ -20,7 +20,6 @@
 import {useCallback, useEffect, useState} from 'react';
 import {isValidCron} from 'cron-validator';
 import {Loader2, Plus, Trash2} from 'lucide-react';
-import dynamic from 'next/dynamic';
 import {useTranslations} from 'next-intl';
 import {toast} from 'sonner';
 import services from '@/lib/services';
@@ -58,106 +57,6 @@ interface AutoPolicyConfigPanelProps {
   onOpenChange: (open: boolean) => void;
   clusterOptions: DiagnosticsClusterOption[];
 }
-
-const ReUnixCron = dynamic(
-  () => import('@sbzen/re-cron').then((mod) => mod.ReUnixCron),
-  {ssr: false},
-);
-
-const cronEditorStyles = `
-  .stx-cron-editor {
-    border: 1px solid hsl(var(--border));
-    border-radius: calc(var(--radius) - 2px);
-    background: hsl(var(--background));
-    padding: 0.75rem;
-  }
-
-  .stx-cron-editor .c-host {
-    font-size: 0.875rem;
-  }
-
-  .stx-cron-editor .nav,
-  .stx-cron-editor .nav-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0;
-    margin: 0 0 0.75rem;
-    list-style: none;
-    border-bottom: 1px solid hsl(var(--border));
-  }
-
-  .stx-cron-editor .nav-item {
-    margin: 0;
-  }
-
-  .stx-cron-editor .nav-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 2rem;
-    padding: 0.375rem 0.75rem;
-    border: 1px solid transparent;
-    border-radius: calc(var(--radius) - 4px);
-    background: transparent;
-    color: hsl(var(--muted-foreground));
-    cursor: pointer;
-  }
-
-  .stx-cron-editor .nav-link[aria-selected='true'] {
-    border-color: hsl(var(--border));
-    background: hsl(var(--muted));
-    color: hsl(var(--foreground));
-  }
-
-  .stx-cron-editor .c-tab-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .stx-cron-editor .form-group,
-  .stx-cron-editor .form-inline {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .stx-cron-editor .form-check {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .stx-cron-editor .form-check-input {
-    margin: 0;
-  }
-
-  .stx-cron-editor .form-check-label {
-    line-height: 1.4;
-  }
-
-  .stx-cron-editor .form-control {
-    min-width: 4.5rem;
-    height: 2rem;
-    border: 1px solid hsl(var(--border));
-    border-radius: calc(var(--radius) - 4px);
-    background: hsl(var(--background));
-    padding: 0 0.625rem;
-    color: hsl(var(--foreground));
-  }
-
-  .stx-cron-editor .row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(4rem, 1fr));
-    gap: 0.5rem;
-  }
-
-  .stx-cron-editor .row > div {
-    min-width: 0;
-  }
-`;
 
 export function shouldRenderCronExprInput(
   template: InspectionConditionTemplate,
@@ -213,17 +112,6 @@ export function getCronConditionError(
     return null;
   }
   return validateCronExpression(rawValue) ? null : 'invalid';
-}
-
-export function getCronEditorValue(
-  condition: InspectionConditionItem | undefined,
-  template: InspectionConditionTemplate,
-): string {
-  const rawValue = condition?.cron_expr_override ?? '';
-  if (rawValue.trim() && validateCronExpression(rawValue)) {
-    return rawValue.trim();
-  }
-  return template.default_cron_expr;
 }
 
 export function AutoPolicyConfigPanel({
@@ -523,9 +411,6 @@ export function AutoPolicyConfigPanel({
 
   return (
     <>
-      <style jsx global>
-        {cronEditorStyles}
-      </style>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className='max-w-2xl max-h-[80vh] overflow-y-auto'>
           <DialogHeader>
@@ -839,21 +724,6 @@ export function AutoPolicyConfigPanel({
                                   <Label className='text-xs'>
                                     {t('cronExprLabel')}
                                   </Label>
-                                  <div className='text-xs text-muted-foreground'>
-                                    {t('cronEditorLabel')}
-                                  </div>
-                                  <div className='stx-cron-editor'>
-                                    <ReUnixCron
-                                      value={getCronEditorValue(condition, tpl)}
-                                      onChange={(value: string) =>
-                                        handleConditionTextOverride(
-                                          tpl.code,
-                                          'cron_expr_override',
-                                          value,
-                                        )
-                                      }
-                                    />
-                                  </div>
                                   <Input
                                     type='text'
                                     className='h-8 text-xs font-mono'
