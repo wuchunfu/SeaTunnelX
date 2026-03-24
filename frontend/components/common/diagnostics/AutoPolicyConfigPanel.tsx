@@ -18,7 +18,6 @@
 'use client';
 
 import {useCallback, useEffect, useState} from 'react';
-import {isValidCron} from 'cron-validator';
 import {Loader2, Plus, Trash2} from 'lucide-react';
 import {useTranslations} from 'next-intl';
 import {toast} from 'sonner';
@@ -88,30 +87,6 @@ export function normalizeConditionItemsForSave(
     }
     return {...condition, cron_expr_override: cronExprOverride};
   });
-}
-
-const cronValidationOptions = {
-  alias: true,
-  allowSevenAsSunday: true,
-  allowNthWeekdayOfMonth: true,
-};
-
-export function validateCronExpression(value: string): boolean {
-  return isValidCron(value.trim(), cronValidationOptions);
-}
-
-export function getCronConditionError(
-  condition: InspectionConditionItem | undefined,
-  template: InspectionConditionTemplate,
-): string | null {
-  if (!shouldRenderCronExprInput(template)) {
-    return null;
-  }
-  const rawValue = condition?.cron_expr_override ?? '';
-  if (!rawValue.trim()) {
-    return null;
-  }
-  return validateCronExpression(rawValue) ? null : 'invalid';
 }
 
 export function AutoPolicyConfigPanel({
@@ -289,22 +264,6 @@ export function AutoPolicyConfigPanel({
   const handleSave = useCallback(async () => {
     if (!formName.trim()) {
       toast.error(t('nameRequired'));
-      return;
-    }
-    const invalidScheduledCondition = formConditions.find((condition) => {
-      if (!condition.enabled) {
-        return false;
-      }
-      const template = templates.find(
-        (item) => item.code === condition.template_code,
-      );
-      if (!template) {
-        return false;
-      }
-      return getCronConditionError(condition, template) !== null;
-    });
-    if (invalidScheduledCondition) {
-      toast.error(t('cronExprInvalid'));
       return;
     }
     setSaving(true);
@@ -692,7 +651,6 @@ export function AutoPolicyConfigPanel({
                       const condition = formConditions.find(
                         (c) => c.template_code === tpl.code,
                       );
-                      const cronError = getCronConditionError(condition, tpl);
                       return (
                         <div
                           key={tpl.code}
@@ -729,7 +687,6 @@ export function AutoPolicyConfigPanel({
                                     className='h-8 text-xs font-mono'
                                     placeholder={tpl.default_cron_expr}
                                     value={condition?.cron_expr_override ?? ''}
-                                    aria-invalid={cronError ? true : undefined}
                                     onChange={(e) =>
                                       handleConditionTextOverride(
                                         tpl.code,
@@ -743,11 +700,6 @@ export function AutoPolicyConfigPanel({
                                       defaultExpr: tpl.default_cron_expr,
                                     })}
                                   </div>
-                                  {cronError ? (
-                                    <div className='text-xs text-destructive'>
-                                      {t('cronExprInvalid')}
-                                    </div>
-                                  ) : null}
                                 </div>
                               ) : null}
                               {tpl.default_threshold > 0 ? (

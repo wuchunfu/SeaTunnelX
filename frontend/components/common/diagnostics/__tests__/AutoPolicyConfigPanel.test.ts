@@ -18,10 +18,8 @@
 import {describe, expect, it} from 'vitest';
 import {
   applyConditionTextOverride,
-  getCronConditionError,
   normalizeConditionItemsForSave,
   shouldRenderCronExprInput,
-  validateCronExpression,
 } from '../AutoPolicyConfigPanel';
 
 describe('AutoPolicyConfigPanel helpers', () => {
@@ -94,29 +92,4 @@ describe('AutoPolicyConfigPanel helpers', () => {
     ]);
   });
 
-  it('validates cron expressions and reports invalid manual input', () => {
-    const template = {
-      code: 'SCHEDULED',
-      category: 'schedule',
-      name: 'Scheduled Inspection',
-      description: 'Trigger inspection on schedule',
-      default_threshold: 0,
-      default_window_minutes: 0,
-      default_cron_expr: '0 0 * * *',
-      immediate_on_match: false,
-    } as const;
-
-    expect(validateCronExpression('*/15 * * * *')).toBe(true);
-    expect(validateCronExpression('* * *')).toBe(false);
-    expect(
-      getCronConditionError(
-        {
-          template_code: 'SCHEDULED',
-          enabled: true,
-          cron_expr_override: '* * *',
-        },
-        template,
-      ),
-    ).toBe('invalid');
-  });
 });
