@@ -563,7 +563,11 @@ func Serve() {
 			// Installer SeaTunnel 安装管理
 			// Initialize installer service and handler
 			// 初始化安装服务和处理器
-			installerService := installer.NewService("./lib/packages", nil)
+			// Follow configured packages_dir instead of a hard-coded repo path,
+			// so E2E / tests can preload packages into their isolated storage.
+			// 使用配置中的 packages_dir，而不是硬编码仓库路径，
+			// 这样 E2E / 测试才能在各自隔离目录中预热安装包。
+			installerService := installer.NewService("", nil)
 			// Set host provider for precheck operations
 			// 设置用于预检查操作的主机提供者
 			installerService.SetHostProvider(&hostProviderAdapter{hostService: hostService})
