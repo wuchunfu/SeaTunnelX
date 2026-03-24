@@ -326,21 +326,21 @@ build_agent_binaries() {
   )
 }
 
-build_capability_proxy_jar() {
-  local proxy_project_dir="$ROOT_DIR/tools/seatunnel-capability-proxy"
+build_seatunnelx_java_proxy_jar() {
+  local proxy_project_dir="$ROOT_DIR/tools/seatunnelx-java-proxy"
   local proxy_target_dir="$proxy_project_dir/target"
-  local proxy_out="$BUILD_DIR/seatunnel-capability-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar"
+  local proxy_out="$BUILD_DIR/seatunnelx-java-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar"
 
-  echo "building seatunnel-capability-proxy thin jar ..."
+  echo "building seatunnelx-java-proxy thin jar ..."
   (
     cd "$ROOT_DIR"
     mvn -q -f "$proxy_project_dir/pom.xml" -DskipTests package
   )
 
   local built_proxy_jar
-  built_proxy_jar="$(find "$proxy_target_dir" -maxdepth 1 -type f -name 'seatunnel-capability-proxy-*.jar' ! -name '*-bin.jar' | sort | head -n1)"
+  built_proxy_jar="$(find "$proxy_target_dir" -maxdepth 1 -type f -name 'seatunnelx-java-proxy-*.jar' ! -name '*-bin.jar' | sort | head -n1)"
   if [[ -z "$built_proxy_jar" || ! -f "$built_proxy_jar" ]]; then
-    echo "failed to locate built capability proxy thin jar under $proxy_target_dir"
+    echo "failed to locate built seatunnelx-java-proxy thin jar under $proxy_target_dir"
     exit 1
   fi
 
@@ -348,12 +348,12 @@ build_capability_proxy_jar() {
   CAPABILITY_PROXY_JAR="$proxy_out"
 }
 
-stage_capability_proxy_jars() {
+stage_seatunnelx_java_proxy_jars() {
   local destination_dir="$1"
   mkdir -p "$destination_dir"
 
   if [[ -d "$ROOT_DIR/lib" ]]; then
-    find "$ROOT_DIR/lib" -maxdepth 1 -type f -name 'seatunnel-capability-proxy-*.jar' -print0 | while IFS= read -r -d '' jar_path; do
+    find "$ROOT_DIR/lib" -maxdepth 1 -type f -name 'seatunnelx-java-proxy-*.jar' -print0 | while IFS= read -r -d '' jar_path; do
       cp "$jar_path" "$destination_dir/"
     done
   fi
@@ -362,7 +362,7 @@ stage_capability_proxy_jars() {
 }
 
 build_agent_binaries
-build_capability_proxy_jar
+build_seatunnelx_java_proxy_jar
 for arch in "${ARCHES[@]}"; do
   build_seatunnelx_binary "$arch"
 done
@@ -447,10 +447,10 @@ for arch in "${ARCHES[@]}"; do
     mkdir -p "$pkg_dir/lib/agent" "$pkg_dir/scripts"
     cp "$BUILD_DIR/seatunnelx-agent-linux-amd64" "$pkg_dir/lib/agent/seatunnelx-agent-linux-amd64"
     cp "$BUILD_DIR/seatunnelx-agent-linux-arm64" "$pkg_dir/lib/agent/seatunnelx-agent-linux-arm64"
-    stage_capability_proxy_jars "$pkg_dir/lib"
-    cp "$ROOT_DIR/scripts/seatunnel-capability-proxy.sh" "$pkg_dir/scripts/seatunnel-capability-proxy.sh"
+    stage_seatunnelx_java_proxy_jars "$pkg_dir/lib"
+    cp "$ROOT_DIR/scripts/seatunnelx-java-proxy.sh" "$pkg_dir/scripts/seatunnelx-java-proxy.sh"
     chmod +x "$pkg_dir/lib/agent/seatunnelx-agent-linux-amd64" "$pkg_dir/lib/agent/seatunnelx-agent-linux-arm64"
-    chmod +x "$pkg_dir/scripts/seatunnel-capability-proxy.sh"
+    chmod +x "$pkg_dir/scripts/seatunnelx-java-proxy.sh"
 
     mkdir -p "$pkg_dir/frontend"
     cp -a "$FRONTEND_DIST"/. "$pkg_dir/frontend/"

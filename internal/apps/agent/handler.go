@@ -43,13 +43,13 @@ type Handler struct {
 	// agentBinaryDir 是包含 Agent 二进制文件的目录。
 	agentBinaryDir string
 
-	// capabilityProxyJarPath is the path to the packaged capability proxy thin jar.
-	// capabilityProxyJarPath 是 capability proxy 薄 jar 的打包路径。
-	capabilityProxyJarPath string
+	// seatunnelxJavaProxyJarPath is the path to the packaged seatunnelx-java-proxy thin jar.
+	// seatunnelxJavaProxyJarPath 是 seatunnelx-java-proxy 薄 jar 的打包路径。
+	seatunnelxJavaProxyJarPath string
 
-	// capabilityProxyScriptPath is the path to the packaged capability proxy launcher script.
-	// capabilityProxyScriptPath 是 capability proxy 启动脚本的打包路径。
-	capabilityProxyScriptPath string
+	// seatunnelxJavaProxyScriptPath is the path to the packaged seatunnelx-java-proxy launcher script.
+	// seatunnelxJavaProxyScriptPath 是 seatunnelx-java-proxy 启动脚本的打包路径。
+	seatunnelxJavaProxyScriptPath string
 
 	// grpcPort is the gRPC port for Agent to connect.
 	// grpcPort 是 Agent 连接的 gRPC 端口。
@@ -71,13 +71,13 @@ type HandlerConfig struct {
 	// AgentBinaryDir 是包含 Agent 二进制文件的目录。
 	AgentBinaryDir string
 
-	// CapabilityProxyJarPath is the path to the packaged capability proxy thin jar.
-	// CapabilityProxyJarPath 是 capability proxy 薄 jar 的打包路径。
-	CapabilityProxyJarPath string
+	// SeatunnelXJavaProxyJarPath is the path to the packaged seatunnelx-java-proxy thin jar.
+	// SeatunnelXJavaProxyJarPath 是 seatunnelx-java-proxy 薄 jar 的打包路径。
+	SeatunnelXJavaProxyJarPath string
 
-	// CapabilityProxyScriptPath is the path to the packaged capability proxy launcher script.
-	// CapabilityProxyScriptPath 是 capability proxy 启动脚本的打包路径。
-	CapabilityProxyScriptPath string
+	// SeatunnelXJavaProxyScriptPath is the path to the packaged seatunnelx-java-proxy launcher script.
+	// SeatunnelXJavaProxyScriptPath 是 seatunnelx-java-proxy 启动脚本的打包路径。
+	SeatunnelXJavaProxyScriptPath string
 
 	// GRPCPort is the gRPC port for Agent connections.
 	// GRPCPort 是 Agent 连接的 gRPC 端口。
@@ -103,11 +103,11 @@ func NewHandler(cfg *HandlerConfig) *Handler {
 	if cfg.AgentBinaryDir == "" {
 		cfg.AgentBinaryDir = "./lib/agent"
 	}
-	if cfg.CapabilityProxyJarPath == "" {
-		cfg.CapabilityProxyJarPath = filepath.Join("./lib", seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion))
+	if cfg.SeatunnelXJavaProxyJarPath == "" {
+		cfg.SeatunnelXJavaProxyJarPath = filepath.Join("./lib", seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion))
 	}
-	if cfg.CapabilityProxyScriptPath == "" {
-		cfg.CapabilityProxyScriptPath = filepath.Join("./scripts", seatunnelmeta.CapabilityProxyScriptFileName)
+	if cfg.SeatunnelXJavaProxyScriptPath == "" {
+		cfg.SeatunnelXJavaProxyScriptPath = filepath.Join("./scripts", seatunnelmeta.SeatunnelXJavaProxyScriptFileName)
 	}
 	if cfg.GRPCPort == "" {
 		cfg.GRPCPort = "50051"
@@ -117,12 +117,12 @@ func NewHandler(cfg *HandlerConfig) *Handler {
 	}
 
 	return &Handler{
-		controlPlaneAddr:          cfg.ControlPlaneAddr,
-		agentBinaryDir:            cfg.AgentBinaryDir,
-		capabilityProxyJarPath:    cfg.CapabilityProxyJarPath,
-		capabilityProxyScriptPath: cfg.CapabilityProxyScriptPath,
-		grpcPort:                  cfg.GRPCPort,
-		heartbeatInterval:         cfg.HeartbeatInterval,
+		controlPlaneAddr:              cfg.ControlPlaneAddr,
+		agentBinaryDir:                cfg.AgentBinaryDir,
+		seatunnelxJavaProxyJarPath:    cfg.SeatunnelXJavaProxyJarPath,
+		seatunnelxJavaProxyScriptPath: cfg.SeatunnelXJavaProxyScriptPath,
+		grpcPort:                      cfg.GRPCPort,
+		heartbeatInterval:             cfg.HeartbeatInterval,
 	}
 }
 
@@ -263,10 +263,10 @@ func (h *Handler) DownloadAgent(c *gin.Context) {
 	logger.InfoF(c.Request.Context(), "[Agent] Binary downloaded: %s-%s", osType, arch)
 }
 
-// DownloadCapabilityProxyJar handles GET /api/v1/agent/assets/capability-proxy.jar - downloads the capability proxy thin jar.
-// DownloadCapabilityProxyJar 处理 GET /api/v1/agent/assets/capability-proxy.jar - 下载 capability proxy 薄 jar。
-func (h *Handler) DownloadCapabilityProxyJar(c *gin.Context) {
-	assetPath, downloadName := h.resolveCapabilityProxyJarAsset(c.Query("version"))
+// DownloadSeatunnelXJavaProxyJar handles GET /api/v1/agent/assets/seatunnelx-java-proxy.jar - downloads the seatunnelx-java-proxy thin jar.
+// DownloadSeatunnelXJavaProxyJar 处理 GET /api/v1/agent/assets/seatunnelx-java-proxy.jar - 下载 seatunnelx-java-proxy 薄 jar。
+func (h *Handler) DownloadSeatunnelXJavaProxyJar(c *gin.Context) {
+	assetPath, downloadName := h.resolveSeatunnelXJavaProxyJarAsset(c.Query("version"))
 	h.serveStaticAssetDownload(
 		c,
 		assetPath,
@@ -277,34 +277,34 @@ func (h *Handler) DownloadCapabilityProxyJar(c *gin.Context) {
 	)
 }
 
-// DownloadCapabilityProxyScript handles GET /api/v1/agent/assets/capability-proxy.sh - downloads the capability proxy launcher script.
-// DownloadCapabilityProxyScript 处理 GET /api/v1/agent/assets/capability-proxy.sh - 下载 capability proxy 启动脚本。
-func (h *Handler) DownloadCapabilityProxyScript(c *gin.Context) {
+// DownloadSeatunnelXJavaProxyScript handles GET /api/v1/agent/assets/seatunnelx-java-proxy.sh - downloads the seatunnelx-java-proxy launcher script.
+// DownloadSeatunnelXJavaProxyScript 处理 GET /api/v1/agent/assets/seatunnelx-java-proxy.sh - 下载 seatunnelx-java-proxy 启动脚本。
+func (h *Handler) DownloadSeatunnelXJavaProxyScript(c *gin.Context) {
 	h.serveStaticAssetDownload(
 		c,
-		h.capabilityProxyScriptPath,
-		seatunnelmeta.CapabilityProxyScriptFileName,
+		h.seatunnelxJavaProxyScriptPath,
+		seatunnelmeta.SeatunnelXJavaProxyScriptFileName,
 		"text/x-shellscript; charset=utf-8",
 		"Capability proxy script",
 		"Capability proxy script",
 	)
 }
 
-func (h *Handler) resolveCapabilityProxyJarAsset(version string) (string, string) {
+func (h *Handler) resolveSeatunnelXJavaProxyJarAsset(version string) (string, string) {
 	requestedVersion := strings.TrimSpace(version)
-	if requestedVersion == "" || requestedVersion == seatunnelmeta.DefaultCapabilityProxyVersion {
-		return h.capabilityProxyJarPath, filepath.Base(h.capabilityProxyJarPath)
+	if requestedVersion == "" || requestedVersion == seatunnelmeta.DefaultSeatunnelXJavaProxyVersion {
+		return h.seatunnelxJavaProxyJarPath, filepath.Base(h.seatunnelxJavaProxyJarPath)
 	}
 
 	versionedPath := filepath.Join(
-		filepath.Dir(h.capabilityProxyJarPath),
-		seatunnelmeta.CapabilityProxyJarFileName(requestedVersion),
+		filepath.Dir(h.seatunnelxJavaProxyJarPath),
+		seatunnelmeta.SeatunnelXJavaProxyJarFileName(requestedVersion),
 	)
 	if _, err := os.Stat(versionedPath); err == nil {
 		return versionedPath, filepath.Base(versionedPath)
 	}
 
-	return h.capabilityProxyJarPath, filepath.Base(h.capabilityProxyJarPath)
+	return h.seatunnelxJavaProxyJarPath, filepath.Base(h.seatunnelxJavaProxyJarPath)
 }
 
 func (h *Handler) serveStaticAssetDownload(

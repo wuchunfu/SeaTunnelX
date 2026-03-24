@@ -39,8 +39,8 @@ func setupTestRouter(handler *Handler) *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/agent/install.sh", handler.GetInstallScript)
 	r.GET("/api/v1/agent/download", handler.DownloadAgent)
-	r.GET("/api/v1/agent/assets/capability-proxy.jar", handler.DownloadCapabilityProxyJar)
-	r.GET("/api/v1/agent/assets/capability-proxy.sh", handler.DownloadCapabilityProxyScript)
+	r.GET("/api/v1/agent/assets/seatunnelx-java-proxy.jar", handler.DownloadSeatunnelXJavaProxyJar)
+	r.GET("/api/v1/agent/assets/seatunnelx-java-proxy.sh", handler.DownloadSeatunnelXJavaProxyScript)
 	return r
 }
 
@@ -56,13 +56,13 @@ func TestNewHandler(t *testing.T) {
 	if h.agentBinaryDir != "./lib/agent" {
 		t.Errorf("Expected default binary dir './lib/agent', got '%s'", h.agentBinaryDir)
 	}
-	expectedDefaultJarPath := filepath.Join("./lib", seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion))
-	if h.capabilityProxyJarPath != expectedDefaultJarPath {
-		t.Errorf("Expected default capability proxy jar path %q, got %q", expectedDefaultJarPath, h.capabilityProxyJarPath)
+	expectedDefaultJarPath := filepath.Join("./lib", seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion))
+	if h.seatunnelxJavaProxyJarPath != expectedDefaultJarPath {
+		t.Errorf("Expected default seatunnelx-java-proxy jar path %q, got %q", expectedDefaultJarPath, h.seatunnelxJavaProxyJarPath)
 	}
-	expectedDefaultScriptPath := filepath.Join("./scripts", seatunnelmeta.CapabilityProxyScriptFileName)
-	if h.capabilityProxyScriptPath != expectedDefaultScriptPath {
-		t.Errorf("Expected default capability proxy script path %q, got %q", expectedDefaultScriptPath, h.capabilityProxyScriptPath)
+	expectedDefaultScriptPath := filepath.Join("./scripts", seatunnelmeta.SeatunnelXJavaProxyScriptFileName)
+	if h.seatunnelxJavaProxyScriptPath != expectedDefaultScriptPath {
+		t.Errorf("Expected default seatunnelx-java-proxy script path %q, got %q", expectedDefaultScriptPath, h.seatunnelxJavaProxyScriptPath)
 	}
 	if h.grpcPort != "50051" {
 		t.Errorf("Expected default gRPC port '50051', got '%s'", h.grpcPort)
@@ -71,11 +71,11 @@ func TestNewHandler(t *testing.T) {
 	// Test with custom config
 	// 使用自定义配置测试
 	customConfig := &HandlerConfig{
-		ControlPlaneAddr:          "http://custom-host:8080",
-		AgentBinaryDir:            "/custom/path",
-		CapabilityProxyJarPath:    "/custom/lib/seatunnel-capability-proxy-2.3.13.jar",
-		CapabilityProxyScriptPath: "/custom/scripts/seatunnel-capability-proxy.sh",
-		GRPCPort:                  "50052",
+		ControlPlaneAddr:              "http://custom-host:8080",
+		AgentBinaryDir:                "/custom/path",
+		SeatunnelXJavaProxyJarPath:    "/custom/lib/seatunnelx-java-proxy-2.3.13.jar",
+		SeatunnelXJavaProxyScriptPath: "/custom/scripts/seatunnelx-java-proxy.sh",
+		GRPCPort:                      "50052",
 	}
 	h2 := NewHandler(customConfig)
 	if h2.controlPlaneAddr != "http://custom-host:8080" {
@@ -84,11 +84,11 @@ func TestNewHandler(t *testing.T) {
 	if h2.agentBinaryDir != "/custom/path" {
 		t.Errorf("Expected custom binary dir '/custom/path', got '%s'", h2.agentBinaryDir)
 	}
-	if h2.capabilityProxyJarPath != "/custom/lib/seatunnel-capability-proxy-2.3.13.jar" {
-		t.Errorf("Expected custom capability proxy jar path, got '%s'", h2.capabilityProxyJarPath)
+	if h2.seatunnelxJavaProxyJarPath != "/custom/lib/seatunnelx-java-proxy-2.3.13.jar" {
+		t.Errorf("Expected custom seatunnelx-java-proxy jar path, got '%s'", h2.seatunnelxJavaProxyJarPath)
 	}
-	if h2.capabilityProxyScriptPath != "/custom/scripts/seatunnel-capability-proxy.sh" {
-		t.Errorf("Expected custom capability proxy script path, got '%s'", h2.capabilityProxyScriptPath)
+	if h2.seatunnelxJavaProxyScriptPath != "/custom/scripts/seatunnelx-java-proxy.sh" {
+		t.Errorf("Expected custom seatunnelx-java-proxy script path, got '%s'", h2.seatunnelxJavaProxyScriptPath)
 	}
 	if h2.grpcPort != "50052" {
 		t.Errorf("Expected custom gRPC port '50052', got '%s'", h2.grpcPort)
@@ -175,16 +175,16 @@ func TestGetInstallScript(t *testing.T) {
 		t.Error("Expected script to contain cleanup function")
 	}
 
-	if !strings.Contains(body, "CAPABILITY_PROXY_VERSION=\""+seatunnelmeta.DefaultCapabilityProxyVersion+"\"") {
-		t.Error("Expected script to contain capability proxy version variable")
+	if !strings.Contains(body, "CAPABILITY_PROXY_VERSION=\""+seatunnelmeta.DefaultSeatunnelXJavaProxyVersion+"\"") {
+		t.Error("Expected script to contain seatunnelx-java-proxy version variable")
 	}
 
-	if !strings.Contains(body, "/api/v1/agent/assets/capability-proxy.jar?version=${CAPABILITY_PROXY_VERSION}") {
-		t.Error("Expected script to contain capability proxy jar download URL")
+	if !strings.Contains(body, "/api/v1/agent/assets/seatunnelx-java-proxy.jar?version=${CAPABILITY_PROXY_VERSION}") {
+		t.Error("Expected script to contain seatunnelx-java-proxy jar download URL")
 	}
 
-	if !strings.Contains(body, "/api/v1/agent/assets/capability-proxy.sh") {
-		t.Error("Expected script to contain capability proxy script download URL")
+	if !strings.Contains(body, "/api/v1/agent/assets/seatunnelx-java-proxy.sh") {
+		t.Error("Expected script to contain seatunnelx-java-proxy script download URL")
 	}
 }
 
@@ -372,27 +372,27 @@ func TestDownloadAgentSuccess(t *testing.T) {
 	}
 }
 
-func TestDownloadCapabilityProxyJarSuccess(t *testing.T) {
+func TestDownloadSeatunnelXJavaProxyJarSuccess(t *testing.T) {
 	tempDir := t.TempDir()
-	jarPath := filepath.Join(tempDir, seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion))
+	jarPath := filepath.Join(tempDir, seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion))
 	expectedContent := []byte("proxy-jar")
 	if err := os.WriteFile(jarPath, expectedContent, 0o644); err != nil {
 		t.Fatalf("Failed to create proxy jar: %v", err)
 	}
 
 	handler := NewHandler(&HandlerConfig{
-		CapabilityProxyJarPath: jarPath,
+		SeatunnelXJavaProxyJarPath: jarPath,
 	})
 	router := setupTestRouter(handler)
 
-	req, _ := http.NewRequest("GET", "/api/v1/agent/assets/capability-proxy.jar", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/agent/assets/seatunnelx-java-proxy.jar", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected status 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Header().Get("Content-Disposition"), seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion)) {
+	if !strings.Contains(w.Header().Get("Content-Disposition"), seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion)) {
 		t.Fatalf("Expected jar attachment header, got %q", w.Header().Get("Content-Disposition"))
 	}
 	if w.Body.String() != string(expectedContent) {
@@ -400,27 +400,27 @@ func TestDownloadCapabilityProxyJarSuccess(t *testing.T) {
 	}
 }
 
-func TestDownloadCapabilityProxyJarFallsBackToDefaultVersion(t *testing.T) {
+func TestDownloadSeatunnelXJavaProxyJarFallsBackToDefaultVersion(t *testing.T) {
 	tempDir := t.TempDir()
-	defaultJarPath := filepath.Join(tempDir, seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion))
+	defaultJarPath := filepath.Join(tempDir, seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion))
 	expectedContent := []byte("fallback-jar")
 	if err := os.WriteFile(defaultJarPath, expectedContent, 0o644); err != nil {
 		t.Fatalf("Failed to create default proxy jar: %v", err)
 	}
 
 	handler := NewHandler(&HandlerConfig{
-		CapabilityProxyJarPath: defaultJarPath,
+		SeatunnelXJavaProxyJarPath: defaultJarPath,
 	})
 	router := setupTestRouter(handler)
 
-	req, _ := http.NewRequest("GET", "/api/v1/agent/assets/capability-proxy.jar?version=2.3.99", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/agent/assets/seatunnelx-java-proxy.jar?version=2.3.99", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("Expected status 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Header().Get("Content-Disposition"), seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion)) {
+	if !strings.Contains(w.Header().Get("Content-Disposition"), seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion)) {
 		t.Fatalf("Expected fallback jar attachment header, got %q", w.Header().Get("Content-Disposition"))
 	}
 	if w.Body.String() != string(expectedContent) {
@@ -428,13 +428,13 @@ func TestDownloadCapabilityProxyJarFallsBackToDefaultVersion(t *testing.T) {
 	}
 }
 
-func TestDownloadCapabilityProxyScriptNotFound(t *testing.T) {
+func TestDownloadSeatunnelXJavaProxyScriptNotFound(t *testing.T) {
 	handler := NewHandler(&HandlerConfig{
-		CapabilityProxyScriptPath: filepath.Join(t.TempDir(), "missing-seatunnel-capability-proxy.sh"),
+		SeatunnelXJavaProxyScriptPath: filepath.Join(t.TempDir(), "missing-seatunnelx-java-proxy.sh"),
 	})
 	router := setupTestRouter(handler)
 
-	req, _ := http.NewRequest("GET", "/api/v1/agent/assets/capability-proxy.sh", nil)
+	req, _ := http.NewRequest("GET", "/api/v1/agent/assets/seatunnelx-java-proxy.sh", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

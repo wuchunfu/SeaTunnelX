@@ -2,7 +2,7 @@
 
 ### Requirement: The installer SHALL attempt real runtime storage probes for remote checkpoint and IMAP backends
 
-The system SHALL attempt a real SeaTunnel runtime storage probe for remote checkpoint and IMAP storage backends during installation after the SeaTunnel package has been extracted and before the related configuration step completes. The probe MUST use the `seatunnel-capability-proxy` one-shot CLI and the extracted installation directory as `SEATUNNEL_HOME`.
+The system SHALL attempt a real SeaTunnel runtime storage probe for remote checkpoint and IMAP storage backends during installation after the SeaTunnel package has been extracted and before the related configuration step completes. The probe MUST use the `seatunnelx-java-proxy` one-shot CLI and the extracted installation directory as `SEATUNNEL_HOME`.
 
 #### Scenario: Probe remote checkpoint storage during installation
 
@@ -37,7 +37,7 @@ If the runtime storage probe fails, times out, or cannot be started, the install
 
 #### Scenario: Continue installation when proxy assets are unavailable
 
-- **WHEN** the Agent cannot locate the proxy script or the ordinary capability-proxy jar needed for one-shot execution
+- **WHEN** the Agent cannot locate the proxy script or the ordinary seatunnelx-java-proxy jar needed for one-shot execution
 - **THEN** the installer SHALL skip the runtime probe
 - **AND** the installation SHALL continue with a warning indicating that the real runtime probe was not executed
 
@@ -53,23 +53,23 @@ The installer SHALL preserve warning messages emitted during runtime storage pro
 
 ### Requirement: Capability proxy assets SHALL be distributed with installable artifacts
 
-The system SHALL package the capability proxy thin jar and launcher script with installable SeaTunnelX artifacts and SHALL install them onto target hosts as part of Agent distribution so runtime storage probes do not depend on a local source checkout. The Agent SHALL prefer a jar whose file name matches the SeaTunnel cluster version and SHALL fall back to the packaged `2.3.13` jar when an exact versioned jar is unavailable.
+The system SHALL package the seatunnelx-java-proxy thin jar and launcher script with installable SeaTunnelX artifacts and SHALL install them onto target hosts as part of Agent distribution so runtime storage probes do not depend on a local source checkout. The Agent SHALL prefer a jar whose file name matches the SeaTunnel cluster version and SHALL fall back to the packaged `2.3.13` jar when an exact versioned jar is unavailable.
 
-#### Scenario: Bundle capability proxy assets in the control-plane release package
+#### Scenario: Bundle seatunnelx-java-proxy assets in the control-plane release package
 
 - **WHEN** the control-plane release package is built
-- **THEN** it SHALL include `lib/seatunnel-capability-proxy-2.3.13.jar`
-- **AND** it SHALL include `scripts/seatunnel-capability-proxy.sh`
+- **THEN** it SHALL include `lib/seatunnelx-java-proxy-2.3.13.jar`
+- **AND** it SHALL include `scripts/seatunnelx-java-proxy.sh`
 
-#### Scenario: Install capability proxy assets with the Agent
+#### Scenario: Install seatunnelx-java-proxy assets with the Agent
 
 - **WHEN** an operator runs the generated Agent install script
-- **THEN** the script SHALL download the capability proxy jar and script from the control plane
+- **THEN** the script SHALL download the seatunnelx-java-proxy jar and script from the control plane
 - **AND** it SHALL install them into a fixed local support directory
 - **AND** the Agent process SHALL receive environment variables pointing at the installed support home and launcher script path
 
-#### Scenario: Pick a versioned capability proxy jar with fallback
+#### Scenario: Pick a versioned seatunnelx-java-proxy jar with fallback
 
 - **WHEN** the Agent runs a runtime storage probe for SeaTunnel version `X`
-- **THEN** it SHALL first look for `seatunnel-capability-proxy-X.jar`
-- **AND** if that jar is unavailable it SHALL fall back to `seatunnel-capability-proxy-2.3.13.jar`
+- **THEN** it SHALL first look for `seatunnelx-java-proxy-X.jar`
+- **AND** if that jar is unavailable it SHALL fall back to `seatunnelx-java-proxy-2.3.13.jar`

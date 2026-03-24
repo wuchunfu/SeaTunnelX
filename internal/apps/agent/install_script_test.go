@@ -102,13 +102,13 @@ func TestInstallScriptGenerate(t *testing.T) {
 		"systemctl",
 		"/usr/local/bin",
 		"/etc/seatunnelx-agent",
-		"CAPABILITY_PROXY_VERSION=\"" + seatunnelmeta.DefaultCapabilityProxyVersion + "\"",
-		"/api/v1/agent/assets/capability-proxy.jar?version=${CAPABILITY_PROXY_VERSION}",
-		"/api/v1/agent/assets/capability-proxy.sh",
-		"SEATUNNEL_CAPABILITY_PROXY_HOME",
-		"SEATUNNEL_CAPABILITY_PROXY_SCRIPT",
+		"CAPABILITY_PROXY_VERSION=\"" + seatunnelmeta.DefaultSeatunnelXJavaProxyVersion + "\"",
+		"/api/v1/agent/assets/seatunnelx-java-proxy.jar?version=${CAPABILITY_PROXY_VERSION}",
+		"/api/v1/agent/assets/seatunnelx-java-proxy.sh",
+		"SEATUNNELX_JAVA_PROXY_HOME",
+		"SEATUNNELX_JAVA_PROXY_SCRIPT",
 		"seatunnelx-agent",
-		seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion),
+		seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion),
 	}
 
 	for _, expected := range expectedContents {
@@ -341,9 +341,9 @@ func TestInstallScriptContainsRequirements(t *testing.T) {
 		t.Error("Script missing download functionality (Requirement 2.2)")
 	}
 	if !strings.Contains(script, "download_support_assets") ||
-		!strings.Contains(script, "CAPABILITY_PROXY_VERSION=\""+seatunnelmeta.DefaultCapabilityProxyVersion+"\"") ||
-		!strings.Contains(script, "/api/v1/agent/assets/capability-proxy.jar?version=${CAPABILITY_PROXY_VERSION}") {
-		t.Error("Script missing capability proxy asset download functionality")
+		!strings.Contains(script, "CAPABILITY_PROXY_VERSION=\""+seatunnelmeta.DefaultSeatunnelXJavaProxyVersion+"\"") ||
+		!strings.Contains(script, "/api/v1/agent/assets/seatunnelx-java-proxy.jar?version=${CAPABILITY_PROXY_VERSION}") {
+		t.Error("Script missing seatunnelx-java-proxy asset download functionality")
 	}
 
 	// Requirement 2.3: Install to /usr/local/bin and create config

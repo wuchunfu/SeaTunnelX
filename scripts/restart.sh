@@ -415,19 +415,19 @@ if $DO_BUILD && $RUN_BACKEND; then
     echo "      已同步 agent 到 lib/agent."
   fi
 
-  step=$((step + 1)); echo "[$step/$total] 构建 seatunnel-capability-proxy 薄 jar ..."
+  step=$((step + 1)); echo "[$step/$total] 构建 seatunnelx-java-proxy 薄 jar ..."
   if command -v mvn >/dev/null 2>&1; then
-    mvn -q -f tools/seatunnel-capability-proxy/pom.xml -DskipTests package
-    proxy_jar="$(find tools/seatunnel-capability-proxy/target -maxdepth 1 -type f -name 'seatunnel-capability-proxy-*.jar' ! -name '*-bin.jar' | sort | head -n1)"
+    mvn -q -f tools/seatunnelx-java-proxy/pom.xml -DskipTests package
+    proxy_jar="$(find tools/seatunnelx-java-proxy/target -maxdepth 1 -type f -name 'seatunnelx-java-proxy-*.jar' ! -name '*-bin.jar' | sort | head -n1)"
     if [[ -n "${proxy_jar:-}" && -f "${proxy_jar:-}" ]]; then
       mkdir -p lib
-      cp -f "$proxy_jar" "lib/seatunnel-capability-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar"
-      echo "      已同步 capability proxy jar 到 lib/seatunnel-capability-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar."
+      cp -f "$proxy_jar" "lib/seatunnelx-java-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar"
+      echo "      已同步 seatunnelx-java-proxy jar 到 lib/seatunnelx-java-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar."
     else
-      echo "      未找到 capability proxy 薄 jar，跳过同步."
+      echo "      未找到 seatunnelx-java-proxy 薄 jar，跳过同步."
     fi
   else
-    echo "      未找到 mvn，跳过 capability proxy 薄 jar 构建与同步."
+    echo "      未找到 mvn，跳过 seatunnelx-java-proxy 薄 jar 构建与同步."
   fi
 fi
 

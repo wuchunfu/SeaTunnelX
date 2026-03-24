@@ -96,17 +96,17 @@ type InstallScriptData struct {
 	// SupportDir 是 Agent 管理的辅助资产目录，例如 proxy jar 和脚本。
 	SupportDir string
 
-	// CapabilityProxyVersion is the default packaged capability proxy version.
-	// CapabilityProxyVersion 是默认打包的 capability proxy 版本。
-	CapabilityProxyVersion string
+	// SeatunnelXJavaProxyVersion is the default packaged seatunnelx-java-proxy version.
+	// SeatunnelXJavaProxyVersion 是默认打包的 seatunnelx-java-proxy 版本。
+	SeatunnelXJavaProxyVersion string
 
-	// CapabilityProxyJarFileName is the packaged default capability proxy jar file name.
-	// CapabilityProxyJarFileName 是默认打包的 capability proxy jar 文件名。
-	CapabilityProxyJarFileName string
+	// SeatunnelXJavaProxyJarFileName is the packaged default seatunnelx-java-proxy jar file name.
+	// SeatunnelXJavaProxyJarFileName 是默认打包的 seatunnelx-java-proxy jar 文件名。
+	SeatunnelXJavaProxyJarFileName string
 
-	// CapabilityProxyScriptFileName is the packaged capability proxy script file name.
-	// CapabilityProxyScriptFileName 是打包的 capability proxy 脚本文件名。
-	CapabilityProxyScriptFileName string
+	// SeatunnelXJavaProxyScriptFileName is the packaged seatunnelx-java-proxy script file name.
+	// SeatunnelXJavaProxyScriptFileName 是打包的 seatunnelx-java-proxy 脚本文件名。
+	SeatunnelXJavaProxyScriptFileName string
 
 	// HeartbeatInterval is the heartbeat interval string (e.g., "60s").
 	// HeartbeatInterval 是心跳间隔字符串（如 "60s"）。
@@ -203,17 +203,17 @@ func NewInstallScriptGenerator(cfg *InstallScriptConfig) (*InstallScriptGenerato
 // Requirements: 2.1 - Returns shell script with auto-detection logic for OS and architecture.
 func (g *InstallScriptGenerator) Generate() (string, error) {
 	data := &InstallScriptData{
-		ControlPlaneAddr:              g.formatControlPlaneURL(),
-		GRPCAddr:                      g.grpcAddr,
-		InstallDir:                    DefaultInstallDir,
-		ConfigDir:                     DefaultConfigDir,
-		AgentBinary:                   DefaultAgentBinary,
-		ServiceName:                   DefaultServiceName,
-		SupportDir:                    DefaultSupportDir,
-		CapabilityProxyVersion:        seatunnelmeta.DefaultCapabilityProxyVersion,
-		CapabilityProxyJarFileName:    seatunnelmeta.CapabilityProxyJarFileName(seatunnelmeta.DefaultCapabilityProxyVersion),
-		CapabilityProxyScriptFileName: seatunnelmeta.CapabilityProxyScriptFileName,
-		HeartbeatInterval:             fmt.Sprintf("%ds", g.heartbeatInterval),
+		ControlPlaneAddr:                  g.formatControlPlaneURL(),
+		GRPCAddr:                          g.grpcAddr,
+		InstallDir:                        DefaultInstallDir,
+		ConfigDir:                         DefaultConfigDir,
+		AgentBinary:                       DefaultAgentBinary,
+		ServiceName:                       DefaultServiceName,
+		SupportDir:                        DefaultSupportDir,
+		SeatunnelXJavaProxyVersion:        seatunnelmeta.DefaultSeatunnelXJavaProxyVersion,
+		SeatunnelXJavaProxyJarFileName:    seatunnelmeta.SeatunnelXJavaProxyJarFileName(seatunnelmeta.DefaultSeatunnelXJavaProxyVersion),
+		SeatunnelXJavaProxyScriptFileName: seatunnelmeta.SeatunnelXJavaProxyScriptFileName,
+		HeartbeatInterval:                 fmt.Sprintf("%ds", g.heartbeatInterval),
 	}
 
 	return g.GenerateWithData(data)
@@ -249,14 +249,14 @@ func (g *InstallScriptGenerator) GenerateWithData(data *InstallScriptData) (stri
 	if data.SupportDir == "" {
 		data.SupportDir = DefaultSupportDir
 	}
-	if data.CapabilityProxyVersion == "" {
-		data.CapabilityProxyVersion = seatunnelmeta.DefaultCapabilityProxyVersion
+	if data.SeatunnelXJavaProxyVersion == "" {
+		data.SeatunnelXJavaProxyVersion = seatunnelmeta.DefaultSeatunnelXJavaProxyVersion
 	}
-	if data.CapabilityProxyJarFileName == "" {
-		data.CapabilityProxyJarFileName = seatunnelmeta.CapabilityProxyJarFileName(data.CapabilityProxyVersion)
+	if data.SeatunnelXJavaProxyJarFileName == "" {
+		data.SeatunnelXJavaProxyJarFileName = seatunnelmeta.SeatunnelXJavaProxyJarFileName(data.SeatunnelXJavaProxyVersion)
 	}
-	if data.CapabilityProxyScriptFileName == "" {
-		data.CapabilityProxyScriptFileName = seatunnelmeta.CapabilityProxyScriptFileName
+	if data.SeatunnelXJavaProxyScriptFileName == "" {
+		data.SeatunnelXJavaProxyScriptFileName = seatunnelmeta.SeatunnelXJavaProxyScriptFileName
 	}
 
 	var buf bytes.Buffer
@@ -371,9 +371,9 @@ LOG_DIR="/var/log/${SERVICE_NAME}"
 SUPPORT_DIR="{{.SupportDir}}"
 SUPPORT_LIB_DIR="${SUPPORT_DIR}/lib"
 SUPPORT_SCRIPT_DIR="${SUPPORT_DIR}/scripts"
-CAPABILITY_PROXY_VERSION="{{.CapabilityProxyVersion}}"
-CAPABILITY_PROXY_JAR="${SUPPORT_LIB_DIR}/{{.CapabilityProxyJarFileName}}"
-CAPABILITY_PROXY_SCRIPT="${SUPPORT_SCRIPT_DIR}/{{.CapabilityProxyScriptFileName}}"
+CAPABILITY_PROXY_VERSION="{{.SeatunnelXJavaProxyVersion}}"
+CAPABILITY_PROXY_JAR="${SUPPORT_LIB_DIR}/{{.SeatunnelXJavaProxyJarFileName}}"
+CAPABILITY_PROXY_SCRIPT="${SUPPORT_SCRIPT_DIR}/{{.SeatunnelXJavaProxyScriptFileName}}"
 
 # ==================== Colors 颜色 ====================
 RED='\033[0;31m'
@@ -423,8 +423,8 @@ cleanup() {
         rm -rf "${SUPPORT_DIR}" 2>/dev/null || true
         rm -f "/etc/systemd/system/${SERVICE_NAME}.service" 2>/dev/null || true
         rm -f "/tmp/${AGENT_BINARY}" 2>/dev/null || true
-        rm -f "/tmp/${SERVICE_NAME}-{{.CapabilityProxyJarFileName}}" 2>/dev/null || true
-        rm -f "/tmp/${SERVICE_NAME}-{{.CapabilityProxyScriptFileName}}" 2>/dev/null || true
+        rm -f "/tmp/${SERVICE_NAME}-{{.SeatunnelXJavaProxyJarFileName}}" 2>/dev/null || true
+        rm -f "/tmp/${SERVICE_NAME}-{{.SeatunnelXJavaProxyScriptFileName}}" 2>/dev/null || true
         
         # Reload systemd
         # 重新加载 systemd
@@ -573,46 +573,46 @@ download_agent() {
 
 # ==================== Download Support Assets 下载辅助资产 ====================
 download_support_assets() {
-    local jar_url="${CONTROL_PLANE_ADDR}/api/v1/agent/assets/capability-proxy.jar?version=${CAPABILITY_PROXY_VERSION}"
-    local script_url="${CONTROL_PLANE_ADDR}/api/v1/agent/assets/capability-proxy.sh"
-    local temp_jar="/tmp/${SERVICE_NAME}-{{.CapabilityProxyJarFileName}}"
-    local temp_script="/tmp/${SERVICE_NAME}-{{.CapabilityProxyScriptFileName}}"
+    local jar_url="${CONTROL_PLANE_ADDR}/api/v1/agent/assets/seatunnelx-java-proxy.jar?version=${CAPABILITY_PROXY_VERSION}"
+    local script_url="${CONTROL_PLANE_ADDR}/api/v1/agent/assets/seatunnelx-java-proxy.sh"
+    local temp_jar="/tmp/${SERVICE_NAME}-{{.SeatunnelXJavaProxyJarFileName}}"
+    local temp_script="/tmp/${SERVICE_NAME}-{{.SeatunnelXJavaProxyScriptFileName}}"
 
     log_step "Downloading Agent support assets..."
     log_step "正在下载 Agent 辅助资产..."
 
     if command -v curl &> /dev/null; then
         if ! curl -fsSL -o "${temp_jar}" "${jar_url}"; then
-            log_error "Failed to download capability proxy jar using curl"
-            log_error "使用 curl 下载 capability proxy jar 失败"
+            log_error "Failed to download seatunnelx-java-proxy jar using curl"
+            log_error "使用 curl 下载 seatunnelx-java-proxy jar 失败"
             exit 1
         fi
         if ! curl -fsSL -o "${temp_script}" "${script_url}"; then
-            log_error "Failed to download capability proxy script using curl"
-            log_error "使用 curl 下载 capability proxy 脚本失败"
+            log_error "Failed to download seatunnelx-java-proxy script using curl"
+            log_error "使用 curl 下载 seatunnelx-java-proxy 脚本失败"
             exit 1
         fi
     elif command -v wget &> /dev/null; then
         if ! wget -q -O "${temp_jar}" "${jar_url}"; then
-            log_error "Failed to download capability proxy jar using wget"
-            log_error "使用 wget 下载 capability proxy jar 失败"
+            log_error "Failed to download seatunnelx-java-proxy jar using wget"
+            log_error "使用 wget 下载 seatunnelx-java-proxy jar 失败"
             exit 1
         fi
         if ! wget -q -O "${temp_script}" "${script_url}"; then
-            log_error "Failed to download capability proxy script using wget"
-            log_error "使用 wget 下载 capability proxy 脚本失败"
+            log_error "Failed to download seatunnelx-java-proxy script using wget"
+            log_error "使用 wget 下载 seatunnelx-java-proxy 脚本失败"
             exit 1
         fi
     fi
 
     if [ ! -s "${temp_jar}" ]; then
-        log_error "Downloaded capability proxy jar is missing or empty"
-        log_error "下载的 capability proxy jar 不存在或为空"
+        log_error "Downloaded seatunnelx-java-proxy jar is missing or empty"
+        log_error "下载的 seatunnelx-java-proxy jar 不存在或为空"
         exit 1
     fi
     if [ ! -s "${temp_script}" ]; then
-        log_error "Downloaded capability proxy script is missing or empty"
-        log_error "下载的 capability proxy 脚本不存在或为空"
+        log_error "Downloaded seatunnelx-java-proxy script is missing or empty"
+        log_error "下载的 seatunnelx-java-proxy 脚本不存在或为空"
         exit 1
     fi
 
@@ -732,8 +732,8 @@ EOF
 }
 
 install_support_assets() {
-    local temp_jar="/tmp/${SERVICE_NAME}-{{.CapabilityProxyJarFileName}}"
-    local temp_script="/tmp/${SERVICE_NAME}-{{.CapabilityProxyScriptFileName}}"
+    local temp_jar="/tmp/${SERVICE_NAME}-{{.SeatunnelXJavaProxyJarFileName}}"
+    local temp_script="/tmp/${SERVICE_NAME}-{{.SeatunnelXJavaProxyScriptFileName}}"
 
     log_step "Installing Agent support assets..."
     log_step "正在安装 Agent 辅助资产..."
@@ -814,8 +814,8 @@ fi
 
 # Export support asset locations for runtime storage probe execution
 # 导出运行时存储探测所需的辅助资产路径
-export SEATUNNEL_CAPABILITY_PROXY_HOME="CAPABILITY_PROXY_HOME_PLACEHOLDER"
-export SEATUNNEL_CAPABILITY_PROXY_SCRIPT="CAPABILITY_PROXY_SCRIPT_PLACEHOLDER"
+export SEATUNNELX_JAVA_PROXY_HOME="CAPABILITY_PROXY_HOME_PLACEHOLDER"
+export SEATUNNELX_JAVA_PROXY_SCRIPT="CAPABILITY_PROXY_SCRIPT_PLACEHOLDER"
 
 # Log environment info for debugging
 # 记录环境信息用于调试

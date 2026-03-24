@@ -23,34 +23,34 @@ import (
 )
 
 const (
-	// DefaultCapabilityProxyVersion is the fallback capability proxy implementation
+	// DefaultSeatunnelXJavaProxyVersion is the fallback seatunnelx-java-proxy implementation
 	// shipped with SeaTunnelX until newer SeaTunnel-specific probe jars are added.
-	// DefaultCapabilityProxyVersion 是 SeaTunnelX 当前内置的 capability proxy 回退版本。
-	DefaultCapabilityProxyVersion = "2.3.13"
+	// DefaultSeatunnelXJavaProxyVersion 是 SeaTunnelX 当前内置的 seatunnelx-java-proxy 回退版本。
+	DefaultSeatunnelXJavaProxyVersion = "2.3.13"
 
-	// CapabilityProxyJarFileNamePattern defines the packaged jar naming convention.
-	// CapabilityProxyJarFileNamePattern 定义 capability proxy jar 的统一命名规则。
-	CapabilityProxyJarFileNamePattern = "seatunnel-capability-proxy-%s.jar"
+	// SeatunnelXJavaProxyJarFileNamePattern defines the packaged jar naming convention.
+	// SeatunnelXJavaProxyJarFileNamePattern 定义 seatunnelx-java-proxy jar 的统一命名规则。
+	SeatunnelXJavaProxyJarFileNamePattern = "seatunnelx-java-proxy-%s.jar"
 
-	// CapabilityProxyScriptFileName is the shared launcher script name.
-	// CapabilityProxyScriptFileName 是统一的 capability proxy 启动脚本名。
-	CapabilityProxyScriptFileName = "seatunnel-capability-proxy.sh"
+	// SeatunnelXJavaProxyScriptFileName is the shared launcher script name.
+	// SeatunnelXJavaProxyScriptFileName 是统一的 seatunnelx-java-proxy 启动脚本名。
+	SeatunnelXJavaProxyScriptFileName = "seatunnelx-java-proxy.sh"
 )
 
-// ResolveCapabilityProxyVersion falls back to the packaged default when no
-// SeaTunnel-specific capability proxy jar version is provided.
-// ResolveCapabilityProxyVersion 在未指定版本时回退到内置默认 capability proxy 版本。
-func ResolveCapabilityProxyVersion(version string) string {
+// ResolveSeatunnelXJavaProxyVersion falls back to the packaged default when no
+// SeaTunnel-specific seatunnelx-java-proxy jar version is provided.
+// ResolveSeatunnelXJavaProxyVersion 在未指定版本时回退到内置默认 seatunnelx-java-proxy 版本。
+func ResolveSeatunnelXJavaProxyVersion(version string) string {
 	trimmed := strings.TrimSpace(version)
 	if trimmed != "" {
 		return trimmed
 	}
-	return DefaultCapabilityProxyVersion
+	return DefaultSeatunnelXJavaProxyVersion
 }
 
-// CapabilityProxyJarFileName returns the packaged capability proxy jar file name
+// SeatunnelXJavaProxyJarFileName returns the packaged seatunnelx-java-proxy jar file name
 // for a SeaTunnel version.
-// CapabilityProxyJarFileName 返回指定 SeaTunnel 版本对应的 capability proxy jar 文件名。
-func CapabilityProxyJarFileName(version string) string {
-	return fmt.Sprintf(CapabilityProxyJarFileNamePattern, ResolveCapabilityProxyVersion(version))
+// SeatunnelXJavaProxyJarFileName 返回指定 SeaTunnel 版本对应的 seatunnelx-java-proxy jar 文件名。
+func SeatunnelXJavaProxyJarFileName(version string) string {
+	return fmt.Sprintf(SeatunnelXJavaProxyJarFileNamePattern, ResolveSeatunnelXJavaProxyVersion(version))
 }

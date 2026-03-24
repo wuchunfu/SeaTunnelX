@@ -89,7 +89,7 @@ else
   exit 1
 fi
 
-for f in seatunnelx bin/start.sh bin/stop.sh bin/status.sh config.example.yaml "lib/seatunnel-capability-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar" scripts/seatunnel-capability-proxy.sh; do
+for f in seatunnelx bin/start.sh bin/stop.sh bin/status.sh config.example.yaml "lib/seatunnelx-java-proxy-${CAPABILITY_PROXY_DEFAULT_VERSION}.jar" scripts/seatunnelx-java-proxy.sh; do
   if [[ ! -e "$SOURCE_DIR/$f" ]]; then
     echo "[ERROR] package payload missing: $f"
     exit 1
@@ -141,7 +141,7 @@ chmod +x \
   "$INSTALL_DIR/bin/start.sh" \
   "$INSTALL_DIR/bin/stop.sh" \
   "$INSTALL_DIR/bin/status.sh" \
-  "$INSTALL_DIR/scripts/seatunnel-capability-proxy.sh"
+  "$INSTALL_DIR/scripts/seatunnelx-java-proxy.sh"
 
 for f in \
   "$INSTALL_DIR/deps/start-observability.sh" \
