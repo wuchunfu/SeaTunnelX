@@ -1763,6 +1763,7 @@ func (s *Service) detectAndUpdateNodeProcess(ctx context.Context, node *ClusterN
 			// 进程运行中但无法提取 PID
 			_ = s.repo.UpdateNodeStatus(ctx, node.ID, NodeStatusRunning)
 		}
+		return
 	}
 	_ = s.repo.UpdateNodeProcess(ctx, node.ID, 0, "stopped")
 }
