@@ -266,3 +266,23 @@ func TestRuntimeStorageListItemUnmarshalAcceptsCamelCaseFields(t *testing.T) {
 		t.Fatalf("unexpected modified_at: %s", item.ModifiedAt)
 	}
 }
+
+func TestIMAPHazelcastConfigType(t *testing.T) {
+	cases := []struct {
+		name string
+		role NodeRole
+		want string
+	}{
+		{name: "master uses separated master config", role: NodeRoleMaster, want: "hazelcast-master.yaml"},
+		{name: "worker also uses separated master config", role: NodeRoleWorker, want: "hazelcast-master.yaml"},
+		{name: "hybrid uses default config", role: NodeRoleMasterWorker, want: "hazelcast.yaml"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := imapHazelcastConfigType(tc.role); got != tc.want {
+				t.Fatalf("expected %s, got %s", tc.want, got)
+			}
+		})
+	}
+}

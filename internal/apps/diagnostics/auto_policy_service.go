@@ -29,6 +29,9 @@ func (s *Service) ListBuiltinConditionTemplates() []*InspectionConditionTemplate
 	result := make([]*InspectionConditionTemplate, 0, len(BuiltinConditionTemplates))
 	for i := range BuiltinConditionTemplates {
 		t := BuiltinConditionTemplates[i]
+		if !isConditionTemplateSupported(t.Code) {
+			continue
+		}
 		result = append(result, &t)
 	}
 	return result
@@ -49,6 +52,9 @@ func (s *Service) CreateAutoPolicy(ctx context.Context, userID uint, req *Create
 	}
 	if len(req.Conditions) == 0 {
 		return nil, fmt.Errorf("%w: at least one condition is required", ErrInvalidAutoPolicyRequest)
+	}
+	if err := validateAutoPolicyConditions(req.Conditions); err != nil {
+		return nil, err
 	}
 
 	cooldownMinutes := req.CooldownMinutes
@@ -112,6 +118,9 @@ func (s *Service) UpdateAutoPolicy(ctx context.Context, id uint, req *UpdateInsp
 	if req.Conditions != nil {
 		if len(*req.Conditions) == 0 {
 			return nil, fmt.Errorf("%w: at least one condition is required", ErrInvalidAutoPolicyRequest)
+		}
+		if err := validateAutoPolicyConditions(*req.Conditions); err != nil {
+			return nil, err
 		}
 		policy.Conditions = *req.Conditions
 	}
@@ -183,4 +192,16 @@ func (s *Service) ListAutoPolicies(ctx context.Context, clusterID *uint, page, p
 		Page:     page,
 		PageSize: pageSize,
 	}, nil
+}
+
+func validateAutoPolicyConditions(conditions InspectionConditionItems) error {
+	for _, condition := range conditions {
+		if !isConditionTemplateSupported(condition.TemplateCode) {
+			return fmt.Errorf("%w: unsupported condition template %s", ErrInvalidAutoPolicyRequest, condition.TemplateCode)
+		}
+		if _, ok := findBuiltinConditionTemplate(condition.TemplateCode); !ok {
+			return fmt.Errorf("%w: unknown condition template %s", ErrInvalidAutoPolicyRequest, condition.TemplateCode)
+		}
+	}
+	return nil
 }

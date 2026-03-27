@@ -28,6 +28,7 @@ import {Button} from '@/components/ui/button';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
+import {AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle} from '@/components/ui/alert-dialog';
 import {Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle} from '@/components/ui/dialog';
 import {Textarea} from '@/components/ui/textarea';
 import {Input} from '@/components/ui/input';
@@ -87,6 +88,73 @@ function isYamlConfigType(configType?: ConfigType | null): boolean {
   }
 }
 
+function extractSeatunnelHTTPPort(content: string): number | null {
+  const lines = content.split(/\r?\n/);
+  let seatunnelIndent: number | null = null;
+  let engineIndent: number | null = null;
+  let httpIndent: number | null = null;
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+    const indent = rawLine.length - rawLine.trimStart().length;
+    if (!trimmed.includes(':')) {
+      continue;
+    }
+    const key = trimmed.slice(0, trimmed.indexOf(':')).trim();
+    const value = trimmed.slice(trimmed.indexOf(':') + 1).trim();
+
+    if (seatunnelIndent !== null && indent <= seatunnelIndent) {
+      seatunnelIndent = null;
+      engineIndent = null;
+      httpIndent = null;
+    }
+    if (engineIndent !== null && indent <= engineIndent) {
+      engineIndent = null;
+      httpIndent = null;
+    }
+    if (httpIndent !== null && indent <= httpIndent) {
+      httpIndent = null;
+    }
+
+    if (key === 'seatunnel') {
+      seatunnelIndent = indent;
+      engineIndent = null;
+      httpIndent = null;
+      continue;
+    }
+    if (seatunnelIndent !== null && key === 'engine' && indent > seatunnelIndent) {
+      engineIndent = indent;
+      httpIndent = null;
+      continue;
+    }
+    if (engineIndent !== null && key === 'http' && indent > engineIndent) {
+      httpIndent = indent;
+      continue;
+    }
+    if (httpIndent !== null && key === 'port' && indent > httpIndent) {
+      const parsed = Number.parseInt(value.replace(/^['"]|['"]$/g, ''), 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+  }
+
+  return null;
+}
+
+function shouldWarnSeatunnelPortSync(config: ConfigInfo | null, nextContent: string, syncAfterSave: boolean): boolean {
+  if (!config || config.config_type !== ConfigType.SEATUNNEL) {
+    return false;
+  }
+  if (config.is_template && !syncAfterSave) {
+    return false;
+  }
+  const currentPort = extractSeatunnelHTTPPort(config.content);
+  const nextPort = extractSeatunnelHTTPPort(nextContent);
+  return nextPort !== null && currentPort !== nextPort;
+}
+
 export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps) {
   const t = useTranslations();
   const [configs, setConfigs] = useState<ConfigInfo[]>([]);
@@ -102,6 +170,8 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
   const [editComment, setEditComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveMode, setSaveMode] = useState<'save' | 'save-and-sync'>('save');
+  const [portChangeConfirmOpen, setPortChangeConfirmOpen] = useState(false);
+  const [pendingSaveSync, setPendingSaveSync] = useState(false);
   const [repairing, setRepairing] = useState(false);
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
   const [versionConfig, setVersionConfig] = useState<ConfigInfo | null>(null);
@@ -157,7 +227,7 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
     setEditDialogOpen(true);
   };
 
-  const handleSave = async (syncAfterSave = false) => {
+  const beginSave = async (syncAfterSave = false) => {
     if (!editingConfig) {return;}
     setSaveMode(syncAfterSave ? 'save-and-sync' : 'save');
     setSaving(true);
@@ -187,7 +257,17 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
     } finally {
       setSaving(false);
       setSaveMode('save');
+      setPendingSaveSync(false);
     }
+  };
+
+  const handleSave = async (syncAfterSave = false) => {
+    if (shouldWarnSeatunnelPortSync(editingConfig, editContent, syncAfterSave)) {
+      setPendingSaveSync(syncAfterSave);
+      setPortChangeConfirmOpen(true);
+      return;
+    }
+    await beginSave(syncAfterSave);
   };
 
   const handleSmartRepair = async () => {
@@ -665,6 +745,36 @@ export function ClusterConfigs({clusterId, deploymentMode}: ClusterConfigsProps)
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={portChangeConfirmOpen}
+        onOpenChange={(open) => {
+          setPortChangeConfirmOpen(open);
+          if (!open) {
+            setPendingSaveSync(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('config.portChangeConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>{t('config.portChangeConfirmDesc')}</p>
+              <ul className="list-disc pl-5">
+                <li>{t('config.portChangeConfirmSyncConfig')}</li>
+                <li>{t('config.portChangeConfirmSyncMetadata')}</li>
+                <li>{t('config.portChangeConfirmImpact')}</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void beginSave(pendingSaveSync)}>
+              {t('common.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Version History Dialog */}
       <Dialog open={versionDialogOpen} onOpenChange={setVersionDialogOpen}>

@@ -219,17 +219,21 @@ func (s *Service) loadCheckpointFromNode(ctx context.Context, node *NodeInfo) (*
 }
 
 func (s *Service) loadIMAPFromNode(ctx context.Context, node *NodeInfo) (*RuntimeStorageSpec, error) {
-	configType := "hazelcast.yaml"
-	if node.Role == NodeRoleMaster {
-		configType = "hazelcast-master.yaml"
-	} else if node.Role == NodeRoleWorker {
-		configType = "hazelcast-worker.yaml"
-	}
+	configType := imapHazelcastConfigType(node.Role)
 	content, err := s.loadRuntimeStorageConfigContent(ctx, node, configType)
 	if err != nil {
 		return nil, err
 	}
 	return parseIMAPStorageFromYAML(content), nil
+}
+
+func imapHazelcastConfigType(role NodeRole) string {
+	switch role {
+	case NodeRoleMaster, NodeRoleWorker:
+		return "hazelcast-master.yaml"
+	default:
+		return "hazelcast.yaml"
+	}
 }
 
 func (s *Service) loadRuntimeStorageConfigContent(ctx context.Context, node *NodeInfo, configType string) (string, error) {

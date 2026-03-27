@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/api-and-services.md", "reason": "安装插件 UI 读取集群状态的前端约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "后端状态接口与错误返回约定"}

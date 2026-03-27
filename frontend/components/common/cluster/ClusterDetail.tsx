@@ -367,7 +367,7 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [forceDelete, setForceDelete] = useState(false);
   const [nodeToRemove, setNodeToRemove] = useState<NodeInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<ClusterDetailTab>('nodes');
+  const [activeTab, setActiveTab] = useState<ClusterDetailTab>('overview');
 
   // Node selection state / 节点选择状态
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<number>>(
@@ -1574,80 +1574,6 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           </motion.div>
         )}
 
-      {/* Cluster Info Cards / 集群信息卡片 */}
-      <motion.div
-        className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'
-        variants={itemVariants}
-      >
-        <Card>
-          <CardHeader className='pb-2'>
-            <CardTitle className='text-sm font-medium text-muted-foreground'>
-              {t('cluster.status')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Badge
-              variant={getStatusBadgeVariant(cluster.status)}
-              className='text-sm'
-            >
-              {t(`cluster.statuses.${cluster.status}`)}
-            </Badge>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className='pb-2'>
-            <CardTitle className='text-sm font-medium text-muted-foreground'>
-              {t('cluster.healthStatus')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {clusterStatus ? (
-              <Badge
-                variant={getHealthBadgeVariant(clusterStatus.health_status)}
-                className='text-sm'
-              >
-                {t(`cluster.healthStatuses.${clusterStatus.health_status}`)}
-              </Badge>
-            ) : (
-              <span className='text-muted-foreground'>-</span>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className='pb-2'>
-            <CardTitle className='text-sm font-medium text-muted-foreground'>
-              {t('cluster.nodes')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className='flex items-center gap-2'>
-              <Server className='h-5 w-5 text-muted-foreground' />
-              <span className='text-2xl font-bold'>{cluster.node_count}</span>
-              {clusterStatus && (
-                <span className='text-sm text-muted-foreground'>
-                  ({clusterStatus.online_nodes} {t('cluster.online')})
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className='pb-2'>
-            <CardTitle className='text-sm font-medium text-muted-foreground'>
-              {t('cluster.deploymentMode')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Badge variant='outline' className='text-sm'>
-              {t(`cluster.modes.${cluster.deployment_mode}`)}
-            </Badge>
-          </CardContent>
-        </Card>
-      </motion.div>
-
       <motion.div variants={itemVariants}>
         <Tabs
           value={activeTab}
@@ -1655,6 +1581,13 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
           className='space-y-4'
         >
           <TabsList className='h-auto w-full flex-wrap justify-start gap-1 rounded-xl p-1'>
+            <TabsTrigger
+              value='overview'
+              className='flex-none px-3'
+              data-testid='cluster-detail-tab-overview'
+            >
+              {t('cluster.detailTabs.overview')}
+            </TabsTrigger>
             <TabsTrigger
               value='nodes'
               className='flex-none px-3'
@@ -1685,13 +1618,6 @@ export function ClusterDetail({clusterId}: ClusterDetailProps) {
                 {t('cluster.detailTabs.webui')}
               </TabsTrigger>
             )}
-            <TabsTrigger
-              value='overview'
-              className='flex-none px-3'
-              data-testid='cluster-detail-tab-overview'
-            >
-              {t('cluster.detailTabs.overview')}
-            </TabsTrigger>
             <TabsTrigger
               value='plugins'
               className='flex-none px-3'

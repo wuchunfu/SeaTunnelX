@@ -137,3 +137,41 @@ func (r *Repository) GetLastInspectionReportForCluster(ctx context.Context, clus
 	}
 	return &report, nil
 }
+
+// GetLastInspectionReportForRequester returns the most recent inspection report for one cluster/requester pair.
+// GetLastInspectionReportForRequester 返回指定集群与请求者组合下最近的一条巡检报告。
+func (r *Repository) GetLastInspectionReportForRequester(ctx context.Context, clusterID uint, requestedBy string) (*ClusterInspectionReport, error) {
+	if r == nil || r.db == nil {
+		return nil, ErrDiagnosticsRepositoryUnavailable
+	}
+	var report ClusterInspectionReport
+	if err := r.db.WithContext(ctx).
+		Where("cluster_id = ? AND requested_by = ?", clusterID, requestedBy).
+		Order("created_at DESC").
+		First(&report).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInspectionReportNotFound
+		}
+		return nil, err
+	}
+	return &report, nil
+}
+
+// UpdateInspectionReportAutoTriggerReason updates one inspection report auto-trigger reason only.
+// UpdateInspectionReportAutoTriggerReason 仅更新一条巡检报告的自动触发原因。
+func (r *Repository) UpdateInspectionReportAutoTriggerReason(ctx context.Context, reportID uint, reason string) error {
+	if r == nil || r.db == nil {
+		return ErrDiagnosticsRepositoryUnavailable
+	}
+	result := r.db.WithContext(ctx).
+		Model(&ClusterInspectionReport{}).
+		Where("id = ?", reportID).
+		Update("auto_trigger_reason", reason)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrInspectionReportNotFound
+	}
+	return nil
+}

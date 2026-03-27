@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
+	appconfig "github.com/seatunnel/seatunnelX/internal/apps/config"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -70,6 +72,24 @@ func (s *scriptedAgentSender) SendCommand(ctx context.Context, agentID string, c
 		return s.send(ctx, agentID, commandType, params)
 	}
 	return true, "ok", nil
+}
+
+type mockConfigAgentClient struct {
+	pullContent string
+	pushed      string
+	pullCalls   int
+	pushCalls   int
+}
+
+func (m *mockConfigAgentClient) PullConfig(ctx context.Context, hostID uint, installDir string, configType appconfig.ConfigType) (string, error) {
+	m.pullCalls++
+	return m.pullContent, nil
+}
+
+func (m *mockConfigAgentClient) PushConfig(ctx context.Context, hostID uint, installDir string, configType appconfig.ConfigType, content string) error {
+	m.pushCalls++
+	m.pushed = content
+	return nil
 }
 
 // MockHostProvider implements HostProvider for testing
@@ -135,6 +155,85 @@ func setupServiceTestDB(t *testing.T) (*gorm.DB, func()) {
 	}
 
 	return db, cleanup
+}
+
+func TestUpdateSeatunnelHTTPPort(t *testing.T) {
+	content := "seatunnel:\n  engine:\n    backup-count: 1\n    http:\n      enable-http: true\n      port: 8080\n      enable-dynamic-port: true\n"
+	updated, err := updateSeatunnelHTTPPort(content, 18081)
+	if err != nil {
+		t.Fatalf("updateSeatunnelHTTPPort returned error: %v", err)
+	}
+	if !strings.Contains(updated, "engine:\n        backup-count: 1\n        http:") {
+		t.Fatalf("expected nested seatunnel.engine.http block, got: %s", updated)
+	}
+	if !strings.Contains(updated, "port: 18081") {
+		t.Fatalf("expected updated port in content, got: %s", updated)
+	}
+	if !strings.Contains(updated, "enable-dynamic-port: false") {
+		t.Fatalf("expected dynamic port disabled, got: %s", updated)
+	}
+}
+
+func TestUpdateNodeSyncsSeatunnelHTTPPortAndRestartsNode(t *testing.T) {
+	db, cleanup := setupServiceTestDB(t)
+	defer cleanup()
+
+	repo := NewRepository(db)
+	hostProvider := NewMockHostProvider()
+	now := time.Now()
+	hostProvider.AddHost(&HostInfo{ID: 1, Name: "host-1", IPAddress: "127.0.0.1", AgentID: "agent-1", LastHeartbeat: &now})
+
+	service := NewService(repo, hostProvider, &ServiceConfig{})
+	configClient := &mockConfigAgentClient{
+		pullContent: "seatunnel:\n  engine:\n    backup-count: 1\n    http:\n      enable-http: true\n      port: 8080\n      enable-dynamic-port: true\n",
+	}
+	service.SetConfigAgentClient(configClient)
+	agentSender := &mockOperationAgentSender{}
+	service.SetAgentCommandSender(agentSender)
+
+	ctx := context.Background()
+	cluster := &Cluster{Name: "demo", DeploymentMode: DeploymentModeHybrid, InstallDir: "/opt/seatunnel", Status: ClusterStatusRunning}
+	if err := repo.Create(ctx, cluster); err != nil {
+		t.Fatalf("create cluster failed: %v", err)
+	}
+	node := &ClusterNode{
+		ClusterID:     cluster.ID,
+		HostID:        1,
+		Role:          NodeRoleMasterWorker,
+		InstallDir:    "/opt/seatunnel",
+		HazelcastPort: 5801,
+		APIPort:       8080,
+		WorkerPort:    5802,
+		Status:        NodeStatusRunning,
+	}
+	if err := repo.AddNode(ctx, node); err != nil {
+		t.Fatalf("create node failed: %v", err)
+	}
+
+	newPort := 18081
+	updated, err := service.UpdateNode(ctx, cluster.ID, node.ID, &UpdateNodeRequest{APIPort: &newPort})
+	if err != nil {
+		t.Fatalf("UpdateNode returned error: %v", err)
+	}
+	if updated.APIPort != newPort {
+		t.Fatalf("expected api port %d, got %d", newPort, updated.APIPort)
+	}
+	if configClient.pullCalls != 1 || configClient.pushCalls != 1 {
+		t.Fatalf("expected pull/push once, got pull=%d push=%d", configClient.pullCalls, configClient.pushCalls)
+	}
+	if !strings.Contains(configClient.pushed, "port: 18081") {
+		t.Fatalf("expected pushed config to contain new port, got: %s", configClient.pushed)
+	}
+	foundRestart := false
+	for _, command := range agentSender.commands {
+		if command.commandType == string(OperationRestart) {
+			foundRestart = true
+			break
+		}
+	}
+	if !foundRestart {
+		t.Fatalf("expected restart command after api port sync")
+	}
 }
 
 // genValidHostID generates valid host IDs for tests

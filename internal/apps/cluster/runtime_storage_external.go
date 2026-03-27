@@ -199,12 +199,7 @@ func (s *Service) loadRuntimeStorageResolvedConfigFromNode(ctx context.Context, 
 		}
 		return parseCheckpointResolvedConfigFromYAML(content), nil
 	case "imap":
-		configType := "hazelcast.yaml"
-		if node.Role == NodeRoleMaster {
-			configType = "hazelcast-master.yaml"
-		} else if node.Role == NodeRoleWorker {
-			configType = "hazelcast-worker.yaml"
-		}
+		configType := imapHazelcastConfigType(node.Role)
 		content, err := s.pullConfigFromNode(ctx, node, configType)
 		if err != nil {
 			return nil, err
@@ -251,12 +246,7 @@ func (s *Service) resolveRuntimeStorageValidationConfigFromNode(
 		}
 		return &runtimeStorageValidationConfig{Checkpoint: cfg}, nil
 	case installerapp.RuntimeStorageValidationIMAP:
-		configType := "hazelcast.yaml"
-		if node.Role == NodeRoleMaster {
-			configType = "hazelcast-master.yaml"
-		} else if node.Role == NodeRoleWorker {
-			configType = "hazelcast-worker.yaml"
-		}
+		configType := imapHazelcastConfigType(node.Role)
 		content, err := s.pullConfigFromNode(ctx, node, configType)
 		if err != nil {
 			return nil, err

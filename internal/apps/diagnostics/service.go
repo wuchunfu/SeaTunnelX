@@ -73,6 +73,7 @@ type Service struct {
 	agentSender       diagnosticAgentCommandSender
 	taskEvents        *diagnosticTaskEventHub
 	taskEventsOnce    sync.Once
+	autoPolicyRuntime sync.Once
 	policyChecker     *AutoPolicyChecker
 }
 

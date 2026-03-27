@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层同步任务涉及 task/api/runtime/frontend 数据流"}
+{"file": ".trellis/spec/frontend/api-and-services.md", "reason": "前端 Studio 后续需统一通过 services 调后端"}
+{"file": "internal/apps/cluster/runtime_storage_preview.go", "reason": "复用现有 preview / result decode 模式"}
+{"file": "internal/router/router.go", "reason": "后续注册 sync 模块路由参考"}
