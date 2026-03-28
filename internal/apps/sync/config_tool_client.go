@@ -110,11 +110,12 @@ type ConfigToolPreviewResponse struct {
 
 // ConfigToolWebUIDAGVertexInfo mirrors webui vertex payload from java-proxy.
 type ConfigToolWebUIDAGVertexInfo struct {
-	VertexID      int      `json:"vertexId"`
-	Type          string   `json:"type"`
-	ConnectorType string   `json:"connectorType"`
-	TablePaths    []string `json:"tablePaths"`
-	TableColumns  map[string][]string `json:"tableColumns"`
+	VertexID      int                               `json:"vertexId"`
+	Type          string                            `json:"type"`
+	ConnectorType string                            `json:"connectorType"`
+	TablePaths    []string                          `json:"tablePaths"`
+	TableColumns  map[string][]string               `json:"tableColumns"`
+	TableSchemas  map[string]map[string]interface{} `json:"tableSchemas"`
 }
 
 // ConfigToolWebUIDAGEdge mirrors webui edge payload from java-proxy.

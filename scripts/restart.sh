@@ -215,13 +215,13 @@ restart_local_java_proxy() {
     echo "[*] 停止本机 seatunnelx-java-proxy (pid=$old_pid, port=$port) ..."
     kill -TERM "$old_pid" 2>/dev/null || true
     for _ in {1..20}; do
-      if ss -lntp 2>/dev/null | rg -q ":$port"; then
+      if kill -0 "$old_pid" 2>/dev/null || ss -lntp 2>/dev/null | rg -q ":$port"; then
         sleep 1
       else
         break
       fi
     done
-    if ss -lntp 2>/dev/null | rg -q ":$port"; then
+    if kill -0 "$old_pid" 2>/dev/null || ss -lntp 2>/dev/null | rg -q ":$port"; then
       kill -KILL "$old_pid" 2>/dev/null || true
       sleep 1
     fi
@@ -240,6 +240,9 @@ restart_local_java_proxy() {
 
   local health_url="http://127.0.0.1:${port}/healthz"
   for _ in {1..30}; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
     if curl -fsS -o /dev/null "$health_url" 2>/dev/null; then
       echo "      本机 seatunnelx-java-proxy 已就绪: http://127.0.0.1:${port}"
       return 0

@@ -21,6 +21,7 @@ import {useMemo, useState} from 'react';
 import {GitBranch} from 'lucide-react';
 import type {
   SyncWebUIDagEdge,
+  SyncJSON,
   SyncWebUIDagPreviewJob,
   SyncWebUIDagVertexInfo,
 } from '@/lib/services/sync';
@@ -49,6 +50,88 @@ const COLUMN_GAP = 92;
 const ROW_GAP = 44;
 const PADDING = 28;
 const CANVAS_RIGHT_PADDING = 96;
+
+interface SelectedTableDetailState {
+  nodeLabel: string;
+  tablePath: string;
+  columns: string[];
+  schema?: SyncJSON;
+}
+
+interface SchemaColumnDetail {
+  name: string;
+  dataType: string;
+  nullable: boolean | null;
+  defaultValue: string;
+  comment: string;
+  primaryKey: boolean;
+  uniqueKey: boolean;
+}
+
+function toObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item));
+}
+
+function extractSchemaColumnDetails(schema?: SyncJSON): SchemaColumnDetail[] {
+  const root = toObject(schema);
+  const schemaObject = toObject(root.schema);
+  const primaryKeyColumns = new Set(
+    toStringArray(toObject(schemaObject.primaryKey).columnNames),
+  );
+  const uniqueColumns = new Set<string>();
+  const constraints = schemaObject.constraintKeys;
+  if (Array.isArray(constraints)) {
+    constraints.forEach((constraint) => {
+      const constraintObject = toObject(constraint);
+      if (String(constraintObject.constraintType || '') !== 'UNIQUE_KEY') {
+        return;
+      }
+      const columns = constraintObject.columns;
+      if (!Array.isArray(columns)) {
+        return;
+      }
+      columns.forEach((column) => {
+        const columnObject = toObject(column);
+        const columnName = String(columnObject.columnName || '').trim();
+        if (columnName) {
+          uniqueColumns.add(columnName);
+        }
+      });
+    });
+  }
+
+  const rawColumns = Array.isArray(schemaObject.columns) ? schemaObject.columns : [];
+  return rawColumns.map((column) => {
+    const columnObject = toObject(column);
+    const name = String(columnObject.name || '-');
+    return {
+      name,
+      dataType: String(columnObject.dataType || '-'),
+      nullable:
+        typeof columnObject.nullable === 'boolean'
+          ? columnObject.nullable
+          : null,
+      defaultValue:
+        columnObject.defaultValue === null ||
+        typeof columnObject.defaultValue === 'undefined'
+          ? '-'
+          : String(columnObject.defaultValue),
+      comment: String(columnObject.comment || '-'),
+      primaryKey: primaryKeyColumns.has(name),
+      uniqueKey: uniqueColumns.has(name),
+    };
+  });
+}
 
 function normalizeVertices(
   job: SyncWebUIDagPreviewJob,
@@ -180,11 +263,12 @@ function estimateNodeHeight(node: SyncWebUIDagVertexInfo): number {
 }
 
 export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
-  const [selectedTableDetail, setSelectedTableDetail] = useState<{
-    nodeLabel: string;
-    tablePath: string;
-    columns: string[];
-  } | null>(null);
+  const [selectedTableDetail, setSelectedTableDetail] =
+    useState<SelectedTableDetailState | null>(null);
+  const selectedSchemaColumns = useMemo(
+    () => extractSchemaColumnDetails(selectedTableDetail?.schema),
+    [selectedTableDetail],
+  );
   const vertices = useMemo(() => normalizeVertices(job), [job]);
   const edges = useMemo(() => normalizeEdges(job), [job]);
   const positionedNodes = useMemo(
@@ -323,6 +407,7 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                                     nodeLabel: `#${node.vertexId} ${node.connectorType}`,
                                     tablePath: path,
                                     columns: node.tableColumns?.[path] || [],
+                                    schema: node.tableSchemas?.[path],
                                   })
                                 }
                               >
@@ -408,6 +493,7 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                               nodeLabel: `#${vertex.vertexId} ${vertex.connectorType}`,
                               tablePath: path,
                               columns: vertex.tableColumns?.[path] || [],
+                              schema: vertex.tableSchemas?.[path],
                             })
                           }
                         >
@@ -443,30 +529,186 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
               {selectedTableDetail?.tablePath || 'Table Detail'}
             </DialogTitle>
           </DialogHeader>
-          <div className='space-y-3'>
+          <div className='space-y-4'>
             <div className='text-sm text-muted-foreground'>
               {selectedTableDetail?.nodeLabel}
             </div>
-            <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
-              <div className='mb-2 text-sm font-medium'>Columns</div>
-              {selectedTableDetail?.columns?.length ? (
-                <div className='flex flex-wrap gap-2'>
-                  {selectedTableDetail.columns.map((column) => (
-                    <Badge
-                      key={column}
-                      variant='secondary'
-                      className='rounded-md'
-                    >
-                      {column}
-                    </Badge>
-                  ))}
+            {selectedTableDetail?.schema ? (
+              <>
+                <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+                  <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                    <div className='text-xs text-muted-foreground'>Comment</div>
+                    <div className='mt-1 text-sm'>
+                      {String(
+                        toObject(selectedTableDetail.schema).comment || '-',
+                      )}
+                    </div>
+                  </div>
+                  <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                    <div className='text-xs text-muted-foreground'>
+                      Partition Keys
+                    </div>
+                    <div className='mt-2 flex flex-wrap gap-2'>
+                      {toStringArray(
+                        toObject(selectedTableDetail.schema).partitionKeys,
+                      ).length > 0 ? (
+                        toStringArray(
+                          toObject(selectedTableDetail.schema).partitionKeys,
+                        ).map((item) => (
+                          <Badge key={item} variant='secondary'>
+                            {item}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className='text-sm text-muted-foreground'>-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                    <div className='text-xs text-muted-foreground'>
+                      Primary Key
+                    </div>
+                    <div className='mt-2 flex flex-wrap gap-2'>
+                      {toStringArray(
+                        toObject(
+                          toObject(
+                            toObject(selectedTableDetail.schema).schema,
+                          ).primaryKey,
+                        ).columnNames,
+                      ).length > 0 ? (
+                        toStringArray(
+                          toObject(
+                            toObject(
+                              toObject(selectedTableDetail.schema).schema,
+                            ).primaryKey,
+                          ).columnNames,
+                        ).map((item) => (
+                          <Badge key={item} variant='default'>
+                            {item}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className='text-sm text-muted-foreground'>-</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className='text-sm text-muted-foreground'>
-                  No schema columns available
+
+                <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                  <div className='mb-3 text-sm font-medium'>Columns</div>
+                  <ScrollArea className='max-h-[360px]'>
+                    <table className='w-full text-sm'>
+                      <thead className='sticky top-0 bg-background/95'>
+                        <tr className='border-b'>
+                          <th className='px-2 py-2 text-left'>Name</th>
+                          <th className='px-2 py-2 text-left'>Type</th>
+                          <th className='px-2 py-2 text-left'>Key</th>
+                          <th className='px-2 py-2 text-left'>Nullable</th>
+                          <th className='px-2 py-2 text-left'>Default</th>
+                          <th className='px-2 py-2 text-left'>Comment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSchemaColumns.map((column) => (
+                          <tr
+                            key={column.name}
+                            className='border-b last:border-0'
+                          >
+                            <td className='px-2 py-2 font-medium'>
+                              {column.name}
+                            </td>
+                            <td className='px-2 py-2'>
+                              {column.dataType}
+                            </td>
+                            <td className='px-2 py-2'>
+                              <div className='flex flex-wrap gap-1'>
+                                {column.primaryKey ? (
+                                  <Badge variant='default'>PK</Badge>
+                                ) : null}
+                                {column.uniqueKey ? (
+                                  <Badge variant='outline'>UK</Badge>
+                                ) : null}
+                                {!column.primaryKey && !column.uniqueKey ? (
+                                  <span className='text-muted-foreground'>-</span>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className='px-2 py-2'>
+                              <Badge
+                                variant={
+                                  column.nullable === false
+                                    ? 'destructive'
+                                    : 'secondary'
+                                }
+                              >
+                                {column.nullable === false
+                                  ? 'No'
+                                  : column.nullable === true
+                                    ? 'Yes'
+                                    : '-'}
+                              </Badge>
+                            </td>
+                            <td className='px-2 py-2'>
+                              {column.defaultValue}
+                            </td>
+                            <td className='px-2 py-2 text-muted-foreground'>
+                              {column.comment}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
                 </div>
-              )}
-            </div>
+
+                <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                  <div className='mb-2 text-sm font-medium'>Constraint Keys</div>
+                  <div className='flex flex-wrap gap-2'>
+                    {(
+                      toObject(
+                        toObject(selectedTableDetail.schema).schema,
+                      ).constraintKeys as Array<Record<string, unknown>>
+                    )?.length ? (
+                      (
+                        toObject(
+                          toObject(selectedTableDetail.schema).schema,
+                        ).constraintKeys as Array<Record<string, unknown>>
+                      ).map((constraint, index) => (
+                        <Badge
+                          key={`${constraint.constraintName || index}`}
+                          variant='outline'
+                        >
+                          {String(constraint.constraintType || 'CONSTRAINT')}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className='text-sm text-muted-foreground'>-</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                <div className='mb-2 text-sm font-medium'>Columns</div>
+                {selectedTableDetail?.columns?.length ? (
+                  <div className='flex flex-wrap gap-2'>
+                    {selectedTableDetail.columns.map((column) => (
+                      <Badge
+                        key={column}
+                        variant='secondary'
+                        className='rounded-md'
+                      >
+                        {column}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className='text-sm text-muted-foreground'>
+                    No schema columns available
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

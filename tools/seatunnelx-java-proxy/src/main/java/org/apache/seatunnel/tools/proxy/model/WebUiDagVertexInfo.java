@@ -29,13 +29,15 @@ public class WebUiDagVertexInfo {
     private final String connectorType;
     private final List<String> tablePaths;
     private final Map<String, List<String>> tableColumns;
+    private final Map<String, Map<String, Object>> tableSchemas;
 
     public WebUiDagVertexInfo(
             Integer vertexId,
             String type,
             String connectorType,
             List<String> tablePaths,
-            Map<String, List<String>> tableColumns) {
+            Map<String, List<String>> tableColumns,
+            Map<String, Map<String, Object>> tableSchemas) {
         this.vertexId = vertexId;
         this.type = type;
         this.connectorType = connectorType;
@@ -47,6 +49,10 @@ public class WebUiDagVertexInfo {
                 tableColumns == null
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(new LinkedHashMap<>(tableColumns));
+        this.tableSchemas =
+                tableSchemas == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(tableSchemas));
     }
 
     public Integer getVertexId() {
@@ -67,5 +73,9 @@ public class WebUiDagVertexInfo {
 
     public Map<String, List<String>> getTableColumns() {
         return tableColumns;
+    }
+
+    public Map<String, Map<String, Object>> getTableSchemas() {
+        return tableSchemas;
     }
 }

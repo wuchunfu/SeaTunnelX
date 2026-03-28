@@ -33,6 +33,9 @@ import org.apache.seatunnel.api.source.SeaTunnelSource;
 import org.apache.seatunnel.api.source.SourceSplit;
 import org.apache.seatunnel.api.table.catalog.CatalogTable;
 import org.apache.seatunnel.api.table.catalog.Column;
+import org.apache.seatunnel.api.table.catalog.ConstraintKey;
+import org.apache.seatunnel.api.table.catalog.PrimaryKey;
+import org.apache.seatunnel.api.table.catalog.TableSchema;
 import org.apache.seatunnel.api.table.factory.FactoryUtil;
 import org.apache.seatunnel.api.transform.SeaTunnelTransform;
 import org.apache.seatunnel.core.starter.utils.ConfigBuilder;
@@ -134,7 +137,8 @@ public class JobConfigSupportService {
                             output,
                             getNodeDisplayPaths(
                                     displayPaths, nodeId, Collections.singletonList(output)),
-                            getNodeDisplayColumns(displayPaths, nodeId)));
+                            getNodeDisplayColumns(displayPaths, nodeId),
+                            getNodeDisplaySchemas(displayPaths, nodeId)));
             producers.put(output, nodeId);
         }
 
@@ -153,7 +157,8 @@ public class JobConfigSupportService {
                             output,
                             getNodeDisplayPaths(
                                     displayPaths, nodeId, buildTransformFallback(output, inputs)),
-                            getNodeDisplayColumns(displayPaths, nodeId)));
+                            getNodeDisplayColumns(displayPaths, nodeId),
+                            getNodeDisplaySchemas(displayPaths, nodeId)));
             producers.put(output, nodeId);
         }
 
@@ -170,7 +175,8 @@ public class JobConfigSupportService {
                             inputs,
                             null,
                             getNodeDisplayPaths(displayPaths, nodeId, inputs),
-                            getNodeDisplayColumns(displayPaths, nodeId)));
+                            getNodeDisplayColumns(displayPaths, nodeId),
+                            getNodeDisplaySchemas(displayPaths, nodeId)));
         }
 
         if (simpleGraph) {
@@ -557,6 +563,7 @@ public class JobConfigSupportService {
         }
         Set<String> tablePaths = new LinkedHashSet<>();
         Map<String, List<String>> columns = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> schemas = new LinkedHashMap<>();
         for (CatalogTable catalogTable : catalogTables) {
             if (catalogTable == null || catalogTable.getTablePath() == null) {
                 continue;
@@ -567,8 +574,9 @@ public class JobConfigSupportService {
             }
             tablePaths.add(fullName);
             columns.put(fullName, extractColumnNames(catalogTable));
+            schemas.put(fullName, serializeCatalogTable(catalogTable));
         }
-        return new OfficialNodeDisplayInfo(new ArrayList<>(tablePaths), columns);
+        return new OfficialNodeDisplayInfo(new ArrayList<>(tablePaths), columns, schemas);
     }
 
     private List<String> getNodeDisplayPaths(
@@ -597,6 +605,15 @@ public class JobConfigSupportService {
         return info.getTableColumns();
     }
 
+    private Map<String, Map<String, Object>> getNodeDisplaySchemas(
+            Map<String, OfficialNodeDisplayInfo> officialPaths, String nodeId) {
+        OfficialNodeDisplayInfo info = officialPaths.get(nodeId);
+        if (info == null) {
+            return Collections.emptyMap();
+        }
+        return info.getTableSchemas();
+    }
+
     private List<String> extractColumnNames(CatalogTable catalogTable) {
         if (catalogTable == null || catalogTable.getTableSchema() == null) {
             return Collections.emptyList();
@@ -614,6 +631,82 @@ public class JobConfigSupportService {
         return names;
     }
 
+    private Map<String, Object> serializeCatalogTable(CatalogTable catalogTable) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("tablePath", catalogTable.getTablePath().getFullName());
+        result.put("catalogName", catalogTable.getCatalogName());
+        result.put("comment", catalogTable.getComment());
+        result.put("partitionKeys", catalogTable.getPartitionKeys());
+        result.put("schema", serializeSchema(catalogTable.getTableSchema()));
+        return result;
+    }
+
+    private Map<String, Object> serializeSchema(TableSchema tableSchema) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (tableSchema == null) {
+            result.put("columns", Collections.emptyList());
+            result.put("primaryKey", null);
+            result.put("constraintKeys", Collections.emptyList());
+            return result;
+        }
+        List<Map<String, Object>> columns = new ArrayList<>();
+        if (tableSchema.getColumns() != null) {
+            for (Column column : tableSchema.getColumns()) {
+                Map<String, Object> columnInfo = new LinkedHashMap<>();
+                columnInfo.put("name", column.getName());
+                columnInfo.put(
+                        "dataType",
+                        column.getDataType() == null ? null : column.getDataType().toString());
+                columnInfo.put("columnLength", column.getColumnLength());
+                columnInfo.put("scale", column.getScale());
+                columnInfo.put("nullable", column.isNullable());
+                columnInfo.put("defaultValue", column.getDefaultValue());
+                columnInfo.put("comment", column.getComment());
+                columnInfo.put("sourceType", column.getSourceType());
+                columnInfo.put("sinkType", column.getSinkType());
+                columnInfo.put("options", column.getOptions());
+                columns.add(columnInfo);
+            }
+        }
+        result.put("columns", columns);
+
+        PrimaryKey primaryKey = tableSchema.getPrimaryKey();
+        if (primaryKey == null) {
+            result.put("primaryKey", null);
+        } else {
+            Map<String, Object> primaryKeyInfo = new LinkedHashMap<>();
+            primaryKeyInfo.put("name", primaryKey.getPrimaryKey());
+            primaryKeyInfo.put("columnNames", primaryKey.getColumnNames());
+            primaryKeyInfo.put("enableAutoId", primaryKey.getEnableAutoId());
+            result.put("primaryKey", primaryKeyInfo);
+        }
+
+        List<Map<String, Object>> constraints = new ArrayList<>();
+        if (tableSchema.getConstraintKeys() != null) {
+            for (ConstraintKey constraintKey : tableSchema.getConstraintKeys()) {
+                Map<String, Object> constraintInfo = new LinkedHashMap<>();
+                constraintInfo.put("constraintType", constraintKey.getConstraintType().name());
+                constraintInfo.put("constraintName", constraintKey.getConstraintName());
+                List<Map<String, Object>> columnsInfo = new ArrayList<>();
+                if (constraintKey.getColumnNames() != null) {
+                    for (ConstraintKey.ConstraintKeyColumn column :
+                            constraintKey.getColumnNames()) {
+                        Map<String, Object> columnInfo = new LinkedHashMap<>();
+                        columnInfo.put("columnName", column.getColumnName());
+                        columnInfo.put(
+                                "sortType",
+                                column.getSortType() == null ? null : column.getSortType().name());
+                        columnsInfo.add(columnInfo);
+                    }
+                }
+                constraintInfo.put("columns", columnsInfo);
+                constraints.add(constraintInfo);
+            }
+        }
+        result.put("constraintKeys", constraints);
+        return result;
+    }
+
     private List<String> buildTransformFallback(String output, List<String> inputs) {
         if (StringUtils.isNotBlank(output)) {
             return Collections.singletonList(output);
@@ -624,15 +717,20 @@ public class JobConfigSupportService {
     private static final class OfficialNodeDisplayInfo {
         private final List<String> tablePaths;
         private final Map<String, List<String>> tableColumns;
+        private final Map<String, Map<String, Object>> tableSchemas;
 
         private OfficialNodeDisplayInfo(
-                List<String> tablePaths, Map<String, List<String>> tableColumns) {
+                List<String> tablePaths,
+                Map<String, List<String>> tableColumns,
+                Map<String, Map<String, Object>> tableSchemas) {
             this.tablePaths = tablePaths == null ? Collections.emptyList() : tablePaths;
             this.tableColumns = tableColumns == null ? Collections.emptyMap() : tableColumns;
+            this.tableSchemas = tableSchemas == null ? Collections.emptyMap() : tableSchemas;
         }
 
         static OfficialNodeDisplayInfo empty() {
-            return new OfficialNodeDisplayInfo(Collections.emptyList(), Collections.emptyMap());
+            return new OfficialNodeDisplayInfo(
+                    Collections.emptyList(), Collections.emptyMap(), Collections.emptyMap());
         }
 
         List<String> getTablePaths() {
@@ -641,6 +739,10 @@ public class JobConfigSupportService {
 
         Map<String, List<String>> getTableColumns() {
             return tableColumns;
+        }
+
+        Map<String, Map<String, Object>> getTableSchemas() {
+            return tableSchemas;
         }
     }
 }

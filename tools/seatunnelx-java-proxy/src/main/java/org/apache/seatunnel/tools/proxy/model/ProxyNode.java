@@ -32,6 +32,7 @@ public class ProxyNode {
     private final String outputDataset;
     private final List<String> tablePaths;
     private final Map<String, List<String>> tableColumns;
+    private final Map<String, Map<String, Object>> tableSchemas;
 
     public ProxyNode(
             String nodeId,
@@ -41,7 +42,8 @@ public class ProxyNode {
             List<String> inputDatasets,
             String outputDataset,
             List<String> tablePaths,
-            Map<String, List<String>> tableColumns) {
+            Map<String, List<String>> tableColumns,
+            Map<String, Map<String, Object>> tableSchemas) {
         this.nodeId = nodeId;
         this.kind = kind;
         this.pluginName = pluginName;
@@ -59,6 +61,10 @@ public class ProxyNode {
                 tableColumns == null
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(new LinkedHashMap<>(tableColumns));
+        this.tableSchemas =
+                tableSchemas == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(tableSchemas));
     }
 
     public String getNodeId() {
@@ -91,5 +97,9 @@ public class ProxyNode {
 
     public Map<String, List<String>> getTableColumns() {
         return tableColumns;
+    }
+
+    public Map<String, Map<String, Object>> getTableSchemas() {
+        return tableSchemas;
     }
 }

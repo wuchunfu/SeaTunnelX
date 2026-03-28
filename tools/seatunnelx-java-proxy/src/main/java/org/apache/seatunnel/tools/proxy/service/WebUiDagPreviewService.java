@@ -86,7 +86,8 @@ public class WebUiDagPreviewService {
                             mapType(node.getKind()),
                             buildConnectorType(node),
                             buildTablePaths(node),
-                            node.getTableColumns()));
+                            node.getTableColumns(),
+                            node.getTableSchemas()));
         }
 
         List<WebUiDagEdge> edges = new ArrayList<>();

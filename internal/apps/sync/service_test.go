@@ -20,6 +20,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,17 +35,23 @@ type stubConfigToolClient struct {
 	dagErr       error
 	validateResp *ConfigToolValidateResponse
 	validateErr  error
+	lastDAGReq   *ConfigToolContentRequest
+	lastWebUIReq *ConfigToolContentRequest
+	lastValidReq *ConfigToolValidateRequest
 }
 
 func (s *stubConfigToolClient) InspectDAG(ctx context.Context, endpoint string, req *ConfigToolContentRequest) (*ConfigToolDAGResponse, error) {
+	s.lastDAGReq = req
 	return s.dagResp, s.dagErr
 }
 
 func (s *stubConfigToolClient) InspectWebUIDAG(ctx context.Context, endpoint string, req *ConfigToolContentRequest) (*ConfigToolWebUIDAGResponse, error) {
+	s.lastWebUIReq = req
 	return s.webuiResp, s.webuiErr
 }
 
 func (s *stubConfigToolClient) ValidateConfig(ctx context.Context, endpoint string, req *ConfigToolValidateRequest) (*ConfigToolValidateResponse, error) {
+	s.lastValidReq = req
 	return s.validateResp, s.validateErr
 }
 
@@ -273,6 +280,90 @@ func TestCreateTaskRejectsDuplicateNameInSameFolder(t *testing.T) {
 	}
 }
 
+func TestRecoverJobUsesHistoricalSubmittedScriptWhenDraftIsNil(t *testing.T) {
+	service := newTestSyncService(t)
+	ctx := context.Background()
+
+	folder, err := service.CreateTask(ctx, &CreateTaskRequest{
+		NodeType:      string(TaskNodeTypeFolder),
+		Name:          "recover_root",
+		ContentFormat: string(ContentFormatHOCON),
+	}, 1)
+	if err != nil {
+		t.Fatalf("create folder failed: %v", err)
+	}
+
+	task, err := service.CreateTask(ctx, &CreateTaskRequest{
+		ParentID:      uintPtr(folder.ID),
+		NodeType:      string(TaskNodeTypeFile),
+		Name:          "recover_job",
+		ContentFormat: string(ContentFormatHOCON),
+		Content:       "env { job.mode = \"STREAMING\" }\nsource { FakeSource { plugin_output = \"fake\" } }\nsink { Console {} }",
+		Definition: JSONMap{
+			"execution_mode": "cluster",
+		},
+	}, 1)
+	if err != nil {
+		t.Fatalf("create task failed: %v", err)
+	}
+	if _, _, err := service.PublishTask(ctx, task.ID, "initial", 1); err != nil {
+		t.Fatalf("publish task failed: %v", err)
+	}
+	updated, err := service.UpdateTask(ctx, task.ID, &UpdateTaskRequest{
+		ParentID:      uintPtr(folder.ID),
+		NodeType:      string(TaskNodeTypeFile),
+		Name:          task.Name,
+		ContentFormat: string(ContentFormatHOCON),
+		Content:       "env { job.mode = \"STREAMING\" }\nsource { FakeSource { plugin_output = \"new_fake\" } }\nsink { Console {} }",
+		Definition:    task.Definition,
+	})
+	if err != nil {
+		t.Fatalf("update task failed: %v", err)
+	}
+	if strings.Contains(updated.Content, "plugin_output = \"fake\"") {
+		t.Fatalf("expected task content to change before recover")
+	}
+
+	source := &JobInstance{
+		TaskID:        task.ID,
+		TaskVersion:   1,
+		RunType:       RunTypeRun,
+		PlatformJobID: "177467000000000001",
+		EngineJobID:   "177467000000000001",
+		Status:        JobStatusSuccess,
+		SubmitSpec: JSONMap{
+			"mode":              "cluster",
+			"format":            "hocon",
+			"submitted_format":  "hocon",
+			"submitted_content": "env { job.mode = \"STREAMING\" }\nsource { FakeSource { plugin_output = \"historical_fake\" } }\nsink { Console {} }",
+			"job_name":          "historical_job",
+			"platform_job_id":   "177467000000000001",
+		},
+		CreatedBy: 1,
+	}
+	if err := service.repo.CreateJobInstance(ctx, source); err != nil {
+		t.Fatalf("create source job failed: %v", err)
+	}
+
+	recovered, err := service.RecoverJob(ctx, source.ID, 2, nil)
+	if err != nil {
+		t.Fatalf("recover job failed: %v", err)
+	}
+	if recovered.RunType != RunTypeRecover {
+		t.Fatalf("expected recover run type, got %s", recovered.RunType)
+	}
+	if recovered.RecoveredFromInstanceID == nil || *recovered.RecoveredFromInstanceID != source.ID {
+		t.Fatalf("expected recovered_from=%d, got %+v", source.ID, recovered.RecoveredFromInstanceID)
+	}
+	submitted := strings.TrimSpace(stringValue(recovered.SubmitSpec, "submitted_content"))
+	if !strings.Contains(submitted, "historical_fake") {
+		t.Fatalf("expected historical submitted content, got %q", submitted)
+	}
+	if strings.Contains(submitted, "new_fake") {
+		t.Fatalf("expected recover to avoid current task draft/content, got %q", submitted)
+	}
+}
+
 func TestUpdateTaskRejectsDuplicateSiblingName(t *testing.T) {
 	service := newTestSyncService(t)
 	ctx := context.Background()
@@ -426,7 +517,7 @@ func TestBuildTaskDAGPrefersWebUICompatibleDag(t *testing.T) {
 	})
 	service.SetConfigToolResolver(&stubConfigToolResolver{endpoint: "http://127.0.0.1:18080"})
 
-	result, err := service.BuildTaskDAG(ctx, file.ID)
+	result, err := service.BuildTaskDAG(ctx, file.ID, nil)
 	if err != nil {
 		t.Fatalf("BuildTaskDAG returned error: %v", err)
 	}
@@ -494,7 +585,7 @@ func TestValidateTaskUsesConfigToolValidation(t *testing.T) {
 	})
 	service.SetConfigToolResolver(&stubConfigToolResolver{endpoint: "http://127.0.0.1:18080"})
 
-	result, err := service.ValidateTask(ctx, file.ID)
+	result, err := service.ValidateTask(ctx, file.ID, nil)
 	if err != nil {
 		t.Fatalf("ValidateTask returned error: %v", err)
 	}
@@ -551,7 +642,7 @@ func TestTestTaskConnectionsReturnsConfigToolChecks(t *testing.T) {
 	})
 	service.SetConfigToolResolver(&stubConfigToolResolver{endpoint: "http://127.0.0.1:18080"})
 
-	result, err := service.TestTaskConnections(ctx, file.ID)
+	result, err := service.TestTaskConnections(ctx, file.ID, nil)
 	if err != nil {
 		t.Fatalf("TestTaskConnections returned error: %v", err)
 	}
@@ -586,7 +677,9 @@ func TestResolveTaskContentAppliesGlobalAndCustomVariables(t *testing.T) {
 			},
 		},
 	}
-	resolved, err := service.resolveTaskContent(ctx, task)
+	resolved, err := service.resolveTaskContent(ctx, task, &taskVariableRuntime{
+		ReferenceTime: time.Date(2026, time.March, 28, 12, 30, 45, 0, time.Local),
+	})
 	if err != nil {
 		t.Fatalf("resolve task content failed: %v", err)
 	}
@@ -622,13 +715,155 @@ func TestResolveTaskContentPrefersCustomVariablesAndKeepsComplexValues(t *testin
 			},
 		},
 	}
-	resolved, err := service.resolveTaskContent(ctx, task)
+	resolved, err := service.resolveTaskContent(ctx, task, &taskVariableRuntime{
+		ReferenceTime: time.Date(2026, time.March, 28, 12, 30, 45, 0, time.Local),
+	})
 	if err != nil {
 		t.Fatalf("resolve task content failed: %v", err)
 	}
 	expected := "url = jdbc://mysql:3306/test\nquery = select * from \"aa.test\""
 	if resolved != expected {
 		t.Fatalf("unexpected resolved content: %q", resolved)
+	}
+}
+
+func TestResolveTaskContentSupportsBuiltinTimeVariables(t *testing.T) {
+	service := newTestSyncService(t)
+	ctx := context.Background()
+
+	task := &Task{
+		ID:            23,
+		Name:          "time-demo",
+		ContentFormat: ContentFormatHOCON,
+		Content: strings.Join([]string{
+			"biz_date = {{system.biz.date}}",
+			"biz_curdate = {{system.biz.curdate}}",
+			"datetime = {{system.datetime}}",
+			"dt = {{yyyyMMdd-1}}",
+			"month_start = {{month_first_day(yyyy-MM-dd,0)}}",
+			"week_end = {{week_last_day(yyyyMMdd,0)}}",
+			"native = ${table_name}",
+		}, "\n"),
+	}
+
+	resolved, err := service.resolveTaskContent(ctx, task, &taskVariableRuntime{
+		ReferenceTime: time.Date(2026, time.March, 28, 9, 8, 7, 0, time.Local),
+		PlatformJobID: "1770000000001",
+	})
+	if err != nil {
+		t.Fatalf("resolve task content failed: %v", err)
+	}
+
+	expected := strings.Join([]string{
+		"biz_date = 20260327",
+		"biz_curdate = 20260328",
+		"datetime = 20260328090807",
+		"dt = 20260327",
+		"month_start = 2026-03-01",
+		"week_end = 20260329",
+		"native = ${table_name}",
+	}, "\n")
+	if resolved != expected {
+		t.Fatalf("unexpected resolved content:\n%s", resolved)
+	}
+}
+
+func TestCreateGlobalVariableRejectsReservedBuiltinVariableKey(t *testing.T) {
+	service := newTestSyncService(t)
+	ctx := context.Background()
+
+	_, err := service.CreateGlobalVariable(ctx, &CreateGlobalVariableRequest{
+		Key:   "system.biz.date",
+		Value: "20260328",
+	}, 1)
+	if !errors.Is(err, ErrReservedBuiltinVariableKey) {
+		t.Fatalf("expected reserved builtin key error, got %v", err)
+	}
+}
+
+func TestCreateTaskRejectsReservedCustomVariableKey(t *testing.T) {
+	service := newTestSyncService(t)
+	ctx := context.Background()
+
+	root, err := service.CreateTask(ctx, &CreateTaskRequest{
+		NodeType: string(TaskNodeTypeFolder),
+		Name:     "workspace",
+	}, 1)
+	if err != nil {
+		t.Fatalf("create workspace root failed: %v", err)
+	}
+
+	_, err = service.CreateTask(ctx, &CreateTaskRequest{
+		NodeType:      string(TaskNodeTypeFile),
+		ParentID:      uintPtr(root.ID),
+		Name:          "demo.hocon",
+		ContentFormat: string(ContentFormatHOCON),
+		Content:       "env { dt = {{system.biz.date}} }",
+		Definition: JSONMap{
+			"custom_variables": map[string]interface{}{
+				"system.biz.date": "override",
+			},
+		},
+	}, 1)
+	if !errors.Is(err, ErrReservedBuiltinVariableKey) {
+		t.Fatalf("expected reserved builtin key error, got %v", err)
+	}
+}
+
+func TestValidateTaskUsesDraftContentWithoutSavingTask(t *testing.T) {
+	service := newTestSyncService(t)
+	ctx := context.Background()
+
+	folder, err := service.CreateTask(ctx, &CreateTaskRequest{
+		NodeType: string(TaskNodeTypeFolder),
+		Name:     "workspace",
+	}, 1)
+	if err != nil {
+		t.Fatalf("create folder failed: %v", err)
+	}
+	file, err := service.CreateTask(ctx, &CreateTaskRequest{
+		ParentID:      uintPtr(folder.ID),
+		NodeType:      string(TaskNodeTypeFile),
+		Name:          "draft-demo.hocon",
+		ContentFormat: string(ContentFormatHOCON),
+		Content:       "env { dt = \"saved\" }",
+		Definition: JSONMap{
+			"preview_http_sink": map[string]interface{}{"url": "http://127.0.0.1/collect"},
+		},
+	}, 1)
+	if err != nil {
+		t.Fatalf("create file failed: %v", err)
+	}
+
+	client := &stubConfigToolClient{
+		validateResp: &ConfigToolValidateResponse{Valid: true, Summary: "ok"},
+	}
+	service.SetConfigToolClient(client)
+	service.SetConfigToolResolver(&stubConfigToolResolver{endpoint: "http://127.0.0.1:18080"})
+
+	_, err = service.ValidateTask(ctx, file.ID, &TaskDraftPayload{
+		Name:          file.Name,
+		Description:   file.Description,
+		ClusterID:     file.ClusterID,
+		EngineVersion: file.EngineVersion,
+		Mode:          string(file.Mode),
+		ContentFormat: string(file.ContentFormat),
+		Content:       "env { dt = \"{{system.biz.curdate}}\" }",
+		JobName:       file.JobName,
+		Definition:    cloneJSONMap(file.Definition),
+	})
+	if err != nil {
+		t.Fatalf("validate task failed: %v", err)
+	}
+	if client.lastValidReq == nil || !strings.Contains(client.lastValidReq.Content, "env { dt = ") {
+		t.Fatalf("expected validate request to include draft content, got %#v", client.lastValidReq)
+	}
+	fresh, err := service.GetTask(ctx, file.ID)
+	if err != nil {
+		t.Fatalf("reload task failed: %v", err)
+	}
+	if fresh.Content != "env { dt = \"saved\" }" {
+		t.Fatalf("expected stored content to remain unchanged, got %q", fresh.Content)
 	}
 }
 

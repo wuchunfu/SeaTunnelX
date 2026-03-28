@@ -41,6 +41,7 @@ fi
 APP_JAR=${SEATUNNEL_HOME:-}/starter/seatunnel-starter.jar
 DEFAULT_PROXY_VERSION="${CAPABILITY_PROXY_DEFAULT_VERSION:-2.3.13}"
 APP_MAIN="org.apache.seatunnel.tools.proxy.SeatunnelXJavaProxyApplication"
+DEFAULT_PROXY_PORT="18080"
 
 fail_preflight() {
   echo "seatunnelx-java-proxy preflight failed: $1" >&2
@@ -148,6 +149,53 @@ append_plugin_jars() {
   rm -f "${jar_list_file}"
 }
 
+resolve_proxy_port() {
+  local port="${SEATUNNELX_JAVA_PROXY_PORT:-}"
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -Dseatunnelx.java.proxy.port=*)
+        port="${arg#-Dseatunnelx.java.proxy.port=}"
+        ;;
+    esac
+  done
+  if [ -z "${port}" ]; then
+    port="${DEFAULT_PROXY_PORT}"
+  fi
+  printf '%s\n' "${port}"
+}
+
+kill_existing_proxy_listener() {
+  local port="$1"
+  local pids=""
+  if command -v ss >/dev/null 2>&1; then
+    pids=$(ss -lntp 2>/dev/null | awk -v port=":${port}" '$4 ~ port {print $NF}' | grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u || true)
+  fi
+  if [ -z "${pids}" ] && command -v lsof >/dev/null 2>&1; then
+    pids=$(lsof -ti TCP:"${port}" -sTCP:LISTEN 2>/dev/null | sort -u || true)
+  fi
+  [ -z "${pids}" ] && return 0
+
+  local pid cmdline
+  for pid in ${pids}; do
+    [ -z "${pid}" ] && continue
+    cmdline=$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)
+    if printf '%s' "${cmdline}" | grep -q "${APP_MAIN}"; then
+      echo "seatunnelx-java-proxy detected existing listener on port ${port}, killing pid=${pid}" >&2
+      kill "${pid}" 2>/dev/null || true
+      local retries=30
+      while kill -0 "${pid}" 2>/dev/null && [ "${retries}" -gt 0 ]; do
+        sleep 1
+        retries=$((retries - 1))
+      done
+      if kill -0 "${pid}" 2>/dev/null; then
+        echo "seatunnelx-java-proxy pid=${pid} did not exit gracefully, killing -9" >&2
+        kill -9 "${pid}" 2>/dev/null || true
+      fi
+    fi
+  done
+}
+
 if [ -d "${SEATUNNEL_HOME}/connectors" ]; then
   CLASS_PATH=${CLASS_PATH}:${SEATUNNEL_HOME}/connectors/*
 fi
@@ -161,6 +209,9 @@ fi
 if [ -n "${EXTRA_PROXY_CLASSPATH:-}" ]; then
   CLASS_PATH=${CLASS_PATH}:${EXTRA_PROXY_CLASSPATH}
 fi
+
+PROXY_PORT="$(resolve_proxy_port "$@")"
+kill_existing_proxy_listener "${PROXY_PORT}"
 
 if [ ${#APP_ARGS[@]} -eq 0 ]; then
   exec java ${JAVA_OPTS} -cp "${CLASS_PATH}" ${APP_MAIN}

@@ -37,6 +37,8 @@ import type {
   SyncTaskVersion,
   SyncTaskVersionListData,
   SyncValidateResult,
+  SyncTaskActionRequest,
+  SyncRecoverJobRequest,
   UpdateSyncGlobalVariableRequest,
   UpdateSyncTaskRequest,
 } from './types';
@@ -142,19 +144,31 @@ export class SyncService extends BaseService {
     );
   }
 
-  static async validateTask(taskId: number): Promise<SyncValidateResult> {
-    return this.post<SyncValidateResult>(`/tasks/${taskId}/validate`, {});
-  }
-
-  static async testConnections(taskId: number): Promise<SyncValidateResult> {
+  static async validateTask(
+    taskId: number,
+    request?: SyncTaskActionRequest,
+  ): Promise<SyncValidateResult> {
     return this.post<SyncValidateResult>(
-      `/tasks/${taskId}/test-connections`,
-      {},
+      `/tasks/${taskId}/validate`,
+      request || {},
     );
   }
 
-  static async buildDag(taskId: number): Promise<SyncDagResult> {
-    return this.post<SyncDagResult>(`/tasks/${taskId}/dag`, {});
+  static async testConnections(
+    taskId: number,
+    request?: SyncTaskActionRequest,
+  ): Promise<SyncValidateResult> {
+    return this.post<SyncValidateResult>(
+      `/tasks/${taskId}/test-connections`,
+      request || {},
+    );
+  }
+
+  static async buildDag(
+    taskId: number,
+    request?: SyncTaskActionRequest,
+  ): Promise<SyncDagResult> {
+    return this.post<SyncDagResult>(`/tasks/${taskId}/dag`, request || {});
   }
 
   static async previewTask(
@@ -167,8 +181,11 @@ export class SyncService extends BaseService {
     );
   }
 
-  static async submitTask(taskId: number): Promise<SyncJobInstance> {
-    return this.post<SyncJobInstance>(`/tasks/${taskId}/submit`, {});
+  static async submitTask(
+    taskId: number,
+    request?: SyncTaskActionRequest,
+  ): Promise<SyncJobInstance> {
+    return this.post<SyncJobInstance>(`/tasks/${taskId}/submit`, request || {});
   }
 
   static async listJobs(params?: {
@@ -219,8 +236,11 @@ export class SyncService extends BaseService {
     return response.data.data;
   }
 
-  static async recoverJob(jobId: number): Promise<SyncJobInstance> {
-    return this.post<SyncJobInstance>(`/jobs/${jobId}/recover`, {});
+  static async recoverJob(
+    jobId: number,
+    request?: SyncRecoverJobRequest,
+  ): Promise<SyncJobInstance> {
+    return this.post<SyncJobInstance>(`/jobs/${jobId}/recover`, request || {});
   }
 
   static async cancelJob(

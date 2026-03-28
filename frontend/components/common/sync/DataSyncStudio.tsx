@@ -688,13 +688,210 @@ function filterTree(
 }
 
 function detectVariables(content: string): string[] {
-  const matches = [...content.matchAll(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g)];
+  const matches = [...content.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)];
   return Array.from(
     new Set(
       matches.map((match) => match[1]?.trim()).filter(Boolean) as string[],
     ),
   ).sort();
 }
+
+function isReservedBuiltinVariableKey(key: string): boolean {
+  const trimmed = key.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const fixed = new Set([
+    'system.biz.date',
+    'system.biz.curdate',
+    'system.datetime',
+    'system.task.execute.path',
+    'system.task.instance.id',
+    'system.task.definition.name',
+    'system.task.definition.code',
+    'system.workflow.instance.id',
+    'system.workflow.definition.name',
+    'system.workflow.definition.code',
+    'system.project.name',
+    'system.project.code',
+  ]);
+  if (fixed.has(trimmed)) {
+    return true;
+  }
+  return /(yyyy|MM|dd|HH|mm|ss|add_months|this_day|last_day|year_week|month_first_day|month_last_day|week_first_day|week_last_day)/.test(
+    trimmed,
+  );
+}
+
+function validateCustomVariableRows(
+  rows: VariableRow[],
+  t: ReturnType<typeof useTranslations<'workbenchStudio'>>,
+): string | null {
+  for (const row of rows) {
+    const key = row.key.trim();
+    if (!key) {
+      continue;
+    }
+    if (isReservedBuiltinVariableKey(key)) {
+      return t('reservedBuiltinVariableKey', {key: `{{${key}}}`});
+    }
+  }
+  return null;
+}
+
+function padTimeUnit(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function formatBuiltinPreviewDate(date: Date, pattern: string): string {
+  return pattern
+    .replaceAll('yyyy', String(date.getFullYear()))
+    .replaceAll('MM', padTimeUnit(date.getMonth() + 1))
+    .replaceAll('dd', padTimeUnit(date.getDate()))
+    .replaceAll('HH', padTimeUnit(date.getHours()))
+    .replaceAll('mm', padTimeUnit(date.getMinutes()))
+    .replaceAll('ss', padTimeUnit(date.getSeconds()));
+}
+
+function addMonths(date: Date, months: number): Date {
+  const next = new Date(date.getTime());
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function startOfWeek(date: Date): Date {
+  const next = new Date(date.getTime());
+  const day = next.getDay() === 0 ? 7 : next.getDay();
+  next.setDate(next.getDate() - day + 1);
+  return next;
+}
+
+function yearWeek(date: Date, weekStart = 1): {year: number; week: number} {
+  const next = new Date(date.getTime());
+  const jsWeekStart = weekStart === 7 ? 0 : weekStart;
+  const day = next.getDay();
+  const diff = (7 + day - jsWeekStart) % 7;
+  next.setDate(next.getDate() - diff);
+  const first = new Date(next.getFullYear(), 0, 1, next.getHours(), next.getMinutes(), next.getSeconds(), next.getMilliseconds());
+  const firstDay = first.getDay();
+  const firstDiff = (7 + firstDay - jsWeekStart) % 7;
+  first.setDate(first.getDate() - firstDiff);
+  const week = Math.floor((next.getTime() - first.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+  return {year: next.getFullYear(), week};
+}
+
+function resolveBuiltinPreviewExpression(expr: string, now = new Date()): string | null {
+  const trimmed = expr.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed === 'system.biz.date') {
+    const prev = new Date(now.getTime());
+    prev.setDate(prev.getDate() - 1);
+    return formatBuiltinPreviewDate(prev, 'yyyyMMdd');
+  }
+  if (trimmed === 'system.biz.curdate') {
+    return formatBuiltinPreviewDate(now, 'yyyyMMdd');
+  }
+  if (trimmed === 'system.datetime') {
+    return formatBuiltinPreviewDate(now, 'yyyyMMddHHmmss');
+  }
+  if (trimmed === 'system.project.name') {
+    return 'SeaTunnelX';
+  }
+  if (trimmed === 'system.project.code') {
+    return 'seatunnelx';
+  }
+  if (/^add_months\((.+),(.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^add_months\((.+),(.+)\)$/);
+    if (!match) return null;
+    const format = match[1].trim();
+    const offset = Number(match[2].trim());
+    if (!Number.isFinite(offset)) return null;
+    return formatBuiltinPreviewDate(addMonths(now, offset), format);
+  }
+  if (/^this_day\((.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^this_day\((.+)\)$/);
+    return match ? formatBuiltinPreviewDate(now, match[1].trim()) : null;
+  }
+  if (/^last_day\((.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^last_day\((.+)\)$/);
+    if (!match) return null;
+    const prev = new Date(now.getTime());
+    prev.setDate(prev.getDate() - 1);
+    return formatBuiltinPreviewDate(prev, match[1].trim());
+  }
+  if (/^month_first_day\((.+),(.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^month_first_day\((.+),(.+)\)$/);
+    if (!match) return null;
+    const target = addMonths(now, Number(match[2].trim()));
+    const first = new Date(target.getFullYear(), target.getMonth(), 1, target.getHours(), target.getMinutes(), target.getSeconds());
+    return formatBuiltinPreviewDate(first, match[1].trim());
+  }
+  if (/^month_last_day\((.+),(.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^month_last_day\((.+),(.+)\)$/);
+    if (!match) return null;
+    const target = addMonths(now, Number(match[2].trim()) + 1);
+    const last = new Date(target.getFullYear(), target.getMonth(), 0, target.getHours(), target.getMinutes(), target.getSeconds());
+    return formatBuiltinPreviewDate(last, match[1].trim());
+  }
+  if (/^week_first_day\((.+),(.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^week_first_day\((.+),(.+)\)$/);
+    if (!match) return null;
+    const target = new Date(now.getTime());
+    target.setDate(target.getDate() + Number(match[2].trim()) * 7);
+    return formatBuiltinPreviewDate(startOfWeek(target), match[1].trim());
+  }
+  if (/^week_last_day\((.+),(.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^week_last_day\((.+),(.+)\)$/);
+    if (!match) return null;
+    const target = new Date(now.getTime());
+    target.setDate(target.getDate() + Number(match[2].trim()) * 7);
+    const end = startOfWeek(target);
+    end.setDate(end.getDate() + 6);
+    return formatBuiltinPreviewDate(end, match[1].trim());
+  }
+  if (/^year_week\((.+)\)$/.test(trimmed) || /^year_week\((.+),(.+)\)$/.test(trimmed)) {
+    const match = trimmed.match(/^year_week\((.+?)(?:,(.+))?\)$/);
+    if (!match) return null;
+    const format = match[1].trim();
+    const weekStart = match[2] ? Number(match[2].trim()) : 1;
+    const result = yearWeek(now, Number.isFinite(weekStart) ? weekStart : 1);
+    return format
+      .replaceAll('yyyy', String(result.year))
+      .replaceAll('MM', padTimeUnit(result.week));
+  }
+  const offsetMatch = trimmed.match(/^(.+?)([+-])(\d+(?:\/\d+)*)$/);
+  if (offsetMatch) {
+    const [, format, sign, rawOffset] = offsetMatch;
+    const [first, ...rest] = rawOffset.split('/');
+    const offset = rest.reduce((acc, value) => acc / Number(value), Number(first));
+    const hours = (sign === '-' ? -1 : 1) * offset * 24;
+    const target = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    return formatBuiltinPreviewDate(target, format.trim());
+  }
+  if (/(yyyy|MM|dd|HH|mm|ss)/.test(trimmed)) {
+    return formatBuiltinPreviewDate(now, trimmed);
+  }
+  return null;
+}
+
+const BUILTIN_TIME_VARIABLE_ITEMS = [
+  {expr: 'system.biz.curdate', descKey: 'builtinSystemBizCurdateDesc'},
+  {expr: 'system.biz.date', descKey: 'builtinSystemBizDateDesc'},
+  {expr: 'system.datetime', descKey: 'builtinSystemDateTimeDesc'},
+  {expr: 'yyyyMMdd', descKey: 'builtinFormatDesc'},
+  {expr: 'yyyy-MM-dd', descKey: 'builtinFormatDesc'},
+  {expr: 'yyyyMMdd+1', descKey: 'builtinOffsetDesc'},
+  {expr: 'add_months(yyyyMMdd,-1)', descKey: 'builtinAddMonthsDesc'},
+  {expr: 'this_day(yyyy-MM-dd)', descKey: 'builtinThisDayDesc'},
+  {expr: 'last_day(yyyy-MM-dd)', descKey: 'builtinLastDayDesc'},
+  {expr: 'year_week(yyyy-MM-dd)', descKey: 'builtinYearWeekDesc'},
+  {expr: 'month_first_day(yyyy-MM-dd,0)', descKey: 'builtinMonthFirstDayDesc'},
+  {expr: 'month_last_day(yyyy-MM-dd,0)', descKey: 'builtinMonthLastDayDesc'},
+  {expr: 'week_first_day(yyyy-MM-dd,0)', descKey: 'builtinWeekFirstDayDesc'},
+  {expr: 'week_last_day(yyyy-MM-dd,0)', descKey: 'builtinWeekLastDayDesc'},
+] as const;
 
 function validateWorkspaceName(
   name: string,
@@ -741,6 +938,13 @@ function formatSyncUserFacingError(
   t: ReturnType<typeof useTranslations<'workbenchStudio'>>,
 ): UserFacingErrorState {
   const message = error instanceof Error ? error.message : t('unknownError');
+  if (message.includes('sync: task has not been published')) {
+    return {
+      title: t('saveRequiredTitle'),
+      description: t('saveRequiredDescription'),
+      raw: error instanceof Error ? error.message : message,
+    };
+  }
   if (message.includes('sync: 配置解析失败')) {
     return {
       title: t('configParseFailedTitle'),
@@ -2685,6 +2889,14 @@ export function DataSyncStudio() {
         toast.error(t('fileContentRequired'));
         return null;
       }
+      const customVariableError = validateCustomVariableRows(
+        customVariableRowsRef.current,
+        t,
+      );
+      if (customVariableError) {
+        toast.error(customVariableError);
+        return null;
+      }
       setSaving(true);
       try {
         const payload = buildTaskPayload();
@@ -3048,8 +3260,9 @@ export function DataSyncStudio() {
   const runPreflightValidation = async (
     taskId: number,
     actionLabel: string,
+    draft?: ReturnType<typeof buildTaskPayload>,
   ) => {
-    const result = await services.sync.validateTask(taskId);
+    const result = await services.sync.validateTask(taskId, draft ? {draft} : {});
     if (!result.valid) {
       setValidationTitle(t('validateConfigTitle'));
       setValidationResult(result);
@@ -3060,18 +3273,43 @@ export function DataSyncStudio() {
     return true;
   };
 
+  const ensureDraftActionContext = useCallback(
+    (actionLabel: string) => {
+      if (!editor.id) {
+        toast.error(t('saveBeforeAction', {action: actionLabel}));
+        return null;
+      }
+      const customVariableError = validateCustomVariableRows(
+        customVariableRowsRef.current,
+        t,
+      );
+      if (customVariableError) {
+        toast.error(customVariableError);
+        return null;
+      }
+      return {taskId: editor.id, draft: buildTaskPayload()};
+    },
+    [buildTaskPayload, editor.id, t],
+  );
+
   const handleBuildDag = async () => {
-    const task = await persistCurrentFile(false);
-    if (!task) {
+    const actionContext = ensureDraftActionContext(t('dagActionLabel'));
+    if (!actionContext) {
       return;
     }
     setActionPending('dag');
     try {
-      const passed = await runPreflightValidation(task.id, t('dagActionLabel'));
+      const passed = await runPreflightValidation(
+        actionContext.taskId,
+        t('dagActionLabel'),
+        actionContext.draft,
+      );
       if (!passed) {
         return;
       }
-      const result = await services.sync.buildDag(task.id);
+      const result = await services.sync.buildDag(actionContext.taskId, {
+        draft: actionContext.draft,
+      });
       setDagResult(result);
       setDagError(null);
       setDagOpen(true);
@@ -3089,12 +3327,14 @@ export function DataSyncStudio() {
   };
 
   const handleValidateConfig = async () => {
-    const task = await persistCurrentFile(false);
-    if (!task) {
+    const actionContext = ensureDraftActionContext(t('validateConfigTitle'));
+    if (!actionContext) {
       return;
     }
     try {
-      const result = await services.sync.validateTask(task.id);
+      const result = await services.sync.validateTask(actionContext.taskId, {
+        draft: actionContext.draft,
+      });
       setValidationTitle(t('validateConfigTitle'));
       setValidationResult(result);
       setValidationOpen(true);
@@ -3120,13 +3360,15 @@ export function DataSyncStudio() {
   };
 
   const handleTestConnections = async () => {
-    const task = await persistCurrentFile(false);
-    if (!task) {
+    const actionContext = ensureDraftActionContext(t('testConnections'));
+    if (!actionContext) {
       return;
     }
     setActionPending('test_connections');
     try {
-      const result = await services.sync.testConnections(task.id);
+      const result = await services.sync.testConnections(actionContext.taskId, {
+        draft: actionContext.draft,
+      });
       setValidationTitle(t('testConnections'));
       setValidationResult(result);
       setValidationOpen(true);
@@ -3193,29 +3435,40 @@ export function DataSyncStudio() {
     };
     setEditor((prev) => ({...prev, definition: nextDefinition}));
     setPreviewRunDialog((current) => ({...current, open: false}));
-    const task = await persistCurrentFile(false);
-    if (!task) {
+    if (!editor.id) {
+      toast.error(t('saveBeforeAction', {action: t('previewActionLabel')}));
       return;
     }
+    const draft = {
+      ...buildTaskPayload(),
+      definition: nextDefinition,
+    };
     setActionPending('preview');
     try {
       const passed = await runPreflightValidation(
-        task.id,
+        editor.id,
         t('previewActionLabel'),
+        draft,
       );
       if (!passed) {
         return;
       }
-      const job = await services.sync.previewTask(task.id, {
+      const job = await services.sync.previewTask(editor.id, {
         row_limit: normalizedRowLimit,
         timeout_minutes: normalizedTimeoutMinutes,
+        draft,
       });
-      await loadJobs(task.id);
+      await loadJobs(editor.id);
       setSelectedJobId(job.id);
       setBottomConsoleTab('preview');
       toast.success(t('previewSubmitted'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('previewFailed'));
+      const uiError = formatSyncUserFacingError(
+        error,
+        t('previewFailed'),
+        t,
+      );
+      toast.error(uiError.description);
     } finally {
       setActionPending((current) => (current === 'preview' ? null : current));
     }
@@ -3229,14 +3482,17 @@ export function DataSyncStudio() {
       toast.error(t('waitForActiveRun'));
       return;
     }
-    const task = await persistCurrentFile(true);
-    if (!task) {
+    const actionLabel =
+      mode === 'recover' ? t('recoverActionLabel') : t('runActionLabel');
+    const actionContext = ensureDraftActionContext(actionLabel);
+    if (!actionContext) {
       return;
     }
     try {
       const passed = await runPreflightValidation(
-        task.id,
-        mode === 'recover' ? t('recoverActionLabel') : t('runActionLabel'),
+        actionContext.taskId,
+        actionLabel,
+        actionContext.draft,
       );
       if (!passed) {
         return;
@@ -3253,9 +3509,13 @@ export function DataSyncStudio() {
       }
       const job =
         mode === 'recover'
-          ? await services.sync.recoverJob(Number(resolvedRecoverSourceId))
-          : await services.sync.submitTask(task.id);
-      await loadJobs(task.id);
+          ? await services.sync.recoverJob(Number(resolvedRecoverSourceId), {
+              draft: actionContext.draft,
+            })
+          : await services.sync.submitTask(actionContext.taskId, {
+              draft: actionContext.draft,
+            });
+      await loadJobs(actionContext.taskId);
       setSelectedJobId(job.id);
       if (mode === 'recover') {
         setRecoverSourceId('');
@@ -3265,7 +3525,8 @@ export function DataSyncStudio() {
         mode === 'recover' ? t('recoverSubmitted') : t('runSubmitted'),
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('runFailed'));
+      const uiError = formatSyncUserFacingError(error, t('runFailed'), t);
+      toast.error(uiError.description);
     } finally {
       setActionPending((current) => (current === 'recover' ? null : current));
     }
@@ -3300,7 +3561,27 @@ export function DataSyncStudio() {
   };
 
   const handleRecoverFromHistory = (jobId: number) => {
-    void handleRun('recover', jobId);
+    void (async () => {
+      setActionPending('recover');
+      try {
+        const job = await services.sync.recoverJob(jobId);
+        if (editor.id) {
+          await loadJobs(editor.id);
+        }
+        setSelectedJobId(job.id);
+        setBottomConsoleTab('jobs');
+        toast.success(t('recoverSubmitted'));
+      } catch (error) {
+        const uiError = formatSyncUserFacingError(
+          error,
+          t('recoverActionLabel'),
+          t,
+        );
+        toast.error(uiError.description);
+      } finally {
+        setActionPending((current) => (current === 'recover' ? null : current));
+      }
+    })();
   };
 
   const handleExecutionModeChange = (value: ExecutionMode) => {
@@ -3351,11 +3632,15 @@ export function DataSyncStudio() {
   };
 
   const handleSaveCustomVariableRow = (rowId: string) => {
-    syncCustomVariablesToEditor(
-      customVariableRows.map((row) =>
-        row.id === rowId ? {...row, ...customVariableDraft} : row,
-      ),
+    const nextRows = customVariableRows.map((row) =>
+      row.id === rowId ? {...row, ...customVariableDraft} : row,
     );
+    const error = validateCustomVariableRows(nextRows, t);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    syncCustomVariablesToEditor(nextRows);
     setEditingCustomVariableId(null);
     setCustomVariableDraft({key: '', value: ''});
   };
@@ -3388,6 +3673,11 @@ export function DataSyncStudio() {
     payload: {key: string; value: string; description: string},
   ) => {
     try {
+      if (isReservedBuiltinVariableKey(payload.key)) {
+        throw new Error(
+          t('reservedBuiltinVariableKey', {key: `{{${payload.key.trim()}}}`}),
+        );
+      }
       if (item) {
         await services.sync.updateGlobalVariable(item.id, payload);
         toast.success(t('globalVariableUpdated'));
@@ -4762,6 +5052,7 @@ function SettingsSidebarPanel({
   onDeleteCustomVariableRow: (rowId: string) => void;
 }) {
   const t = useTranslations('workbenchStudio');
+  const builtinPreviewNow = useMemo(() => new Date(), []);
   return (
     <div className='mx-auto min-w-0 max-w-[236px] space-y-4'>
       <div className='rounded-lg border border-border/50 bg-muted/10 p-3'>
@@ -4944,15 +5235,75 @@ function SettingsSidebarPanel({
         <div className='flex flex-wrap gap-2'>
           {detectedVariables.length > 0 ? (
             detectedVariables.map((variable) => (
-              <Badge key={variable} variant='outline'>
-                {`{{${variable}}}`}
-              </Badge>
+              <Tooltip key={variable}>
+                <TooltipTrigger asChild>
+                  <Badge variant='outline'>{`{{${variable}}}`}</Badge>
+                </TooltipTrigger>
+                <TooltipContent className='max-w-[320px] break-all text-xs'>
+                  <div>{`{{${variable}}}`}</div>
+                  {resolveBuiltinPreviewExpression(variable, builtinPreviewNow) ? (
+                    <div className='mt-1 text-muted-foreground'>
+                      {t('builtinPreviewResult', {
+                        value:
+                          resolveBuiltinPreviewExpression(
+                            variable,
+                            builtinPreviewNow,
+                          ) || '-',
+                      })}
+                    </div>
+                  ) : null}
+                </TooltipContent>
+              </Tooltip>
             ))
           ) : (
             <span className='text-xs text-muted-foreground'>
               {t('noDetectedVariables')}
             </span>
           )}
+        </div>
+      </div>
+
+      <div className='rounded-lg border border-border/50 bg-muted/10 p-3'>
+        <div className='mb-2 flex items-center gap-2'>
+          <Label className='block text-xs'>{t('builtinTimeVariables')}</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type='button'
+                size='icon'
+                variant='ghost'
+                className='size-6 text-muted-foreground'
+              >
+                <Eye className='size-3.5' />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className='max-w-[320px] text-xs leading-5'>
+              {t('builtinTimeVariablesHint')}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        <div className='flex flex-wrap gap-2'>
+          {BUILTIN_TIME_VARIABLE_ITEMS.map((item) => (
+            <Tooltip key={item.expr}>
+              <TooltipTrigger asChild>
+                <Badge variant='secondary' className='cursor-help'>
+                  {`{{${item.expr}}}`}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className='max-w-[360px] break-all text-xs leading-5'>
+                <div>{t(item.descKey)}</div>
+                <div className='mt-1 text-muted-foreground'>
+                  {t('builtinPreviewResult', {
+                    value:
+                      resolveBuiltinPreviewExpression(
+                        item.expr,
+                        builtinPreviewNow,
+                      ) || '-',
+                  })}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          ))}
         </div>
       </div>
     </div>

@@ -273,6 +273,7 @@ export interface SyncWebUIDagVertexInfo {
   connectorType: string;
   tablePaths?: string[];
   tableColumns?: Record<string, string[]>;
+  tableSchemas?: Record<string, SyncJSON>;
 }
 
 export interface SyncWebUIJobDag {
@@ -328,4 +329,13 @@ export interface UpdateSyncGlobalVariableRequest extends CreateSyncGlobalVariabl
 export interface PreviewSyncTaskRequest {
   row_limit?: number;
   timeout_minutes?: number;
+  draft?: UpdateSyncTaskRequest;
+}
+
+export interface SyncTaskActionRequest {
+  draft?: UpdateSyncTaskRequest;
+}
+
+export interface SyncRecoverJobRequest {
+  draft?: UpdateSyncTaskRequest;
 }

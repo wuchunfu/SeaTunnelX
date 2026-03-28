@@ -332,7 +332,14 @@ func (h *Handler) ValidateTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ValidateResponse{ErrorMsg: "invalid task id"})
 		return
 	}
-	result, err := h.service.ValidateTask(c.Request.Context(), id)
+	var req TaskActionRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ValidateResponse{ErrorMsg: err.Error()})
+			return
+		}
+	}
+	result, err := h.service.ValidateTask(c.Request.Context(), id, req.Draft)
 	if err != nil {
 		c.JSON(h.getStatusCodeForError(err), ValidateResponse{ErrorMsg: err.Error()})
 		return
@@ -347,7 +354,14 @@ func (h *Handler) TestTaskConnections(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, ValidateResponse{ErrorMsg: "invalid task id"})
 		return
 	}
-	result, err := h.service.TestTaskConnections(c.Request.Context(), id)
+	var req TaskActionRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ValidateResponse{ErrorMsg: err.Error()})
+			return
+		}
+	}
+	result, err := h.service.TestTaskConnections(c.Request.Context(), id, req.Draft)
 	if err != nil {
 		c.JSON(h.getStatusCodeForError(err), ValidateResponse{ErrorMsg: err.Error()})
 		return
@@ -362,7 +376,14 @@ func (h *Handler) GetTaskDAG(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, DAGResponse{ErrorMsg: "invalid task id"})
 		return
 	}
-	result, err := h.service.BuildTaskDAG(c.Request.Context(), id)
+	var req TaskActionRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, DAGResponse{ErrorMsg: err.Error()})
+			return
+		}
+	}
+	result, err := h.service.BuildTaskDAG(c.Request.Context(), id, req.Draft)
 	if err != nil {
 		c.JSON(h.getStatusCodeForError(err), DAGResponse{ErrorMsg: err.Error()})
 		return
@@ -399,7 +420,14 @@ func (h *Handler) SubmitTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, JobResponse{ErrorMsg: "invalid task id"})
 		return
 	}
-	job, err := h.service.SubmitTask(c.Request.Context(), id, getCurrentUserID(c))
+	var req TaskActionRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, JobResponse{ErrorMsg: err.Error()})
+			return
+		}
+	}
+	job, err := h.service.SubmitTask(c.Request.Context(), id, getCurrentUserID(c), req.Draft)
 	if err != nil {
 		c.JSON(h.getStatusCodeForError(err), JobResponse{ErrorMsg: err.Error()})
 		return
@@ -570,7 +598,14 @@ func (h *Handler) RecoverJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, JobResponse{ErrorMsg: "invalid job id"})
 		return
 	}
-	job, err := h.service.RecoverJob(c.Request.Context(), id, getCurrentUserID(c))
+	var req RecoverJobRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, JobResponse{ErrorMsg: err.Error()})
+			return
+		}
+	}
+	job, err := h.service.RecoverJob(c.Request.Context(), id, getCurrentUserID(c), req.Draft)
 	if err != nil {
 		c.JSON(h.getStatusCodeForError(err), JobResponse{ErrorMsg: err.Error()})
 		return
@@ -602,7 +637,7 @@ func (h *Handler) getStatusCodeForError(err error) int {
 	switch {
 	case errors.Is(err, ErrTaskNotFound), errors.Is(err, ErrTaskVersionNotFound), errors.Is(err, ErrJobInstanceNotFound), errors.Is(err, ErrGlobalVariableNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, ErrTaskNameRequired), errors.Is(err, ErrTaskNameInvalid), errors.Is(err, ErrTaskParentCycle), errors.Is(err, ErrRootFileNotAllowed), errors.Is(err, ErrInvalidTaskMode), errors.Is(err, ErrInvalidTaskStatus), errors.Is(err, ErrInvalidRunType), errors.Is(err, ErrInvalidPreviewMode), errors.Is(err, ErrTaskDefinitionEmpty), errors.Is(err, ErrPreviewHTTPSinkEmpty), errors.Is(err, ErrTaskNotPublished), errors.Is(err, ErrInvalidNodeType), errors.Is(err, ErrParentTaskNotFolder), errors.Is(err, ErrFolderContentUnsupported), errors.Is(err, ErrTaskNotFile), errors.Is(err, ErrInvalidContentFormat), errors.Is(err, ErrRecoverSourceRequired), errors.Is(err, ErrLocalClusterRequired), errors.Is(err, ErrLocalSavepointUnsupported), errors.Is(err, ErrPreviewPayloadInvalid), errors.Is(err, ErrGlobalVariableKeyRequired), errors.Is(err, ErrGlobalVariableKeyInvalid):
+	case errors.Is(err, ErrTaskNameRequired), errors.Is(err, ErrTaskNameInvalid), errors.Is(err, ErrTaskParentCycle), errors.Is(err, ErrRootFileNotAllowed), errors.Is(err, ErrInvalidTaskMode), errors.Is(err, ErrInvalidTaskStatus), errors.Is(err, ErrInvalidRunType), errors.Is(err, ErrInvalidPreviewMode), errors.Is(err, ErrTaskDefinitionEmpty), errors.Is(err, ErrPreviewHTTPSinkEmpty), errors.Is(err, ErrTaskNotPublished), errors.Is(err, ErrInvalidNodeType), errors.Is(err, ErrParentTaskNotFolder), errors.Is(err, ErrFolderContentUnsupported), errors.Is(err, ErrTaskNotFile), errors.Is(err, ErrInvalidContentFormat), errors.Is(err, ErrRecoverSourceRequired), errors.Is(err, ErrLocalClusterRequired), errors.Is(err, ErrLocalSavepointUnsupported), errors.Is(err, ErrPreviewPayloadInvalid), errors.Is(err, ErrGlobalVariableKeyRequired), errors.Is(err, ErrGlobalVariableKeyInvalid), errors.Is(err, ErrReservedBuiltinVariableKey):
 		return http.StatusBadRequest
 	case errors.Is(err, ErrTaskArchived), errors.Is(err, ErrJobAlreadyFinished), errors.Is(err, ErrGlobalVariableKeyDuplicate), errors.Is(err, ErrTaskNameDuplicate):
 		return http.StatusConflict

@@ -78,15 +78,39 @@ type CancelJobRequest struct {
 	StopWithSavepoint bool `json:"stop_with_savepoint"`
 }
 
+// TaskDraftPayload represents one unsaved in-memory task draft used by actions.
+type TaskDraftPayload struct {
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	ClusterID     uint    `json:"cluster_id"`
+	EngineVersion string  `json:"engine_version"`
+	Mode          string  `json:"mode"`
+	ContentFormat string  `json:"content_format"`
+	Content       string  `json:"content"`
+	JobName       string  `json:"job_name"`
+	Definition    JSONMap `json:"definition"`
+}
+
+// TaskActionRequest represents an action request with an optional unsaved draft.
+type TaskActionRequest struct {
+	Draft *TaskDraftPayload `json:"draft,omitempty"`
+}
+
 // PreviewTaskRequest represents optional preview execution parameters.
 type PreviewTaskRequest struct {
-	RowLimit        int    `json:"row_limit"`
-	TimeoutMinutes  int    `json:"timeout_minutes"`
-	SourceNodeID    string `json:"source_node_id,omitempty"`
-	SourceIndex     *int   `json:"source_index,omitempty"`
-	TransformNodeID string `json:"transform_node_id,omitempty"`
-	TransformIndex  *int   `json:"transform_index,omitempty"`
-	Mode            string `json:"mode,omitempty"`
+	RowLimit        int               `json:"row_limit"`
+	TimeoutMinutes  int               `json:"timeout_minutes"`
+	SourceNodeID    string            `json:"source_node_id,omitempty"`
+	SourceIndex     *int              `json:"source_index,omitempty"`
+	TransformNodeID string            `json:"transform_node_id,omitempty"`
+	TransformIndex  *int              `json:"transform_index,omitempty"`
+	Mode            string            `json:"mode,omitempty"`
+	Draft           *TaskDraftPayload `json:"draft,omitempty"`
+}
+
+// RecoverJobRequest represents a recover request with an optional unsaved task draft.
+type RecoverJobRequest struct {
+	Draft *TaskDraftPayload `json:"draft,omitempty"`
 }
 
 // TaskFilter represents task list query filters.

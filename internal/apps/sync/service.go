@@ -114,6 +114,9 @@ func (s *Service) CreateGlobalVariable(ctx context.Context, req *CreateGlobalVar
 	if err != nil {
 		return nil, err
 	}
+	if isReservedBuiltinVariableKey(key) {
+		return nil, fmt.Errorf("%w: {{%s}}", ErrReservedBuiltinVariableKey, key)
+	}
 	if _, err := s.repo.GetGlobalVariableByKey(ctx, key); err == nil {
 		return nil, ErrGlobalVariableKeyDuplicate
 	} else if err != nil && !errors.Is(err, ErrGlobalVariableNotFound) {
@@ -143,6 +146,9 @@ func (s *Service) UpdateGlobalVariable(ctx context.Context, id uint, req *Update
 	key, err := normalizeGlobalVariableKey(req.Key)
 	if err != nil {
 		return nil, err
+	}
+	if isReservedBuiltinVariableKey(key) {
+		return nil, fmt.Errorf("%w: {{%s}}", ErrReservedBuiltinVariableKey, key)
 	}
 	if other, err := s.repo.GetGlobalVariableByKey(ctx, key); err == nil && other.ID != id {
 		return nil, ErrGlobalVariableKeyDuplicate
@@ -195,6 +201,9 @@ func (s *Service) CreateTask(ctx context.Context, req *CreateTaskRequest, create
 		return nil, err
 	}
 	definition := cloneJSONMap(req.Definition)
+	if err := validateVariableKeyConflicts(extractDefinitionVariables(definition, "custom_variables")); err != nil {
+		return nil, err
+	}
 	content := strings.TrimSpace(req.Content)
 	jobName := strings.TrimSpace(req.JobName)
 	if nodeType == TaskNodeTypeFolder {
@@ -315,6 +324,9 @@ func (s *Service) UpdateTask(ctx context.Context, id uint, req *UpdateTaskReques
 	} else {
 		task.Definition = cloneJSONMap(req.Definition)
 	}
+	if err := validateVariableKeyConflicts(extractDefinitionVariables(task.Definition, "custom_variables")); err != nil {
+		return nil, err
+	}
 	if err := s.repo.UpdateTask(ctx, task); err != nil {
 		return nil, err
 	}
@@ -356,6 +368,43 @@ func (s *Service) DeleteTask(ctx context.Context, id uint) error {
 		}
 		return tx.DeleteTasksByIDs(ctx, targetIDs)
 	})
+}
+
+func (s *Service) getTaskForExecution(ctx context.Context, id uint, draft *TaskDraftPayload) (*Task, error) {
+	task, err := s.repo.GetTaskByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	s.applyTaskDefaults(task)
+	if draft == nil {
+		return task, nil
+	}
+	name, err := normalizeTaskName(draft.Name)
+	if err != nil {
+		return nil, err
+	}
+	mode, err := normalizeTaskMode(draft.Mode)
+	if err != nil {
+		return nil, err
+	}
+	format, err := normalizeContentFormat(draft.ContentFormat)
+	if err != nil {
+		return nil, err
+	}
+	definition := cloneJSONMap(draft.Definition)
+	if err := validateVariableKeyConflicts(extractDefinitionVariables(definition, "custom_variables")); err != nil {
+		return nil, err
+	}
+	task.Name = name
+	task.Description = strings.TrimSpace(draft.Description)
+	task.ClusterID = draft.ClusterID
+	task.EngineVersion = strings.TrimSpace(draft.EngineVersion)
+	task.Mode = mode
+	task.ContentFormat = format
+	task.Content = draft.Content
+	task.JobName = strings.TrimSpace(draft.JobName)
+	task.Definition = definition
+	return task, nil
 }
 
 // PublishTask snapshots current file definition and marks task as published.
@@ -476,12 +525,11 @@ func (s *Service) DeleteTaskVersion(ctx context.Context, id uint, versionID uint
 }
 
 // ValidateTask validates current file content.
-func (s *Service) ValidateTask(ctx context.Context, id uint) (*ValidateResult, error) {
-	task, err := s.repo.GetTaskByID(ctx, id)
+func (s *Service) ValidateTask(ctx context.Context, id uint, draft *TaskDraftPayload) (*ValidateResult, error) {
+	task, err := s.getTaskForExecution(ctx, id, draft)
 	if err != nil {
 		return nil, err
 	}
-	s.applyTaskDefaults(task)
 	if task.NodeType != TaskNodeTypeFile {
 		return nil, ErrTaskNotFile
 	}
@@ -496,7 +544,7 @@ func (s *Service) ValidateTask(ctx context.Context, id uint) (*ValidateResult, e
 	if s.configToolClient != nil && s.configToolResolver != nil {
 		endpoint, endpointErr := s.configToolResolver.ResolveConfigToolEndpoint(ctx, task.ClusterID, task.Definition)
 		if endpointErr == nil {
-			req, buildErr := s.buildConfigToolContentRequest(ctx, task)
+			req, buildErr := s.buildConfigToolContentRequest(ctx, task, nil)
 			if buildErr == nil {
 				validateResp, validateErr := s.configToolClient.ValidateConfig(ctx, endpoint, &ConfigToolValidateRequest{
 					ConfigToolContentRequest: *req,
@@ -530,12 +578,11 @@ func (s *Service) ValidateTask(ctx context.Context, id uint) (*ValidateResult, e
 }
 
 // TestTaskConnections validates connector connectivity for the task definition.
-func (s *Service) TestTaskConnections(ctx context.Context, id uint) (*ValidateResult, error) {
-	task, err := s.repo.GetTaskByID(ctx, id)
+func (s *Service) TestTaskConnections(ctx context.Context, id uint, draft *TaskDraftPayload) (*ValidateResult, error) {
+	task, err := s.getTaskForExecution(ctx, id, draft)
 	if err != nil {
 		return nil, err
 	}
-	s.applyTaskDefaults(task)
 	if task.NodeType != TaskNodeTypeFile {
 		return nil, ErrTaskNotFile
 	}
@@ -551,7 +598,7 @@ func (s *Service) TestTaskConnections(ctx context.Context, id uint) (*ValidateRe
 	if err != nil {
 		return nil, err
 	}
-	req, err := s.buildConfigToolContentRequest(ctx, task)
+	req, err := s.buildConfigToolContentRequest(ctx, task, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -574,12 +621,11 @@ func (s *Service) TestTaskConnections(ctx context.Context, id uint) (*ValidateRe
 }
 
 // BuildTaskDAG returns DAG projection for the task definition.
-func (s *Service) BuildTaskDAG(ctx context.Context, id uint) (*DAGResult, error) {
-	task, err := s.repo.GetTaskByID(ctx, id)
+func (s *Service) BuildTaskDAG(ctx context.Context, id uint, draft *TaskDraftPayload) (*DAGResult, error) {
+	task, err := s.getTaskForExecution(ctx, id, draft)
 	if err != nil {
 		return nil, err
 	}
-	s.applyTaskDefaults(task)
 	if task.NodeType != TaskNodeTypeFile {
 		return nil, ErrTaskNotFile
 	}
@@ -588,7 +634,7 @@ func (s *Service) BuildTaskDAG(ctx context.Context, id uint) (*DAGResult, error)
 		if err != nil {
 			return nil, err
 		}
-		req, buildErr := s.buildConfigToolContentRequest(ctx, task)
+		req, buildErr := s.buildConfigToolContentRequest(ctx, task, nil)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -656,11 +702,14 @@ func dedupeStrings(values []string) []string {
 
 // PreviewTask derives preview config then submits a debug run if possible.
 func (s *Service) PreviewTask(ctx context.Context, id uint, createdBy uint, opts *PreviewTaskRequest) (*JobInstance, error) {
-	task, err := s.repo.GetTaskByID(ctx, id)
+	var draft *TaskDraftPayload
+	if opts != nil {
+		draft = opts.Draft
+	}
+	task, err := s.getTaskForExecution(ctx, id, draft)
 	if err != nil {
 		return nil, err
 	}
-	s.applyTaskDefaults(task)
 	if task.NodeType != TaskNodeTypeFile {
 		return nil, ErrTaskNotFile
 	}
@@ -1001,12 +1050,11 @@ func (s *Service) stopTimedOutPreviewSessions(ctx context.Context) error {
 }
 
 // SubmitTask creates one formal run instance with platform-managed job id.
-func (s *Service) SubmitTask(ctx context.Context, id uint, createdBy uint) (*JobInstance, error) {
-	task, err := s.repo.GetTaskByID(ctx, id)
+func (s *Service) SubmitTask(ctx context.Context, id uint, createdBy uint, draft *TaskDraftPayload) (*JobInstance, error) {
+	task, err := s.getTaskForExecution(ctx, id, draft)
 	if err != nil {
 		return nil, err
 	}
-	s.applyTaskDefaults(task)
 	if task.NodeType != TaskNodeTypeFile {
 		return nil, ErrTaskNotFile
 	}
@@ -1014,17 +1062,18 @@ func (s *Service) SubmitTask(ctx context.Context, id uint, createdBy uint) (*Job
 		return nil, ErrTaskNotPublished
 	}
 	if taskExecutionMode(task) == "local" {
-		body, format, jobName, buildErr := s.buildSubmitPayload(ctx, task)
+		jobID := s.nextJobID()
+		body, format, jobName, buildErr := s.buildSubmitPayload(ctx, task, buildTaskVariableRuntime(task, jobID))
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		return s.submitLocalTaskInstance(ctx, task, createdBy, RunTypeRun, s.nextJobID(), body, format, jobName)
+		return s.submitLocalTaskInstance(ctx, task, createdBy, RunTypeRun, jobID, body, format, jobName)
 	}
 	return s.submitTaskInstance(ctx, task, createdBy, RunTypeRun, s.nextJobID(), false, nil)
 }
 
 // RecoverJob recreates a run using the original platform job id as savepoint recovery source.
-func (s *Service) RecoverJob(ctx context.Context, sourceJobID uint, createdBy uint) (*JobInstance, error) {
+func (s *Service) RecoverJob(ctx context.Context, sourceJobID uint, createdBy uint, draft *TaskDraftPayload) (*JobInstance, error) {
 	source, err := s.repo.GetJobInstanceByID(ctx, sourceJobID)
 	if err != nil {
 		return nil, err
@@ -1037,23 +1086,61 @@ func (s *Service) RecoverJob(ctx context.Context, sourceJobID uint, createdBy ui
 		return nil, err
 	}
 	s.applyTaskDefaults(task)
+	if draft != nil {
+		task, err = s.getTaskForExecution(ctx, source.TaskID, draft)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if task.NodeType != TaskNodeTypeFile {
 		return nil, ErrTaskNotFile
 	}
-	if task.CurrentVersion == 0 {
+	if draft != nil && task.CurrentVersion == 0 {
 		return nil, ErrTaskNotPublished
 	}
 	if taskExecutionMode(task) == "local" {
 		return nil, ErrLocalSavepointUnsupported
 	}
+	if draft == nil {
+		submittedContent := strings.TrimSpace(stringValue(source.SubmitSpec, "submitted_content"))
+		if submittedContent != "" {
+			return s.submitTaskInstanceWithPayload(
+				ctx,
+				task,
+				createdBy,
+				RunTypeRecover,
+				strings.TrimSpace(source.PlatformJobID),
+				true,
+				&source.ID,
+				[]byte(submittedContent),
+				normalizeSubmitFormat(stringValue(source.SubmitSpec, "submitted_format", "format")),
+				strings.TrimSpace(stringValue(source.SubmitSpec, "job_name")),
+			)
+		}
+	}
 	return s.submitTaskInstance(ctx, task, createdBy, RunTypeRecover, strings.TrimSpace(source.PlatformJobID), true, &source.ID)
 }
 
 func (s *Service) submitTaskInstance(ctx context.Context, task *Task, createdBy uint, runType RunType, platformJobID string, startWithSavepoint bool, recoveredFrom *uint) (*JobInstance, error) {
-	submitBody, submitFormat, jobName, err := s.buildSubmitPayload(ctx, task)
+	submitBody, submitFormat, jobName, err := s.buildSubmitPayload(ctx, task, buildTaskVariableRuntime(task, platformJobID))
 	if err != nil {
 		return nil, err
 	}
+	return s.submitTaskInstanceWithPayload(
+		ctx,
+		task,
+		createdBy,
+		runType,
+		platformJobID,
+		startWithSavepoint,
+		recoveredFrom,
+		submitBody,
+		submitFormat,
+		jobName,
+	)
+}
+
+func (s *Service) submitTaskInstanceWithPayload(ctx context.Context, task *Task, createdBy uint, runType RunType, platformJobID string, startWithSavepoint bool, recoveredFrom *uint, submitBody []byte, submitFormat string, jobName string) (*JobInstance, error) {
 	now := time.Now()
 	instance := &JobInstance{
 		TaskID:                  task.ID,
@@ -1436,6 +1523,7 @@ func extractWebUIDAGNodes(vertexInfoMap map[string]ConfigToolWebUIDAGVertexInfo)
 			"connectorType": item.value.ConnectorType,
 			"tablePaths":    append([]string{}, item.value.TablePaths...),
 			"tableColumns":  item.value.TableColumns,
+			"tableSchemas":  item.value.TableSchemas,
 		})
 	}
 	return nodes
@@ -1462,7 +1550,7 @@ func extractWebUIDAGEdges(pipelineEdges map[string][]ConfigToolWebUIDAGEdge) []J
 	return edges
 }
 
-func (s *Service) buildSubmitPayload(ctx context.Context, task *Task) ([]byte, string, string, error) {
+func (s *Service) buildSubmitPayload(ctx context.Context, task *Task, runtime *taskVariableRuntime) ([]byte, string, string, error) {
 	if task == nil {
 		return nil, "", "", fmt.Errorf("sync: task is required")
 	}
@@ -1471,7 +1559,7 @@ func (s *Service) buildSubmitPayload(ctx context.Context, task *Task) ([]byte, s
 	if jobName == "" {
 		jobName = strings.TrimSpace(task.Name)
 	}
-	resolvedContent, err := s.resolveTaskContent(ctx, task)
+	resolvedContent, err := s.resolveTaskContent(ctx, task, runtime)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -1501,11 +1589,11 @@ func buildPreviewPayload(definition JSONMap) ([]byte, string) {
 	return nil, ""
 }
 
-func (s *Service) buildConfigToolContentRequest(ctx context.Context, task *Task) (*ConfigToolContentRequest, error) {
+func (s *Service) buildConfigToolContentRequest(ctx context.Context, task *Task, runtime *taskVariableRuntime) (*ConfigToolContentRequest, error) {
 	if task == nil {
 		return nil, ErrTaskDefinitionEmpty
 	}
-	resolvedContent, err := s.resolveTaskContent(ctx, task)
+	resolvedContent, err := s.resolveTaskContent(ctx, task, runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -1556,7 +1644,7 @@ func (s *Service) derivePreviewPayload(ctx context.Context, task *Task, platform
 }
 
 func (s *Service) buildConfigToolPreviewRequest(ctx context.Context, task *Task, platformJobID string, opts *PreviewTaskRequest) (*ConfigToolPreviewRequest, error) {
-	contentReq, err := s.buildConfigToolContentRequest(ctx, task)
+	contentReq, err := s.buildConfigToolContentRequest(ctx, task, buildTaskVariableRuntime(task, platformJobID))
 	if err != nil {
 		return nil, err
 	}
@@ -1924,33 +2012,7 @@ func normalizePreviewOutputFormat(format string) string {
 	}
 }
 
-var platformVariablePattern = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}`)
-
-func detectTemplateVariables(content string) []string {
-	content = strings.TrimSpace(content)
-	if content == "" {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	result := make([]string, 0)
-	matches := platformVariablePattern.FindAllStringSubmatch(content, -1)
-	for _, match := range matches {
-		if len(match) < 2 {
-			continue
-		}
-		name := strings.TrimSpace(match[1])
-		if name != "" {
-			if _, ok := seen[name]; !ok {
-				seen[name] = struct{}{}
-				result = append(result, name)
-			}
-		}
-	}
-	sort.Strings(result)
-	return result
-}
-
-func (s *Service) resolveTaskContent(ctx context.Context, task *Task) (string, error) {
+func (s *Service) resolveTaskContent(ctx context.Context, task *Task, runtime *taskVariableRuntime) (string, error) {
 	if task == nil {
 		return "", ErrTaskDefinitionEmpty
 	}
@@ -1962,7 +2024,25 @@ func (s *Service) resolveTaskContent(ctx context.Context, task *Task) (string, e
 	if err != nil {
 		return "", err
 	}
-	return replaceTemplateVariables(content, variables), nil
+	return replaceTemplateVariables(content, variables, runtime), nil
+}
+
+func buildTaskVariableRuntime(task *Task, platformJobID string) *taskVariableRuntime {
+	if task == nil {
+		return &taskVariableRuntime{ReferenceTime: time.Now()}
+	}
+	return &taskVariableRuntime{
+		ReferenceTime:          time.Now(),
+		PlatformJobID:          strings.TrimSpace(platformJobID),
+		TaskDefinitionName:     strings.TrimSpace(task.Name),
+		TaskDefinitionCode:     strconv.FormatUint(uint64(task.ID), 10),
+		WorkflowInstanceID:     strings.TrimSpace(platformJobID),
+		WorkflowDefinitionName: strings.TrimSpace(task.Name),
+		WorkflowDefinitionCode: strconv.FormatUint(uint64(task.ID), 10),
+		ProjectName:            "SeaTunnelX",
+		ProjectCode:            "seatunnelx",
+		TaskExecutePath:        strings.TrimSpace(stringValue(task.Definition, "file_path", "config_file_path")),
+	}
 }
 
 func (s *Service) resolveTaskVariables(ctx context.Context, task *Task) (map[string]string, error) {
@@ -1978,6 +2058,9 @@ func (s *Service) resolveTaskVariables(ctx context.Context, task *Task) (map[str
 	}
 	for key, value := range extractDefinitionVariables(task.Definition, "custom_variables") {
 		result[key] = value
+	}
+	if err := validateVariableKeyConflicts(result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -1999,23 +2082,6 @@ func extractDefinitionVariables(definition JSONMap, keys ...string) map[string]s
 		}
 	}
 	return result
-}
-
-func replaceTemplateVariables(content string, variables map[string]string) string {
-	if strings.TrimSpace(content) == "" || len(variables) == 0 {
-		return content
-	}
-	return platformVariablePattern.ReplaceAllStringFunc(content, func(match string) string {
-		parts := platformVariablePattern.FindStringSubmatch(match)
-		if len(parts) < 2 {
-			return match
-		}
-		key := strings.TrimSpace(parts[1])
-		if value, ok := variables[key]; ok {
-			return value
-		}
-		return match
-	})
 }
 
 func (s *Service) ensureRootFilesNested(ctx context.Context) error {
