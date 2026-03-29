@@ -1481,6 +1481,72 @@ function getDisplayJobLifecycleStatus(job: SyncJobInstance | null): string {
   return String(job.status || '-');
 }
 
+function formatJobDateTime(value: string | null | undefined): string {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  return date.toLocaleString();
+}
+
+function formatJobDuration(
+  startedAt: string | null | undefined,
+  finishedAt: string | null | undefined,
+): string {
+  if (!startedAt) {
+    return '-';
+  }
+  const start = new Date(startedAt);
+  if (Number.isNaN(start.getTime())) {
+    return '-';
+  }
+  const end = finishedAt ? new Date(finishedAt) : new Date();
+  if (Number.isNaN(end.getTime())) {
+    return '-';
+  }
+  const durationMs = Math.max(0, end.getTime() - start.getTime());
+  const seconds = Math.floor(durationMs / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m ${String(remainingSeconds).padStart(2, '0')}s`;
+}
+
+function getRunModeLabel(
+  job: SyncJobInstance,
+  t: ReturnType<typeof useTranslations<'workbenchStudio'>>,
+): string {
+  const runType = String(job.run_type || '')
+    .trim()
+    .toLowerCase();
+  if (runType === 'preview') {
+    return t('runModePreview');
+  }
+  if (runType === 'schedule' || runType === 'scheduled') {
+    return t('runModeSchedule');
+  }
+  const submitSpec = toObject(job.submit_spec);
+  const triggerSource = String(
+    submitSpec.trigger_source || submitSpec.trigger_mode || '',
+  )
+    .trim()
+    .toLowerCase();
+  if (triggerSource === 'schedule' || triggerSource === 'scheduled') {
+    return t('runModeSchedule');
+  }
+  return t('runModeManual');
+}
+
 function normalizeJobLifecycleStatus(
   status: string | null | undefined,
 ): string {
@@ -4566,9 +4632,13 @@ export function DataSyncStudio() {
       toast.error(t('saveBeforeAction', {action: t('previewActionLabel')}));
       return;
     }
+    const baseDraft = buildTaskPayload();
     const draft = {
-      ...buildTaskPayload(),
-      definition: nextDefinition,
+      ...baseDraft,
+      definition: {
+        ...toObject(baseDraft.definition),
+        ...nextDefinition,
+      },
     };
     setActionPending('preview');
     try {
@@ -7147,8 +7217,12 @@ function JobRunsPanel({
         <TableHeader>
           <TableRow>
             <TableHead>{t('task')}</TableHead>
+            <TableHead>{t('runMode')}</TableHead>
             <TableHead>{t('status')}</TableHead>
             <TableHead>{t('channel')}</TableHead>
+            <TableHead>{t('startedAt')}</TableHead>
+            <TableHead>{t('finishedAt')}</TableHead>
+            <TableHead>{t('duration')}</TableHead>
             <TableHead>{t('metrics')}</TableHead>
             <TableHead className='text-right'>{t('actions')}</TableHead>
           </TableRow>
@@ -7170,6 +7244,11 @@ function JobRunsPanel({
                   </div>
                 </TableCell>
                 <TableCell>
+                  <Badge variant='outline' className='rounded-sm text-[11px]'>
+                    {getRunModeLabel(job, t)}
+                  </Badge>
+                </TableCell>
+                <TableCell>
                   <Badge
                     variant='outline'
                     className={cn(
@@ -7188,6 +7267,15 @@ function JobRunsPanel({
                         ? 'Legacy REST V1'
                         : 'REST V2'}
                   </Badge>
+                </TableCell>
+                <TableCell className='text-xs text-muted-foreground'>
+                  {formatJobDateTime(job.started_at)}
+                </TableCell>
+                <TableCell className='text-xs text-muted-foreground'>
+                  {formatJobDateTime(job.finished_at)}
+                </TableCell>
+                <TableCell className='text-xs text-muted-foreground'>
+                  {formatJobDuration(job.started_at, job.finished_at)}
                 </TableCell>
                 <TableCell>
                   <div className='space-y-0.5 text-xs'>
