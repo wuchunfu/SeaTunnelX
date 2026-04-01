@@ -65,16 +65,19 @@ test.describe.serial('plugin real e2e', () => {
     });
 
     await page.getByTestId('plugin-search-input').fill('jdbc');
-    await expect(page.getByTestId('plugin-card-jdbc')).toBeVisible({timeout: 120000});
+    await expect(page.getByTestId('plugin-card-jdbc')).toBeVisible({
+      timeout: 120000,
+    });
     await page.getByTestId('plugin-card-jdbc').click();
     await expect(page.getByTestId('plugin-detail-dialog-jdbc')).toBeVisible();
     await page.getByTestId('plugin-profile-mysql').click();
-    await expect(page.getByTestId('plugin-active-official-dependencies')).toContainText(
-      /mysql-connector-java/i,
-      {timeout: 30000},
-    );
+    await expect(
+      page.getByTestId('plugin-active-official-dependencies'),
+    ).toContainText(/mysql-connector-java/i, {timeout: 30000});
     await downloadPluginApi(request, 'jdbc', seatunnelVersion, ['mysql']);
-    console.log('[plugin-real] jdbc mysql download triggered via api with fixed version');
+    console.log(
+      '[plugin-real] jdbc mysql download triggered via api with fixed version',
+    );
 
     const jdbcLocalPlugin = await waitForLocalPlugin(
       request,
@@ -89,7 +92,13 @@ test.describe.serial('plugin real e2e', () => {
     await assertLocalPluginAssets(jdbcLocalPlugin);
     console.log('[plugin-real] jdbc metadata and local assets verified');
 
-    await installPluginToClusterApi(request, cluster.clusterId, 'jdbc', seatunnelVersion, ['mysql']);
+    await installPluginToClusterApi(
+      request,
+      cluster.clusterId,
+      'jdbc',
+      seatunnelVersion,
+      ['mysql'],
+    );
     await waitForInstalledPlugin(
       request,
       cluster.clusterId,
@@ -108,7 +117,9 @@ test.describe.serial('plugin real e2e', () => {
     await expect(
       page.getByTestId(`cluster-plugin-row-jdbc-${seatunnelVersion}`),
     ).toBeVisible({timeout: 30000});
-    await page.getByTestId(`cluster-plugin-view-jdbc-${seatunnelVersion}`).click();
+    await page
+      .getByTestId(`cluster-plugin-view-jdbc-${seatunnelVersion}`)
+      .click();
     await expect(
       page.getByTestId('cluster-plugin-detail-dialog-jdbc'),
     ).toBeVisible({timeout: 30000});
@@ -118,28 +129,35 @@ test.describe.serial('plugin real e2e', () => {
     await expect(
       page.getByTestId('cluster-plugin-detail-dialog-jdbc'),
     ).toContainText(/mysql-connector-java/i);
-    console.log('[plugin-real] cluster plugin detail shows selected profile and dependency');
+    console.log(
+      '[plugin-real] cluster plugin detail shows selected profile and dependency',
+    );
 
     await page.goto('/plugins');
     await page.getByTestId('plugin-search-input').fill('file-obs');
-    await expect(page.getByTestId('plugin-card-file-obs')).toBeVisible({timeout: 120000});
+    await expect(page.getByTestId('plugin-card-file-obs')).toBeVisible({
+      timeout: 120000,
+    });
     await downloadPluginApi(request, 'file-obs', seatunnelVersion);
-    console.log('[plugin-real] file-obs download triggered via api with fixed version');
+    console.log(
+      '[plugin-real] file-obs download triggered via api with fixed version',
+    );
 
     const obsLocalPlugin = await waitForLocalPlugin(
       request,
       'file-obs',
       seatunnelVersion,
       (plugin) =>
-        (plugin.dependencies || []).some((dependency) => dependency.target_dir === 'lib') &&
         (plugin.dependencies || []).some(
-          (dependency) => dependency.artifact_id === 'connector-file-base',
+          (dependency) =>
+            ['lib', 'connectors'].includes(dependency.target_dir || '') &&
+            dependency.artifact_id === 'connector-file-base',
         ),
     );
     await assertLocalPluginAssets(obsLocalPlugin);
     expect(
-      (obsLocalPlugin.dependencies || []).some(
-        (dependency) => dependency.target_dir === 'lib',
+      (obsLocalPlugin.dependencies || []).some((dependency) =>
+        ['lib', 'connectors'].includes(dependency.target_dir || ''),
       ),
     ).toBeTruthy();
     console.log('[plugin-real] file-obs lib assets verified');

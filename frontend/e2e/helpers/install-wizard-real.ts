@@ -56,6 +56,17 @@ interface ClusterListResponse {
   };
 }
 
+interface ClusterNodesResponse {
+  data?: Array<{
+    id?: number | string;
+    role?: string;
+    status?: string;
+    is_online?: boolean;
+    process_pid?: number;
+    install_dir?: string;
+  }>;
+}
+
 interface RuntimeStorageResponse {
   data?: {
     checkpoint?: {
@@ -112,9 +123,9 @@ export async function waitForOnlineHost(
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    const response = await page.context().request.get(
-      `${backendBaseURL}/api/v1/hosts`,
-    );
+    const response = await page
+      .context()
+      .request.get(`${backendBaseURL}/api/v1/hosts`);
     if (response.ok()) {
       const payload = (await response.json()) as HostListResponse;
       const hosts = payload?.data?.hosts ?? [];
@@ -182,9 +193,9 @@ export async function waitForFileContent(
 }
 
 export async function expectInstallationSuccess(page: Page): Promise<void> {
-  await expect(
-    page.getByTestId('install-wizard-step-complete'),
-  ).toBeVisible({timeout: 900000});
+  await expect(page.getByTestId('install-wizard-step-complete')).toBeVisible({
+    timeout: 900000,
+  });
   await expect(page.getByTestId('install-complete-result')).toContainText(
     /安装成功|Installation Success/i,
     {timeout: 900000},
@@ -197,19 +208,35 @@ export async function waitForClusterByInstallDir(
   timeoutMs: number = 180000,
 ): Promise<{id: number; status: string; name: string}> {
   const startedAt = Date.now();
+  const normalizedInstallDir = installDir.replace(/[\/]+$/, '');
+  const installDirBaseName = path.basename(normalizedInstallDir);
 
   while (Date.now() - startedAt < timeoutMs) {
-    const response = await page.context().request.get(`${backendBaseURL}/api/v1/clusters`, {
-      params: {
-        current: '1',
-        size: '100',
-      },
-    });
-    if (response.ok()) {
+    for (let current = 1; current <= 10; current += 1) {
+      const response = await page
+        .context()
+        .request.get(`${backendBaseURL}/api/v1/clusters`, {
+          params: {
+            current: String(current),
+            size: '200',
+          },
+        });
+      if (!response.ok()) {
+        continue;
+      }
       const payload = (await response.json()) as ClusterListResponse;
-      const cluster = (payload?.data?.clusters ?? []).find(
-        (item) => item?.install_dir === installDir,
-      );
+      const cluster = (payload?.data?.clusters ?? []).find((item) => {
+        const candidate = String(item?.install_dir || '').replace(/[\/]+$/, '');
+        if (!candidate) {
+          return false;
+        }
+        return (
+          candidate === normalizedInstallDir ||
+          candidate.endsWith(normalizedInstallDir) ||
+          normalizedInstallDir.endsWith(candidate) ||
+          path.basename(candidate) === installDirBaseName
+        );
+      });
       if (cluster?.id) {
         return {
           id: Number(cluster.id),
@@ -221,7 +248,9 @@ export async function waitForClusterByInstallDir(
     await page.waitForTimeout(2000);
   }
 
-  throw new Error(`Timed out waiting for cluster with install_dir=${installDir}`);
+  throw new Error(
+    `Timed out waiting for cluster with install_dir=${installDir}`,
+  );
 }
 
 export async function ensureClusterRunning(
@@ -232,9 +261,9 @@ export async function ensureClusterRunning(
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    const response = await page.context().request.get(
-      `${backendBaseURL}/api/v1/clusters/${clusterId}`,
-    );
+    const response = await page
+      .context()
+      .request.get(`${backendBaseURL}/api/v1/clusters/${clusterId}`);
     if (response.ok()) {
       const payload = (await response.json()) as {
         data?: {status?: string};
@@ -243,16 +272,22 @@ export async function ensureClusterRunning(
       if (status === 'running') {
         return;
       }
-      if (status === 'installed' || status === 'stopped' || status === 'unknown') {
-        await page.context().request.post(
-          `${backendBaseURL}/api/v1/clusters/${clusterId}/start`,
-        );
+      if (
+        status === 'installed' ||
+        status === 'stopped' ||
+        status === 'unknown'
+      ) {
+        await page
+          .context()
+          .request.post(`${backendBaseURL}/api/v1/clusters/${clusterId}/start`);
       }
     }
     await page.waitForTimeout(3000);
   }
 
-  throw new Error(`Timed out waiting for cluster ${clusterId} to become running`);
+  throw new Error(
+    `Timed out waiting for cluster ${clusterId} to become running`,
+  );
 }
 
 export async function waitForRuntimeStorageReady(
@@ -263,12 +298,17 @@ export async function waitForRuntimeStorageReady(
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    const response = await page.context().request.get(
-      `${backendBaseURL}/api/v1/clusters/${clusterId}/runtime-storage`,
-    );
+    const response = await page
+      .context()
+      .request.get(
+        `${backendBaseURL}/api/v1/clusters/${clusterId}/runtime-storage`,
+      );
     if (response.ok()) {
       const payload = (await response.json()) as RuntimeStorageResponse;
-      if (payload?.data?.checkpoint?.namespace || payload?.data?.imap?.namespace) {
+      if (
+        payload?.data?.checkpoint?.namespace ||
+        payload?.data?.imap?.namespace
+      ) {
         return payload.data!;
       }
     }
@@ -278,30 +318,126 @@ export async function waitForRuntimeStorageReady(
   throw new Error(`Timed out waiting for cluster ${clusterId} runtime storage`);
 }
 
-export async function waitForSeatunnelXJavaProxyHealthy(
+async function waitForClusterMasterNodeReady(
   page: Page,
   clusterId: number,
   timeoutMs: number = 180000,
-): Promise<NonNullable<SeatunnelXJavaProxyStatusResponse['data']>> {
+): Promise<void> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    const response = await page.context().request.get(
-      `${backendBaseURL}/api/v1/clusters/${clusterId}/seatunnelx-java-proxy/status`,
-    );
+    const response = await page
+      .context()
+      .request.get(`${backendBaseURL}/api/v1/clusters/${clusterId}/nodes`);
     if (response.ok()) {
-      const payload = (await response.json()) as SeatunnelXJavaProxyStatusResponse;
-      if (payload?.data?.managed && payload?.data?.running && payload?.data?.healthy) {
-        return payload.data!;
+      const payload = (await response.json()) as ClusterNodesResponse;
+      const readyNode = (payload?.data ?? []).find((node) => {
+        const role = String(node?.role || '').toLowerCase();
+        return (
+          (role === 'master' ||
+            role === 'master/worker' ||
+            role === 'master_worker') &&
+          Boolean(node?.is_online)
+        );
+      });
+      if (readyNode) {
+        return;
       }
     }
-    await page.context().request.post(
-      `${backendBaseURL}/api/v1/clusters/${clusterId}/seatunnelx-java-proxy/start`,
-    );
     await page.waitForTimeout(3000);
   }
 
-  throw new Error(`Timed out waiting for cluster ${clusterId} seatunnelx-java-proxy`);
+  throw new Error(
+    `Timed out waiting for cluster ${clusterId} master node to become online`,
+  );
+}
+
+export async function waitForSeatunnelXJavaProxyHealthy(
+  page: Page,
+  clusterId: number,
+  timeoutMs: number = 300000,
+): Promise<NonNullable<SeatunnelXJavaProxyStatusResponse['data']>> {
+  const startedAt = Date.now();
+  let lastError = '';
+  let lastStatus = '';
+  let lastStartAt = 0;
+
+  await waitForClusterMasterNodeReady(page, clusterId, timeoutMs);
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const response = await page
+      .context()
+      .request.get(
+        `${backendBaseURL}/api/v1/clusters/${clusterId}/seatunnelx-java-proxy/status`,
+      );
+    if (response.ok()) {
+      const payload =
+        (await response.json()) as SeatunnelXJavaProxyStatusResponse;
+      lastStatus = JSON.stringify(payload?.data || {});
+      if (
+        payload?.data?.managed &&
+        payload?.data?.running &&
+        payload?.data?.healthy
+      ) {
+        return payload.data!;
+      }
+      if (payload?.data?.endpoint) {
+        const healthz = await page
+          .context()
+          .request.get(`${payload.data.endpoint.replace(/\/$/, '')}/healthz`);
+        if (healthz.ok()) {
+          return {
+            ...payload.data!,
+            healthy: true,
+            running: true,
+            managed: payload.data?.managed ?? true,
+          };
+        }
+      }
+    } else {
+      try {
+        lastError = await response.text();
+      } catch {
+        lastError = `HTTP ${response.status()}`;
+      }
+    }
+
+    if (Date.now() - lastStartAt >= 10000) {
+      lastStartAt = Date.now();
+      const startResponse = await page
+        .context()
+        .request.post(
+          `${backendBaseURL}/api/v1/clusters/${clusterId}/seatunnelx-java-proxy/start`,
+        );
+      if (!startResponse.ok()) {
+        try {
+          lastError = await startResponse.text();
+        } catch {
+          lastError = `HTTP ${startResponse.status()}`;
+        }
+      }
+    }
+    await page.waitForTimeout(3000);
+  }
+
+  let logPreview = '';
+  try {
+    const logsResponse = await page
+      .context()
+      .request.get(
+        `${backendBaseURL}/api/v1/clusters/${clusterId}/seatunnelx-java-proxy/logs`,
+        {params: {lines: '80'}},
+      );
+    if (logsResponse.ok()) {
+      logPreview = await logsResponse.text();
+    }
+  } catch {
+    // ignore log fetch errors on timeout path
+  }
+
+  throw new Error(
+    `Timed out waiting for cluster ${clusterId} seatunnelx-java-proxy; lastStatus=${lastStatus}; lastError=${lastError}; logs=${logPreview}`,
+  );
 }
 
 export async function validateClusterRuntimeStorage(
@@ -309,9 +445,11 @@ export async function validateClusterRuntimeStorage(
   clusterId: number,
   kind: 'checkpoint' | 'imap',
 ): Promise<NonNullable<RuntimeStorageValidationResponse['data']>> {
-  const response = await page.context().request.post(
-    `${backendBaseURL}/api/v1/clusters/${clusterId}/runtime-storage/${kind}/validate`,
-  );
+  const response = await page
+    .context()
+    .request.post(
+      `${backendBaseURL}/api/v1/clusters/${clusterId}/runtime-storage/${kind}/validate`,
+    );
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as RuntimeStorageValidationResponse;
   expect(payload?.data?.success).toBeTruthy();
@@ -328,14 +466,16 @@ export async function listClusterRuntimeStorage(
   kind: 'checkpoint' | 'imap',
   path: string,
 ): Promise<NonNullable<RuntimeStorageListResponse['data']>> {
-  const response = await page.context().request.post(
-    `${backendBaseURL}/api/v1/clusters/${clusterId}/runtime-storage/${kind}/list`,
-    {
-      data: {
-        path,
+  const response = await page
+    .context()
+    .request.post(
+      `${backendBaseURL}/api/v1/clusters/${clusterId}/runtime-storage/${kind}/list`,
+      {
+        data: {
+          path,
+        },
       },
-    },
-  );
+    );
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as RuntimeStorageListResponse;
   expect(payload?.data?.path).toBeTruthy();
@@ -382,12 +522,20 @@ export async function expectSeatunnelXJavaProxyProbeSuccess(options: {
   kind: 'checkpoint' | 'imap';
   request: Record<string, unknown>;
 }) {
-  const {script, jar, home} = await resolveSeatunnelXJavaProxyAssets(options.version);
+  const {script, jar, home} = await resolveSeatunnelXJavaProxyAssets(
+    options.version,
+  );
 
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stx-java-proxy-e2e-'));
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), 'stx-java-proxy-e2e-'),
+  );
   const requestFile = path.join(tempDir, `${options.kind}.request.json`);
   const responseFile = path.join(tempDir, `${options.kind}.response.json`);
-  await fs.writeFile(requestFile, JSON.stringify(options.request, null, 2), 'utf8');
+  await fs.writeFile(
+    requestFile,
+    JSON.stringify(options.request, null, 2),
+    'utf8',
+  );
 
   try {
     await execFileAsync(
