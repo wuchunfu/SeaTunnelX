@@ -16,6 +16,8 @@
 
 set -euo pipefail
 
+PREPARE_PACKAGE_ONLY="${1:-}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ROOT_DIR="$(cd "${FRONTEND_DIR}/.." && pwd)"
@@ -231,6 +233,11 @@ for version in "${PRELOAD_VERSIONS[@]}"; do
     download_package_if_missing "${version}" "${resolved_mirror}" "${PACKAGE_CACHE_DIR:-${TMP_DIR}/storage/packages}"
   fi
 done
+
+if [[ "${PREPARE_PACKAGE_ONLY}" == "--prepare-package-only" ]]; then
+  echo "[e2e-real] package preload only mode completed"
+  exit 0
+fi
 
 sed \
   -e "s/:18000/:${BACKEND_HTTP_PORT}/g" \

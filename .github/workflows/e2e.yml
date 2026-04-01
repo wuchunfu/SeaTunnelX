@@ -282,6 +282,48 @@ jobs:
           echo "run_upgrade_real=${{ steps.scope.outputs.run_upgrade_real }}"
           echo "run_plugin_real=${{ steps.scope.outputs.run_plugin_real }}"
 
+  prepare-package:
+    name: Prepare SeaTunnel Package
+    runs-on: ubuntu-24.04
+    needs: changes
+    if: |
+      needs.changes.outputs.run_installer_real == 'true' ||
+      needs.changes.outputs.run_workbench_real == 'true' ||
+      needs.changes.outputs.run_config_real == 'true' ||
+      needs.changes.outputs.run_upgrade_real == 'true' ||
+      needs.changes.outputs.run_plugin_real == 'true'
+    outputs:
+      cache-hit: ${{ steps.cache-seatunnel.outputs.cache-hit }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore SeaTunnel package cache
+        id: cache-seatunnel
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+          key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
+
+      - name: Preload SeaTunnel package into cache dir
+        if: steps.cache-seatunnel.outputs.cache-hit != 'true'
+        env:
+          E2E_INSTALLER_REAL_PRELOAD_MIRROR: apache
+        run: |
+          bash frontend/scripts/e2e/run-real-installer.sh --prepare-package-only
+
+      - name: Ensure package exists
+        run: |
+          test -f "${E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR}/apache-seatunnel-2.3.13-bin.tar.gz"
+
+      - name: Upload SeaTunnel package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: seatunnel-bin-2.3.13
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}/apache-seatunnel-2.3.13-bin.tar.gz
+          if-no-files-found: error
+
   smoke-select:
     name: E2E Smoke Select
     runs-on: ubuntu-latest
@@ -400,7 +442,7 @@ jobs:
   installer-real:
     name: E2E Real Installer
     runs-on: ubuntu-24.04
-    needs: changes
+    needs: [changes, prepare-package]
     if: needs.changes.outputs.run_installer_real == 'true'
     timeout-minutes: 60
 
@@ -448,6 +490,12 @@ jobs:
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
           key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
+      - name: Download SeaTunnel package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seatunnel-bin-2.3.13
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+
       - name: Run real installer E2E
         run: |
           cd frontend
@@ -467,7 +515,7 @@ jobs:
   workbench-real:
     name: E2E Real Workbench
     runs-on: ubuntu-24.04
-    needs: changes
+    needs: [changes, prepare-package]
     if: needs.changes.outputs.run_workbench_real == 'true'
     timeout-minutes: 90
 
@@ -515,6 +563,12 @@ jobs:
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
           key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
+      - name: Download SeaTunnel package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seatunnel-bin-2.3.13
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+
       - name: Run real workbench E2E
         run: |
           cd frontend
@@ -533,7 +587,7 @@ jobs:
   config-real:
     name: E2E Real Config
     runs-on: ubuntu-24.04
-    needs: changes
+    needs: [changes, prepare-package]
     if: needs.changes.outputs.run_config_real == 'true'
     timeout-minutes: 75
 
@@ -581,6 +635,12 @@ jobs:
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
           key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
+      - name: Download SeaTunnel package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seatunnel-bin-2.3.13
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+
       - name: Run real config E2E
         run: |
           cd frontend
@@ -599,7 +659,7 @@ jobs:
   upgrade-real:
     name: E2E Real Upgrade
     runs-on: ubuntu-24.04
-    needs: changes
+    needs: [changes, prepare-package]
     if: needs.changes.outputs.run_upgrade_real == 'true'
     timeout-minutes: 90
 
@@ -647,6 +707,12 @@ jobs:
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
           key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
+      - name: Download SeaTunnel package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seatunnel-bin-2.3.13
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+
       - name: Run real upgrade E2E
         run: |
           cd frontend
@@ -665,7 +731,7 @@ jobs:
   plugin-real:
     name: E2E Real Plugin
     runs-on: ubuntu-24.04
-    needs: changes
+    needs: [changes, prepare-package]
     if: needs.changes.outputs.run_plugin_real == 'true'
     timeout-minutes: 75
 
@@ -712,6 +778,12 @@ jobs:
         with:
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
           key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
+
+      - name: Download SeaTunnel package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: seatunnel-bin-2.3.13
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
 
       - name: Run real plugin E2E
         run: |
