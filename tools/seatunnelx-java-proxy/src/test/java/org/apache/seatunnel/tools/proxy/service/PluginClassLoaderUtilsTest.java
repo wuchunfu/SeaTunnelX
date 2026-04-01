@@ -23,6 +23,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -46,7 +47,7 @@ class PluginClassLoaderUtilsTest {
         List<String> pluginJars = PluginClassLoaderUtils.collectJarPaths(tempDir);
 
         assertEquals(
-                List.of(
+                Arrays.asList(
                         connectorsJar.toAbsolutePath().toString(),
                         pluginJar.toAbsolutePath().toString()),
                 pluginJars);

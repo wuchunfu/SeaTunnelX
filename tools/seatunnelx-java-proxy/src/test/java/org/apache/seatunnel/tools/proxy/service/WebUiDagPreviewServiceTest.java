@@ -24,10 +24,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -83,7 +83,7 @@ class WebUiDagPreviewServiceTest {
                 Collections.singletonList("seatunnel_demo.users"),
                 vertex(result, 1).getTablePaths());
         assertIterableEquals(
-                List.of("id", "name"),
+                Arrays.asList("id", "name"),
                 vertex(result, 1).getTableColumns().get("seatunnel_demo.users"));
         assertIterableEquals(
                 Collections.singletonList("seatunnel_demo.users"),
@@ -156,7 +156,7 @@ class WebUiDagPreviewServiceTest {
                 Collections.singletonList("seatunnel_demo.users"),
                 vertex(result, 1).getTablePaths());
         assertIterableEquals(
-                List.of("id", "name"),
+                Arrays.asList("id", "name"),
                 vertex(result, 1).getTableColumns().get("seatunnel_demo.users"));
         assertIterableEquals(
                 Collections.singletonList("demo2.users"), vertex(result, 2).getTablePaths());
@@ -199,16 +199,16 @@ class WebUiDagPreviewServiceTest {
                                 "}"));
 
         assertIterableEquals(
-                List.of("seatunnel_demo.users", "seatunnel_demo.orders"),
+                Arrays.asList("seatunnel_demo.users", "seatunnel_demo.orders"),
                 vertex(result, 1).getTablePaths());
         assertIterableEquals(
-                List.of("id", "name"),
+                Arrays.asList("id", "name"),
                 vertex(result, 1).getTableColumns().get("seatunnel_demo.users"));
         assertIterableEquals(
-                List.of("id", "amount"),
+                Arrays.asList("id", "amount"),
                 vertex(result, 1).getTableColumns().get("seatunnel_demo.orders"));
         assertIterableEquals(
-                List.of("demo2.archive_users", "demo2.archive_orders"),
+                Arrays.asList("demo2.archive_users", "demo2.archive_orders"),
                 vertex(result, 2).getTablePaths());
     }
 
@@ -265,7 +265,7 @@ class WebUiDagPreviewServiceTest {
                 Collections.singletonList("seatunnel_demo.orders"),
                 vertexByConnector(result, "Source[1]-Jdbc").getTablePaths());
         assertIterableEquals(
-                List.of("seatunnel_demo.users", "seatunnel_demo.orders"),
+                Arrays.asList("seatunnel_demo.users", "seatunnel_demo.orders"),
                 vertexByConnector(result, "Sink[0]-Console").getTablePaths());
         assertIterableEquals(
                 Collections.singletonList("demo2.archive_users"),
@@ -292,7 +292,14 @@ class WebUiDagPreviewServiceTest {
     }
 
     private WebUiDagPreviewResult preview(String content) {
-        return service.preview(Map.of("content", content, "contentFormat", "hocon"));
+        return service.preview(previewRequest(content));
+    }
+
+    private java.util.Map<String, Object> previewRequest(String content) {
+        LinkedHashMap<String, Object> request = new LinkedHashMap<>();
+        request.put("content", content);
+        request.put("contentFormat", "hocon");
+        return request;
     }
 
     private String conf(String... lines) {
