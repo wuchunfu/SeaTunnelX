@@ -42,6 +42,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR: ${{ github.workspace }}/tmp/e2e-package-cache
 
 concurrency:
   group: e2e-${{ github.event.pull_request.number || github.ref }}
@@ -441,6 +442,12 @@ jobs:
           cd frontend
           pnpm exec playwright install --with-deps chromium
 
+      - name: Restore SeaTunnel package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+          key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
+
       - name: Run real installer E2E
         run: |
           cd frontend
@@ -502,6 +509,12 @@ jobs:
           cd frontend
           pnpm exec playwright install --with-deps chromium
 
+      - name: Restore SeaTunnel package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+          key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
+
       - name: Run real workbench E2E
         run: |
           cd frontend
@@ -561,6 +574,12 @@ jobs:
         run: |
           cd frontend
           pnpm exec playwright install --with-deps chromium
+
+      - name: Restore SeaTunnel package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+          key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
       - name: Run real config E2E
         run: |
@@ -622,6 +641,12 @@ jobs:
           cd frontend
           pnpm exec playwright install --with-deps chromium
 
+      - name: Restore SeaTunnel package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+          key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
+
       - name: Run real upgrade E2E
         run: |
           cd frontend
@@ -681,6 +706,12 @@ jobs:
         run: |
           cd frontend
           pnpm exec playwright install --with-deps chromium
+
+      - name: Restore SeaTunnel package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
+          key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
       - name: Run real plugin E2E
         run: |

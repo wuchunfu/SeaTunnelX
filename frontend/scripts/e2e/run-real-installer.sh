@@ -33,6 +33,7 @@ PLAYWRIGHT_SPEC="${E2E_REAL_PLAYWRIGHT_SPEC:-e2e/install-wizard-real.spec.ts}"
 JAVA_PROXY_VERSION="${E2E_INSTALLER_REAL_VERSION:-2.3.13}"
 PACKAGE_PRELOAD_MIRROR="${E2E_INSTALLER_REAL_PRELOAD_MIRROR:-}"
 PACKAGE_DOWNLOAD_TIMEOUT_SECONDS="${E2E_INSTALLER_REAL_DOWNLOAD_TIMEOUT_SECONDS:-1200}"
+PACKAGE_CACHE_DIR="${E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR:-}"
 
 if [[ -z "${SKIP_LOCAL_CLEANUP}" ]]; then
   if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
@@ -177,6 +178,9 @@ mkdir -p "${BASE_TMP_DIR}"
 TMP_DIR="$(mktemp -d "${BASE_TMP_DIR}/installer-real.XXXXXX")"
 mkdir -p "${TMP_DIR}/logs" "${TMP_DIR}/storage" "${TMP_DIR}/install" "${TMP_DIR}/minio"
 mkdir -p "${TMP_DIR}/storage/packages" "${TMP_DIR}/storage/temp"
+if [[ -n "${PACKAGE_CACHE_DIR}" ]]; then
+  mkdir -p "${PACKAGE_CACHE_DIR}"
+fi
 docker rm -f "${MINIO_NAME}" >/dev/null 2>&1 || true
 
 JAVA_PROXY_SCRIPT_PATH="${ROOT_DIR}/scripts/seatunnelx-java-proxy.sh"
@@ -224,7 +228,7 @@ for version in "${PRELOAD_VERSIONS[@]}"; do
   if [[ -n "${version}" && -z "${PRELOAD_VERSION_SEEN[${version}]:-}" ]]; then
     PRELOAD_VERSION_SEEN["${version}"]=1
     resolved_mirror="$(resolve_preload_mirror)"
-    download_package_if_missing "${version}" "${resolved_mirror}" "${TMP_DIR}/storage/packages"
+    download_package_if_missing "${version}" "${resolved_mirror}" "${PACKAGE_CACHE_DIR:-${TMP_DIR}/storage/packages}"
   fi
 done
 
