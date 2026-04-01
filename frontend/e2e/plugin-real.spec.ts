@@ -22,6 +22,7 @@ import {
   assertLocalPluginAssets,
   downloadPluginApi,
   installPluginToClusterApi,
+  waitForPluginDownloadCompleted,
   waitForInstalledPlugin,
   waitForLocalPlugin,
 } from './helpers/plugin-real';
@@ -75,6 +76,12 @@ test.describe.serial('plugin real e2e', () => {
       page.getByTestId('plugin-active-official-dependencies'),
     ).toContainText(/mysql-connector-java/i, {timeout: 30000});
     await downloadPluginApi(request, 'jdbc', seatunnelVersion, ['mysql']);
+    await waitForPluginDownloadCompleted(
+      request,
+      'jdbc',
+      seatunnelVersion,
+      ['mysql'],
+    );
     console.log(
       '[plugin-real] jdbc mysql download triggered via api with fixed version',
     );
@@ -139,6 +146,7 @@ test.describe.serial('plugin real e2e', () => {
       timeout: 120000,
     });
     await downloadPluginApi(request, 'file-obs', seatunnelVersion);
+    await waitForPluginDownloadCompleted(request, 'file-obs', seatunnelVersion);
     console.log(
       '[plugin-real] file-obs download triggered via api with fixed version',
     );

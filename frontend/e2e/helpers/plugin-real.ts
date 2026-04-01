@@ -38,6 +38,17 @@ interface InstalledPluginsResponse extends ErrorResponse {
   data?: InstalledPlugin[];
 }
 
+interface DownloadStatusResponse extends ErrorResponse {
+  data?: {
+    plugin_name?: string;
+    version?: string;
+    status?: 'not_started' | 'downloading' | 'completed' | 'failed';
+    error?: string;
+    message?: string;
+    selected_profile_keys?: string[];
+  } | null;
+}
+
 function normalizeTargetDir(targetDir: string): string {
   return targetDir.replace(/^[/\\]+/, '');
 }
@@ -160,6 +171,40 @@ export async function downloadPluginApi(
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as ErrorResponse;
   expect(payload.error_msg ?? '').toBe('');
+}
+
+export async function waitForPluginDownloadCompleted(
+  request: APIRequestContext,
+  pluginName: string,
+  version: string,
+  profileKeys?: string[],
+  timeoutMs: number = 600000,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const params = new URLSearchParams({version});
+        for (const profileKey of profileKeys || []) {
+          params.append('profile_keys', profileKey);
+        }
+        const response = await request.get(
+          `${backendBaseURL}/api/v1/plugins/${encodeURIComponent(pluginName)}/download/status?${params.toString()}`,
+        );
+        expect(response.ok()).toBeTruthy();
+        const payload = (await response.json()) as DownloadStatusResponse;
+        const status = payload.data?.status || 'not_started';
+        if (status === 'failed') {
+          throw new Error(
+            `plugin ${pluginName}@${version} download failed: ${
+              payload.data?.error || payload.data?.message || 'unknown error'
+            }`,
+          );
+        }
+        return status;
+      },
+      {timeout: timeoutMs},
+    )
+    .toBe('completed');
 }
 
 export async function waitForInstalledPlugin(

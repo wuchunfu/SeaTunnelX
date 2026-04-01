@@ -310,11 +310,10 @@ async function runDockerExecSQLFile(containerSqlPath: string): Promise<void> {
       [
         'exec',
         '-i',
-        '-e',
-        `MYSQL_PWD=${mysqlPassword}`,
         mysqlContainerName,
         'mysql',
         '-uroot',
+        `-p${mysqlPassword}`,
       ],
       {
         stdio: ['pipe', 'pipe', 'pipe'],
