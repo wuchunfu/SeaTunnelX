@@ -31,7 +31,8 @@ PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-}"
 PLAYWRIGHT_GREP="${PLAYWRIGHT_GREP:-}"
 PLAYWRIGHT_SPEC="${E2E_REAL_PLAYWRIGHT_SPEC:-e2e/install-wizard-real.spec.ts}"
 JAVA_PROXY_VERSION="${E2E_INSTALLER_REAL_VERSION:-2.3.13}"
-PACKAGE_PRELOAD_MIRROR="${E2E_INSTALLER_REAL_PRELOAD_MIRROR:-aliyun}"
+PACKAGE_PRELOAD_MIRROR="${E2E_INSTALLER_REAL_PRELOAD_MIRROR:-}"
+PACKAGE_DOWNLOAD_TIMEOUT_SECONDS="${E2E_INSTALLER_REAL_DOWNLOAD_TIMEOUT_SECONDS:-1200}"
 
 if [[ -z "${SKIP_LOCAL_CLEANUP}" ]]; then
   if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
@@ -62,17 +63,34 @@ raise SystemExit("no free port found")
 PY
 }
 
+resolve_preload_mirror() {
+  local mirror="${PACKAGE_PRELOAD_MIRROR:-}"
+  if [[ -n "${mirror}" ]]; then
+    echo "${mirror}"
+    return 0
+  fi
+  if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "apache"
+    return 0
+  fi
+  echo "aliyun"
+}
+
 mirror_url() {
   local mirror="$1"
   case "$mirror" in
-    apache)
+    apache|maven|central|official)
       echo "https://archive.apache.org/dist/seatunnel"
       ;;
     huaweicloud)
       echo "https://mirrors.huaweicloud.com/apache/seatunnel"
       ;;
-    aliyun|*)
+    aliyun)
       echo "https://mirrors.aliyun.com/apache/seatunnel"
+      ;;
+    *)
+      echo "unsupported SeaTunnel preload mirror: ${mirror}" >&2
+      return 1
       ;;
   esac
 }
@@ -92,6 +110,7 @@ download_package_if_missing() {
   local base_url
   base_url="$(mirror_url "${mirror}")"
   local download_url="${base_url}/${version}/${file_name}"
+  local timeout_seconds="${PACKAGE_DOWNLOAD_TIMEOUT_SECONDS}"
 
   if [[ -s "${final_path}" ]]; then
     echo "[e2e-real] package cache hit: ${file_name}"
@@ -102,9 +121,33 @@ download_package_if_missing() {
   mkdir -p "${packages_dir}"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --retry-delay 2 --continue-at - -o "${temp_path}" "${download_url}"
+    curl -fL \
+      --retry 3 \
+      --retry-delay 2 \
+      --connect-timeout 30 \
+      --max-time "${timeout_seconds}" \
+      --continue-at - \
+      -o "${temp_path}" \
+      "${download_url}"
   elif command -v wget >/dev/null 2>&1; then
-    wget -c -O "${temp_path}" "${download_url}"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "${timeout_seconds}" \
+        wget \
+        --tries=3 \
+        --waitretry=2 \
+        --timeout=30 \
+        --read-timeout=30 \
+        -O "${temp_path}" \
+        "${download_url}"
+    else
+      wget \
+        --tries=3 \
+        --waitretry=2 \
+        --timeout=30 \
+        --read-timeout=30 \
+        -O "${temp_path}" \
+        "${download_url}"
+    fi
   else
     echo "curl or wget is required to preload SeaTunnel packages" >&2
     exit 1
@@ -180,7 +223,8 @@ declare -A PRELOAD_VERSION_SEEN=()
 for version in "${PRELOAD_VERSIONS[@]}"; do
   if [[ -n "${version}" && -z "${PRELOAD_VERSION_SEEN[${version}]:-}" ]]; then
     PRELOAD_VERSION_SEEN["${version}"]=1
-    download_package_if_missing "${version}" "${PACKAGE_PRELOAD_MIRROR}" "${TMP_DIR}/storage/packages"
+    resolved_mirror="$(resolve_preload_mirror)"
+    download_package_if_missing "${version}" "${resolved_mirror}" "${TMP_DIR}/storage/packages"
   fi
 done
 
