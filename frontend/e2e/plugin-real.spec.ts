@@ -146,7 +146,13 @@ test.describe.serial('plugin real e2e', () => {
       timeout: 120000,
     });
     await downloadPluginApi(request, 'file-obs', seatunnelVersion);
-    await waitForPluginDownloadCompleted(request, 'file-obs', seatunnelVersion);
+    await waitForPluginDownloadCompleted(
+      request,
+      'file-obs',
+      seatunnelVersion,
+      undefined,
+      900000,
+    );
     console.log(
       '[plugin-real] file-obs download triggered via api with fixed version',
     );

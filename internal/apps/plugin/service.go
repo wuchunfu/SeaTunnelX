@@ -783,17 +783,7 @@ func (s *Service) DownloadPlugin(ctx context.Context, name, version string, mirr
 		}, nil
 	}
 
-	// Start download in background / 在后台开始下载
-	go func() {
-		downloadCtx := context.Background()
-		if err := s.downloader.DownloadPlugin(downloadCtx, plugin, mirror, selectedProfiles, connectorReady, dependenciesReady, nil); err != nil {
-			fmt.Printf("[Plugin Download Error] plugin=%s, version=%s, error=%v\n", name, version, err)
-			return
-		}
-	}()
-
-	// Return initial progress / 返回初始进度
-	return &DownloadProgress{
+	progress := &DownloadProgress{
 		PluginName:          name,
 		Version:             version,
 		Status:              "downloading",
@@ -805,7 +795,25 @@ func (s *Service) DownloadPlugin(ctx context.Context, name, version string, mirr
 		ConnectorCompleted:  0,
 		DependencyCount:     len(plugin.Dependencies),
 		DependencyCompleted: 0,
-	}, nil
+	}
+	s.downloader.UpsertActiveDownload(progress)
+
+	// Start download in background / 在后台开始下载
+	go func() {
+		downloadCtx := context.Background()
+		if err := s.downloader.DownloadPlugin(downloadCtx, plugin, mirror, selectedProfiles, connectorReady, dependenciesReady, nil); err != nil {
+			progress.Status = "failed"
+			progress.Error = err.Error()
+			now := time.Now()
+			progress.EndTime = &now
+			s.downloader.UpsertActiveDownload(progress)
+			fmt.Printf("[Plugin Download Error] plugin=%s, version=%s, error=%v\n", name, version, err)
+			return
+		}
+	}()
+
+	// Return initial progress / 返回初始进度
+	return progress, nil
 }
 
 // GetDownloadStatus returns the current download status for a plugin.
