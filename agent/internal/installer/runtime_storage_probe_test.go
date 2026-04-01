@@ -58,6 +58,31 @@ func (r *recordingProgressReporter) ReportStepSkipped(step InstallStep, reason s
 	return r.Report(step, 100, reason)
 }
 
+func TestSeatunnelXJavaProxyScriptCandidatesIncludeDefaultSupportDir(t *testing.T) {
+	candidates := seatunnelxJavaProxyScriptCandidates(t.TempDir())
+	expected := filepath.Join(seatunnelxJavaProxyDefaultSupportDir, "scripts", seatunnelmeta.SeatunnelXJavaProxyScriptFileName)
+	if !containsString(candidates, expected) {
+		t.Fatalf("expected default support dir script candidate %s, got %#v", expected, candidates)
+	}
+}
+
+func TestSeatunnelXJavaProxyLibDirCandidatesIncludeDefaultSupportDir(t *testing.T) {
+	candidates := seatunnelxJavaProxyLibDirCandidates(t.TempDir())
+	expected := filepath.Join(seatunnelxJavaProxyDefaultSupportDir, "lib")
+	if !containsString(candidates, expected) {
+		t.Fatalf("expected default support dir lib candidate %s, got %#v", expected, candidates)
+	}
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestBuildCheckpointRuntimeProbeRequestNormalizesNamespace(t *testing.T) {
 	request, err := buildCheckpointRuntimeProbeRequest(&CheckpointConfig{
 		StorageType:      CheckpointStorageS3,

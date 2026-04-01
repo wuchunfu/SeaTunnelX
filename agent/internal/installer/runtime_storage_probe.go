@@ -40,22 +40,23 @@ import (
 )
 
 const (
-	seatunnelxJavaProxyHomeEnvVar     = "SEATUNNELX_JAVA_PROXY_HOME"
-	seatunnelxJavaProxyJarEnvVar      = "SEATUNNELX_JAVA_PROXY_JAR"
-	seatunnelxJavaProxyScriptEnvVar   = "SEATUNNELX_JAVA_PROXY_SCRIPT"
-	seatunnelxJavaProxyEndpointEnvVar = "SEATUNNELX_JAVA_PROXY_ENDPOINT"
-	seatunnelxJavaProxyPortEnvVar     = "SEATUNNELX_JAVA_PROXY_PORT"
-	seatunnelProxyJarEnvVar           = "SEATUNNEL_PROXY_JAR"
-	seatunnelProxyVersionEnvVar       = "SEATUNNELX_JAVA_PROXY_VERSION"
-	runtimeProbeTimeout               = 20 * time.Second
-	runtimeProbeBusinessName          = "imap-probe"
-	runtimeProbeClusterName           = "seatunnel-cluster"
-	seatunnelxJavaProxyDefaultHost    = "127.0.0.1"
-	seatunnelxJavaProxyDefaultPort    = 18080
-	seatunnelxJavaProxyHealthPath     = "/healthz"
-	seatunnelxJavaProxyStateDirName   = ".seatunnelx"
-	seatunnelxJavaProxyServiceDirName = "seatunnelx-java-proxy"
-	seatunnelxJavaProxyStartupWait    = 12 * time.Second
+	seatunnelxJavaProxyHomeEnvVar        = "SEATUNNELX_JAVA_PROXY_HOME"
+	seatunnelxJavaProxyJarEnvVar         = "SEATUNNELX_JAVA_PROXY_JAR"
+	seatunnelxJavaProxyScriptEnvVar      = "SEATUNNELX_JAVA_PROXY_SCRIPT"
+	seatunnelxJavaProxyEndpointEnvVar    = "SEATUNNELX_JAVA_PROXY_ENDPOINT"
+	seatunnelxJavaProxyPortEnvVar        = "SEATUNNELX_JAVA_PROXY_PORT"
+	seatunnelProxyJarEnvVar              = "SEATUNNEL_PROXY_JAR"
+	seatunnelProxyVersionEnvVar          = "SEATUNNELX_JAVA_PROXY_VERSION"
+	seatunnelxJavaProxyDefaultSupportDir = "/usr/local/lib/seatunnelx-agent"
+	runtimeProbeTimeout                  = 20 * time.Second
+	runtimeProbeBusinessName             = "imap-probe"
+	runtimeProbeClusterName              = "seatunnel-cluster"
+	seatunnelxJavaProxyDefaultHost       = "127.0.0.1"
+	seatunnelxJavaProxyDefaultPort       = 18080
+	seatunnelxJavaProxyHealthPath        = "/healthz"
+	seatunnelxJavaProxyStateDirName      = ".seatunnelx"
+	seatunnelxJavaProxyServiceDirName    = "seatunnelx-java-proxy"
+	seatunnelxJavaProxyStartupWait       = 12 * time.Second
 )
 
 type runtimeStorageProbeResponse struct {
@@ -1099,11 +1100,12 @@ func resolveSeatunnelXJavaProxyJarPath(installDir string, seatunnelVersion strin
 }
 
 func seatunnelxJavaProxyScriptCandidates(installDir string) []string {
-	candidates := make([]string, 0, 8)
+	candidates := make([]string, 0, 10)
 	if homeDir := strings.TrimSpace(os.Getenv(seatunnelxJavaProxyHomeEnvVar)); homeDir != "" {
 		candidates = append(candidates, filepath.Join(homeDir, "scripts", seatunnelmeta.SeatunnelXJavaProxyScriptFileName))
 	}
 	candidates = append(candidates,
+		filepath.Join(seatunnelxJavaProxyDefaultSupportDir, "scripts", seatunnelmeta.SeatunnelXJavaProxyScriptFileName),
 		filepath.Join(installDir, "scripts", "seatunnelx-java-proxy.sh"),
 		filepath.Join(installDir, "bin", "seatunnelx-java-proxy.sh"),
 		filepath.Join("scripts", "seatunnelx-java-proxy.sh"),
@@ -1143,11 +1145,11 @@ func seatunnelxJavaProxyJarCandidates(installDir string, seatunnelVersion string
 }
 
 func seatunnelxJavaProxyLibDirCandidates(installDir string) []string {
-	candidates := make([]string, 0, 8)
+	candidates := make([]string, 0, 9)
 	if homeDir := strings.TrimSpace(os.Getenv(seatunnelxJavaProxyHomeEnvVar)); homeDir != "" {
 		candidates = append(candidates, filepath.Join(homeDir, "lib"))
 	}
-	candidates = append(candidates, filepath.Join(installDir, "lib"), "lib")
+	candidates = append(candidates, filepath.Join(seatunnelxJavaProxyDefaultSupportDir, "lib"), filepath.Join(installDir, "lib"), "lib")
 	if executable, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(executable)
 		candidates = append(

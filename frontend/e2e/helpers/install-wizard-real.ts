@@ -192,6 +192,57 @@ export async function waitForFileContent(
   throw new Error(`Timed out waiting for file: ${filePath}`);
 }
 
+function normalizeInstallDir(input: string): string {
+  return input.replace(/[\/]+$/, '');
+}
+
+function matchesInstallDir(
+  candidate: string | undefined,
+  installDir: string,
+): boolean {
+  const normalizedInstallDir = normalizeInstallDir(installDir);
+  const candidateNormalized = normalizeInstallDir(String(candidate || ''));
+  if (!candidateNormalized) {
+    return false;
+  }
+  const installDirBaseName = path.basename(normalizedInstallDir);
+  return (
+    candidateNormalized === normalizedInstallDir ||
+    candidateNormalized.endsWith(normalizedInstallDir) ||
+    normalizedInstallDir.endsWith(candidateNormalized) ||
+    path.basename(candidateNormalized) === installDirBaseName
+  );
+}
+
+async function clusterMatchesInstallDir(
+  page: Page,
+  clusterId: number,
+  installDir: string,
+): Promise<boolean> {
+  const detailResponse = await page
+    .context()
+    .request.get(`${backendBaseURL}/api/v1/clusters/${clusterId}`);
+  if (detailResponse.ok()) {
+    const detailPayload = (await detailResponse.json()) as {
+      data?: {install_dir?: string};
+    };
+    if (matchesInstallDir(detailPayload?.data?.install_dir, installDir)) {
+      return true;
+    }
+  }
+
+  const nodesResponse = await page
+    .context()
+    .request.get(`${backendBaseURL}/api/v1/clusters/${clusterId}/nodes`);
+  if (!nodesResponse.ok()) {
+    return false;
+  }
+  const nodesPayload = (await nodesResponse.json()) as ClusterNodesResponse;
+  return (nodesPayload?.data ?? []).some((node) =>
+    matchesInstallDir(node?.install_dir, installDir),
+  );
+}
+
 export async function expectInstallationSuccess(page: Page): Promise<void> {
   await expect(page.getByTestId('install-wizard-step-complete')).toBeVisible({
     timeout: 900000,
@@ -208,10 +259,9 @@ export async function waitForClusterByInstallDir(
   timeoutMs: number = 180000,
 ): Promise<{id: number; status: string; name: string}> {
   const startedAt = Date.now();
-  const normalizedInstallDir = installDir.replace(/[\/]+$/, '');
-  const installDirBaseName = path.basename(normalizedInstallDir);
 
   while (Date.now() - startedAt < timeoutMs) {
+    const candidates: Array<{id: number; status: string; name: string}> = [];
     for (let current = 1; current <= 10; current += 1) {
       const response = await page
         .context()
@@ -225,24 +275,28 @@ export async function waitForClusterByInstallDir(
         continue;
       }
       const payload = (await response.json()) as ClusterListResponse;
-      const cluster = (payload?.data?.clusters ?? []).find((item) => {
-        const candidate = String(item?.install_dir || '').replace(/[\/]+$/, '');
-        if (!candidate) {
-          return false;
+      for (const item of payload?.data?.clusters ?? []) {
+        if (!item?.id) {
+          continue;
         }
-        return (
-          candidate === normalizedInstallDir ||
-          candidate.endsWith(normalizedInstallDir) ||
-          normalizedInstallDir.endsWith(candidate) ||
-          path.basename(candidate) === installDirBaseName
-        );
-      });
-      if (cluster?.id) {
-        return {
-          id: Number(cluster.id),
-          status: String(cluster.status || 'unknown'),
-          name: String(cluster.name || `Cluster-${cluster.id}`),
-        };
+        if (matchesInstallDir(item?.install_dir, installDir)) {
+          return {
+            id: Number(item.id),
+            status: String(item.status || 'unknown'),
+            name: String(item.name || `Cluster-${item.id}`),
+          };
+        }
+        candidates.push({
+          id: Number(item.id),
+          status: String(item.status || 'unknown'),
+          name: String(item.name || `Cluster-${item.id}`),
+        });
+      }
+    }
+
+    for (const cluster of candidates.slice(0, 20)) {
+      if (await clusterMatchesInstallDir(page, cluster.id, installDir)) {
+        return cluster;
       }
     }
     await page.waitForTimeout(2000);
