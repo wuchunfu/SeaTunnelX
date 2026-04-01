@@ -277,6 +277,24 @@ export interface SyncWebUIDagEdge {
   targetVertexId: number;
 }
 
+export interface SyncSinkSaveModePreviewAction {
+  phase?: string;
+  actionType?: string;
+  resultType?: string;
+  content?: string;
+  native?: boolean;
+}
+
+export interface SyncSinkSaveModePreviewTable {
+  tablePath?: string;
+  supported: boolean;
+  completeness?: string;
+  schemaSaveMode?: string;
+  dataSaveMode?: string;
+  actions?: SyncSinkSaveModePreviewAction[];
+  warnings?: string[];
+}
+
 export interface SyncWebUIDagVertexInfo {
   vertexId: number;
   type: string;
@@ -284,6 +302,8 @@ export interface SyncWebUIDagVertexInfo {
   tablePaths?: string[];
   tableColumns?: Record<string, string[]>;
   tableSchemas?: Record<string, SyncJSON>;
+  saveModePreviews?: Record<string, SyncSinkSaveModePreviewTable>;
+  saveModeWarnings?: string[];
 }
 
 export interface SyncWebUIJobDag {

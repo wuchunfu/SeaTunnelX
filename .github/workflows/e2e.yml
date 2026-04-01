@@ -30,6 +30,7 @@ on:
           - all
           - smoke
           - installer-real
+          - workbench-real
           - config-real
           - upgrade-real
           - plugin-real
@@ -55,6 +56,7 @@ jobs:
       backend: ${{ steps.scope.outputs.backend }}
       run_smoke: ${{ steps.scope.outputs.run_smoke }}
       run_installer_real: ${{ steps.scope.outputs.run_installer_real }}
+      run_workbench_real: ${{ steps.scope.outputs.run_workbench_real }}
       run_config_real: ${{ steps.scope.outputs.run_config_real }}
       run_upgrade_real: ${{ steps.scope.outputs.run_upgrade_real }}
       run_plugin_real: ${{ steps.scope.outputs.run_plugin_real }}
@@ -96,6 +98,29 @@ jobs:
               - 'internal/apps/installer/**'
               - 'agent/internal/installer/**'
               - 'internal/router/router.go'
+              - 'config.e2e.installer-real.yaml'
+              - 'config.e2e.agent-real.yaml'
+              - '.github/workflows/e2e.yml'
+            workbench_real:
+              - 'frontend/e2e/workbench-real.spec.ts'
+              - 'frontend/e2e/helpers/workbench-real.ts'
+              - 'frontend/e2e/helpers/install-wizard-real.ts'
+              - 'frontend/e2e/helpers/upgrade-real.ts'
+              - 'frontend/e2e/helpers/plugin-real.ts'
+              - 'frontend/scripts/e2e/run-real-workbench.sh'
+              - 'frontend/scripts/e2e/run-real-installer.sh'
+              - 'frontend/playwright.config.ts'
+              - 'frontend/components/common/sync/**'
+              - 'frontend/components/common/schedule/**'
+              - 'frontend/lib/services/sync/**'
+              - 'internal/apps/sync/**'
+              - 'internal/apps/cluster/**'
+              - 'internal/apps/config/**'
+              - 'internal/apps/diagnostics/**'
+              - 'internal/pkg/schedulex/**'
+              - 'tools/seatunnelx-java-proxy/**'
+              - 'scripts/seatunnelx-java-proxy.sh'
+              - 'scripts/restart.sh'
               - 'config.e2e.installer-real.yaml'
               - 'config.e2e.agent-real.yaml'
               - '.github/workflows/e2e.yml'
@@ -168,6 +193,7 @@ jobs:
           FILTER_FRONTEND: ${{ steps.filter.outputs.frontend }}
           FILTER_BACKEND: ${{ steps.filter.outputs.backend }}
           FILTER_INSTALLER_REAL: ${{ steps.filter.outputs.installer_real }}
+          FILTER_WORKBENCH_REAL: ${{ steps.filter.outputs.workbench_real }}
           FILTER_CONFIG_REAL: ${{ steps.filter.outputs.config_real }}
           FILTER_UPGRADE_REAL: ${{ steps.filter.outputs.upgrade_real }}
           FILTER_PLUGIN_REAL: ${{ steps.filter.outputs.plugin_real }}
@@ -176,6 +202,7 @@ jobs:
           backend=false
           run_smoke=false
           run_installer_real=false
+          run_workbench_real=false
           run_config_real=false
           run_upgrade_real=false
           run_plugin_real=false
@@ -188,6 +215,9 @@ jobs:
             fi
             if [ "${FILTER_INSTALLER_REAL}" = "true" ]; then
               run_installer_real=true
+            fi
+            if [ "${FILTER_WORKBENCH_REAL}" = "true" ]; then
+              run_workbench_real=true
             fi
             if [ "${FILTER_CONFIG_REAL}" = "true" ]; then
               run_config_real=true
@@ -208,6 +238,9 @@ jobs:
               installer-real)
                 run_installer_real=true
                 ;;
+              workbench-real)
+                run_workbench_real=true
+                ;;
               config-real)
                 run_config_real=true
                 ;;
@@ -220,6 +253,7 @@ jobs:
               *)
                 run_smoke=true
                 run_installer_real=true
+                run_workbench_real=true
                 run_config_real=true
                 run_upgrade_real=true
                 run_plugin_real=true
@@ -231,6 +265,7 @@ jobs:
           echo "backend=${backend}" >> "$GITHUB_OUTPUT"
           echo "run_smoke=${run_smoke}" >> "$GITHUB_OUTPUT"
           echo "run_installer_real=${run_installer_real}" >> "$GITHUB_OUTPUT"
+          echo "run_workbench_real=${run_workbench_real}" >> "$GITHUB_OUTPUT"
           echo "run_config_real=${run_config_real}" >> "$GITHUB_OUTPUT"
           echo "run_upgrade_real=${run_upgrade_real}" >> "$GITHUB_OUTPUT"
           echo "run_plugin_real=${run_plugin_real}" >> "$GITHUB_OUTPUT"
@@ -241,6 +276,7 @@ jobs:
           echo "backend=${{ steps.scope.outputs.backend }}"
           echo "run_smoke=${{ steps.scope.outputs.run_smoke }}"
           echo "run_installer_real=${{ steps.scope.outputs.run_installer_real }}"
+          echo "run_workbench_real=${{ steps.scope.outputs.run_workbench_real }}"
           echo "run_config_real=${{ steps.scope.outputs.run_config_real }}"
           echo "run_upgrade_real=${{ steps.scope.outputs.run_upgrade_real }}"
           echo "run_plugin_real=${{ steps.scope.outputs.run_plugin_real }}"
@@ -415,6 +451,67 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-installer-real
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          if-no-files-found: ignore
+
+
+  workbench-real:
+    name: E2E Real Workbench
+    runs-on: ubuntu-24.04
+    needs: changes
+    if: needs.changes.outputs.run_workbench_real == 'true'
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: |
+          cd frontend
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Run real workbench E2E
+        run: |
+          cd frontend
+          pnpm run test:e2e:workbench-real
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-workbench-real
           path: |
             frontend/playwright-report
             frontend/test-results
@@ -603,7 +700,7 @@ jobs:
   gate:
     name: E2E Gate
     runs-on: ubuntu-latest
-    needs: [changes, smoke-select, smoke, installer-real, config-real, upgrade-real, plugin-real]
+    needs: [changes, smoke-select, smoke, installer-real, workbench-real, config-real, upgrade-real, plugin-real]
     if: always()
 
     steps:
@@ -614,6 +711,8 @@ jobs:
           echo "smoke_result=${{ needs.smoke.result }}"
           echo "run_installer_real=${{ needs.changes.outputs.run_installer_real }}"
           echo "installer_real_result=${{ needs.installer-real.result }}"
+          echo "run_workbench_real=${{ needs.changes.outputs.run_workbench_real }}"
+          echo "workbench_real_result=${{ needs.workbench-real.result }}"
           echo "run_config_real=${{ needs.changes.outputs.run_config_real }}"
           echo "config_real_result=${{ needs.config-real.result }}"
           echo "run_upgrade_real=${{ needs.changes.outputs.run_upgrade_real }}"
@@ -631,6 +730,12 @@ jobs:
           if [ "${{ needs.changes.outputs.run_installer_real }}" = "true" ] &&
              [ "${{ needs.installer-real.result }}" != "success" ]; then
             echo "::error::Real installer E2E did not succeed."
+            exit 1
+          fi
+
+          if [ "${{ needs.changes.outputs.run_workbench_real }}" = "true" ] &&
+             [ "${{ needs.workbench-real.result }}" != "success" ]; then
+            echo "::error::Real workbench E2E did not succeed."
             exit 1
           fi
 

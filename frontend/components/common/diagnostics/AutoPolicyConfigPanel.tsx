@@ -82,11 +82,26 @@ export function normalizeConditionItemsForSave(
 ): InspectionConditionItem[] {
   return conditions.map((condition) => {
     const cronExprOverride = condition.cron_expr_override?.trim();
+    const extraKeywords = (condition.extra_keywords || [])
+      .map((item) => item.trim())
+      .filter(Boolean);
     if (!cronExprOverride) {
       const {cron_expr_override, ...rest} = condition;
-      return rest;
+      if (extraKeywords.length === 0) {
+        const {extra_keywords, ...restWithoutKeywords} = rest;
+        return restWithoutKeywords;
+      }
+      return {...rest, extra_keywords: extraKeywords};
     }
-    return {...condition, cron_expr_override: cronExprOverride};
+    if (extraKeywords.length === 0) {
+      const {extra_keywords, ...rest} = condition;
+      return {...rest, cron_expr_override: cronExprOverride};
+    }
+    return {
+      ...condition,
+      cron_expr_override: cronExprOverride,
+      extra_keywords: extraKeywords,
+    };
   });
 }
 
@@ -266,6 +281,26 @@ export function AutoPolicyConfigPanel({
     (templateCode: string, field: 'cron_expr_override', value: string) => {
       setFormConditions((prev) =>
         applyConditionTextOverride(prev, templateCode, field, value),
+      );
+    },
+    [],
+  );
+
+  const handleConditionKeywordsOverride = useCallback(
+    (templateCode: string, value: string) => {
+      const parsed = value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      setFormConditions((prev) =>
+        prev.map((condition) =>
+          condition.template_code === templateCode
+            ? {
+                ...condition,
+                extra_keywords: parsed.length > 0 ? parsed : undefined,
+              }
+            : condition,
+        ),
       );
     },
     [],
@@ -781,6 +816,29 @@ export function AutoPolicyConfigPanel({
                                       )
                                     }
                                   />
+                                </div>
+                              ) : null}
+                              {['error_rate', 'node_unhealthy', 'alert_firing'].includes(
+                                tpl.category,
+                              ) ? (
+                                <div className='space-y-1 col-span-2'>
+                                  <Label className='text-xs'>
+                                    {t('keywordsLabel')}
+                                  </Label>
+                                  <Input
+                                    className='h-8 text-xs'
+                                    placeholder={t('keywordsPlaceholder')}
+                                    value={(condition?.extra_keywords || []).join(', ')}
+                                    onChange={(e) =>
+                                      handleConditionKeywordsOverride(
+                                        tpl.code,
+                                        e.target.value,
+                                      )
+                                    }
+                                  />
+                                  <div className='text-[11px] text-muted-foreground'>
+                                    {t('keywordsHint')}
+                                  </div>
                                 </div>
                               ) : null}
                             </div>

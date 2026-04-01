@@ -165,11 +165,105 @@ func (c *AutoPolicyChecker) CheckPrometheusPolicies(ctx context.Context, cluster
 			if !condition.Enabled {
 				continue
 			}
-			matchedAlert, ok := matchMetricAlertCondition(condition, alerts.Alerts)
+			var reason string
+			switch condition.TemplateCode {
+			case ConditionCodeNodeUnhealthy:
+				distinctNodes, ok := matchNodeUnhealthyCondition(condition, alerts.Alerts, now)
+				if !ok {
+					continue
+				}
+				reason = fmt.Sprintf(
+					"%s|%s nodes=%d window=%dm",
+					c.policyReasonPrefix(policy.ID),
+					condition.TemplateCode,
+					distinctNodes,
+					resolveConditionWindowMinutes(condition),
+				)
+			case ConditionCodeAlertFiring:
+				matchedAlert, ok := matchAlertFiringCondition(condition, alerts.Alerts)
+				if !ok {
+					continue
+				}
+				reason = fmt.Sprintf(
+					"%s|%s alert=%s",
+					c.policyReasonPrefix(policy.ID),
+					condition.TemplateCode,
+					normalizeMetricAlertReasonKey(matchedAlert),
+				)
+			default:
+				matchedAlert, ok := matchMetricAlertCondition(condition, alerts.Alerts)
+				if !ok {
+					continue
+				}
+				reason = fmt.Sprintf(
+					"%s|%s alert=%s",
+					c.policyReasonPrefix(policy.ID),
+					condition.TemplateCode,
+					normalizeMetricAlertReasonKey(matchedAlert),
+				)
+			}
+			if _, err := c.triggerAutoPolicyInspection(ctx, clusterID, policy, reason); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return nil
+}
+
+// CheckErrorSpikePolicies evaluates error-spike policies against recent diagnostics error events.
+// CheckErrorSpikePolicies 根据近期诊断错误事件评估错误频率激增策略。
+func (c *AutoPolicyChecker) CheckErrorSpikePolicies(ctx context.Context, clusterID uint, now time.Time) error {
+	if c == nil || c.repo == nil || c.service == nil || clusterID == 0 {
+		return nil
+	}
+
+	policies, err := c.repo.ListEnabledPoliciesForCluster(ctx, clusterID)
+	if err != nil {
+		return fmt.Errorf("auto-policy: failed to list error-spike policies for cluster %d: %w", clusterID, err)
+	}
+	if len(policies) == 0 {
+		return nil
+	}
+
+	now = now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	for _, policy := range policies {
+		if policy == nil || !policy.Enabled {
+			continue
+		}
+		for _, condition := range policy.Conditions {
+			if !condition.Enabled || condition.TemplateCode != ConditionCodeErrorSpike {
+				continue
+			}
+			matchedBurst, ok, err := c.matchErrorSpikeCondition(ctx, clusterID, condition, now)
+			if err != nil {
+				return err
+			}
 			if !ok {
 				continue
 			}
-			reason := fmt.Sprintf("%s|%s alert=%s", c.policyReasonPrefix(policy.ID), condition.TemplateCode, normalizeMetricAlertReasonKey(matchedAlert))
+			reason := fmt.Sprintf(
+				"%s|%s count=%d window=%dm group=%d",
+				c.policyReasonPrefix(policy.ID),
+				condition.TemplateCode,
+				matchedBurst.RecentCount,
+				resolveConditionWindowMinutes(condition),
+				matchedBurst.ErrorGroupID,
+			)
+			if matchedBurst.Group != nil {
+				groupLabel := strings.TrimSpace(firstNonEmptyString(
+					matchedBurst.Group.Title,
+					matchedBurst.Group.ExceptionClass,
+					matchedBurst.Group.SampleMessage,
+				))
+				if groupLabel != "" {
+					reason = fmt.Sprintf("%s title=%s", reason, truncateString(groupLabel, 80))
+				}
+			}
 			if _, err := c.triggerAutoPolicyInspection(ctx, clusterID, policy, reason); err != nil {
 				return err
 			}
@@ -211,6 +305,47 @@ func (c *AutoPolicyChecker) matchJavaErrorCondition(condition InspectionConditio
 	}
 
 	return false, ""
+}
+
+func (c *AutoPolicyChecker) matchErrorSpikeCondition(
+	ctx context.Context,
+	clusterID uint,
+	condition InspectionConditionItem,
+	now time.Time,
+) (*recentErrorGroupBurst, bool, error) {
+	template, ok := findBuiltinConditionTemplate(condition.TemplateCode)
+	if !ok {
+		return nil, false, fmt.Errorf("unknown error spike template %s", condition.TemplateCode)
+	}
+	windowMinutes := resolveConditionWindowMinutes(condition)
+	threshold := resolveConditionThreshold(condition, template.DefaultThreshold)
+	if threshold <= 0 {
+		threshold = 1
+	}
+
+	bursts, err := c.repo.ListRecentErrorGroupBursts(
+		ctx,
+		clusterID,
+		now.Add(-time.Duration(windowMinutes)*time.Minute),
+		50,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"auto-policy: failed to list error bursts for cluster %d: %w",
+			clusterID,
+			err,
+		)
+	}
+	for _, burst := range bursts {
+		if burst == nil || burst.RecentCount < int64(threshold) {
+			continue
+		}
+		if !errorSpikeBurstMatchesKeywords(condition, burst) {
+			continue
+		}
+		return burst, true, nil
+	}
+	return nil, false, nil
 }
 
 func (c *AutoPolicyChecker) matchScheduledCondition(policy *InspectionAutoPolicy, condition InspectionConditionItem, now time.Time) (bool, string, error) {
@@ -321,6 +456,169 @@ func matchMetricAlertCondition(condition InspectionConditionItem, alerts []*moni
 		}
 	}
 	return nil, false
+}
+
+func matchAlertFiringCondition(condition InspectionConditionItem, alerts []*monitoringapp.AlertInstance) (*monitoringapp.AlertInstance, bool) {
+	for _, alert := range alerts {
+		if alert == nil || alert.Status != monitoringapp.AlertDisplayStatusFiring {
+			continue
+		}
+		if !alertMatchesKeywords(condition, alert) {
+			continue
+		}
+		return alert, true
+	}
+	return nil, false
+}
+
+func matchNodeUnhealthyCondition(condition InspectionConditionItem, alerts []*monitoringapp.AlertInstance, now time.Time) (int, bool) {
+	windowMinutes := resolveConditionWindowMinutes(condition)
+	threshold := resolveConditionThreshold(condition, 1)
+	if threshold <= 0 {
+		threshold = 1
+	}
+	distinctNodes := map[string]struct{}{}
+	for _, alert := range alerts {
+		if alert == nil || alert.Status != monitoringapp.AlertDisplayStatusFiring {
+			continue
+		}
+		if !isNodeUnhealthyAlert(alert) {
+			continue
+		}
+		if !alertMatchesKeywords(condition, alert) {
+			continue
+		}
+		firingAt := alert.FiringAt.UTC()
+		if !firingAt.IsZero() && now.UTC().Sub(firingAt) < time.Duration(windowMinutes)*time.Minute {
+			continue
+		}
+		key := normalizeAlertNodeKey(alert)
+		if key == "" {
+			key = strings.TrimSpace(alert.AlertID)
+		}
+		if key == "" {
+			continue
+		}
+		distinctNodes[key] = struct{}{}
+	}
+	return len(distinctNodes), len(distinctNodes) >= threshold
+}
+
+func errorSpikeBurstMatchesKeywords(condition InspectionConditionItem, burst *recentErrorGroupBurst) bool {
+	if burst == nil || len(condition.ExtraKeywords) == 0 {
+		return true
+	}
+	haystacks := []string{}
+	if burst.Group != nil {
+		haystacks = append(
+			haystacks,
+			strings.ToLower(strings.TrimSpace(burst.Group.Title)),
+			strings.ToLower(strings.TrimSpace(burst.Group.ExceptionClass)),
+			strings.ToLower(strings.TrimSpace(burst.Group.SampleMessage)),
+			strings.ToLower(strings.TrimSpace(burst.Group.Fingerprint)),
+		)
+	}
+	for _, keyword := range condition.ExtraKeywords {
+		needle := strings.ToLower(strings.TrimSpace(keyword))
+		if needle == "" {
+			continue
+		}
+		for _, haystack := range haystacks {
+			if haystack != "" && strings.Contains(haystack, needle) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isNodeUnhealthyAlert(alert *monitoringapp.AlertInstance) bool {
+	if alert == nil {
+		return false
+	}
+	ruleKey := strings.ToLower(strings.TrimSpace(alert.RuleKey))
+	alertName := strings.ToLower(strings.TrimSpace(alert.AlertName))
+	summary := strings.ToLower(strings.TrimSpace(alert.Summary))
+	description := strings.ToLower(strings.TrimSpace(alert.Description))
+	return containsAnyMetricAlertAlias(
+		[]string{ruleKey, alertName, summary, description},
+		"node_offline",
+		"node offline",
+		"node unavailable",
+		"node unhealthy",
+	)
+}
+
+func normalizeAlertNodeKey(alert *monitoringapp.AlertInstance) string {
+	if alert == nil || alert.SourceRef == nil {
+		return ""
+	}
+	for _, candidate := range []string{
+		strings.TrimSpace(alert.SourceRef.Hostname),
+		strings.TrimSpace(alert.SourceRef.ProcessName),
+		strings.TrimSpace(alert.SourceRef.EventType),
+		strings.TrimSpace(alert.SourceRef.Fingerprint),
+	} {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func alertMatchesKeywords(condition InspectionConditionItem, alert *monitoringapp.AlertInstance) bool {
+	if alert == nil || len(condition.ExtraKeywords) == 0 {
+		return true
+	}
+	haystacks := []string{
+		strings.ToLower(strings.TrimSpace(alert.RuleKey)),
+		strings.ToLower(strings.TrimSpace(alert.AlertName)),
+		strings.ToLower(strings.TrimSpace(alert.Summary)),
+		strings.ToLower(strings.TrimSpace(alert.Description)),
+	}
+	if alert.SourceRef != nil {
+		haystacks = append(
+			haystacks,
+			strings.ToLower(strings.TrimSpace(alert.SourceRef.EventType)),
+			strings.ToLower(strings.TrimSpace(alert.SourceRef.ProcessName)),
+			strings.ToLower(strings.TrimSpace(alert.SourceRef.Hostname)),
+			strings.ToLower(strings.TrimSpace(alert.SourceRef.Fingerprint)),
+		)
+	}
+	for _, keyword := range condition.ExtraKeywords {
+		needle := strings.ToLower(strings.TrimSpace(keyword))
+		if needle == "" {
+			continue
+		}
+		for _, haystack := range haystacks {
+			if haystack != "" && strings.Contains(haystack, needle) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func resolveConditionWindowMinutes(condition InspectionConditionItem) int {
+	template, ok := findBuiltinConditionTemplate(condition.TemplateCode)
+	defaultMinutes := 5
+	if ok && template.DefaultWindowMinutes > 0 {
+		defaultMinutes = template.DefaultWindowMinutes
+	}
+	if condition.WindowMinutesOverride != nil && *condition.WindowMinutesOverride > 0 {
+		return *condition.WindowMinutesOverride
+	}
+	return defaultMinutes
+}
+
+func resolveConditionThreshold(condition InspectionConditionItem, fallback int) int {
+	if condition.ThresholdOverride != nil && *condition.ThresholdOverride > 0 {
+		return *condition.ThresholdOverride
+	}
+	if fallback > 0 {
+		return fallback
+	}
+	return 1
 }
 
 func metricAlertMatchesCondition(condition InspectionConditionItem, alert *monitoringapp.AlertInstance) bool {

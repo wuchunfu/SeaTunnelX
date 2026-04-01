@@ -81,8 +81,11 @@ type AppConfig struct {
 // SyncConfig 同步工作台相关配置。
 // SyncConfig holds sync studio related settings.
 type SyncConfig struct {
-	// PreviewDataTTLHours controls how long preview session data is retained.
-	// PreviewDataTTLHours 控制预览会话数据的保留时长（小时）。
+	// PreviewDataTTLMinutes controls how long preview session data is retained.
+	// PreviewDataTTLMinutes 控制预览会话数据的保留时长（分钟）。
+	PreviewDataTTLMinutes int `mapstructure:"preview_data_ttl_minutes"`
+	// PreviewDataTTLHours is kept for backward compatibility and will be used when minute-level config is absent.
+	// PreviewDataTTLHours 仅用于兼容旧配置；未设置分钟级配置时才会使用。
 	PreviewDataTTLHours int `mapstructure:"preview_data_ttl_hours"`
 }
 

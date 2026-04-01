@@ -20,6 +20,7 @@
 import {useMemo, useState} from 'react';
 import {GitBranch} from 'lucide-react';
 import type {
+  SyncSinkSaveModePreviewTable,
   SyncWebUIDagEdge,
   SyncJSON,
   SyncWebUIDagPreviewJob,
@@ -58,6 +59,12 @@ interface SelectedTableDetailState {
   schema?: SyncJSON;
 }
 
+interface SelectedSaveModeDetailState {
+  nodeLabel: string;
+  tablePath: string;
+  preview: SyncSinkSaveModePreviewTable;
+}
+
 interface SchemaColumnDetail {
   name: string;
   dataType: string;
@@ -66,6 +73,14 @@ interface SchemaColumnDetail {
   comment: string;
   primaryKey: boolean;
   uniqueKey: boolean;
+}
+
+interface TablePathPreviewItemProps {
+  nodeLabel: string;
+  path: string;
+  preview?: SyncSinkSaveModePreviewTable;
+  onSelectDetail: () => void;
+  onPreviewDetail: () => void;
 }
 
 function toObject(value: unknown): Record<string, unknown> {
@@ -239,6 +254,110 @@ function normalizeTablePaths(paths?: string[]): string[] {
   return (paths || []).filter(Boolean);
 }
 
+function resolveSaveModePreview(
+  node: SyncWebUIDagVertexInfo,
+  path: string,
+): SyncSinkSaveModePreviewTable | undefined {
+  const previews = node.saveModePreviews || {};
+  return previews[path] || previews.__default__;
+}
+
+function SaveModePreviewDetail({
+  preview,
+}: {
+  preview: SyncSinkSaveModePreviewTable;
+}) {
+  const actions = preview.actions || [];
+  const warnings = preview.warnings || [];
+
+  return (
+    <div className='space-y-3'>
+      <div className='flex flex-wrap gap-2'>
+        {preview.schemaSaveMode ? (
+          <Badge variant='outline' className='text-xs'>
+            Schema: {preview.schemaSaveMode}
+          </Badge>
+        ) : null}
+        {preview.dataSaveMode ? (
+          <Badge variant='outline' className='text-xs'>
+            Data: {preview.dataSaveMode}
+          </Badge>
+        ) : null}
+        {preview.completeness ? (
+          <Badge variant='secondary' className='text-xs'>
+            {preview.completeness}
+          </Badge>
+        ) : null}
+      </div>
+      {warnings.length > 0 ? (
+        <div className='space-y-1 text-sm text-amber-700 dark:text-amber-300'>
+          {warnings.map((warning, index) => (
+            <div key={`${warning}-${index}`}>{warning}</div>
+          ))}
+        </div>
+      ) : null}
+      {actions.length > 0 ? (
+        <div className='space-y-1'>
+          {actions.map((action, index) => (
+            <div
+              key={`${action.actionType || 'action'}-${index}`}
+              className='rounded border border-border/50 bg-background/80 p-2'
+            >
+              <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                {action.phase ? <span>{action.phase}</span> : null}
+                {action.actionType ? <span>{action.actionType}</span> : null}
+                {action.resultType ? <span>{action.resultType}</span> : null}
+              </div>
+              {action.content ? (
+                <pre className='mt-1 whitespace-pre-wrap break-all font-mono text-xs text-foreground'>
+                  {action.content}
+                </pre>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : warnings.length === 0 ? (
+        <div className='text-sm text-muted-foreground'>
+          暂无可预览的 SQL / 动作
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TablePathPreviewItem({
+  nodeLabel,
+  path,
+  preview,
+  onSelectDetail,
+  onPreviewDetail,
+}: TablePathPreviewItemProps) {
+  return (
+    <div className='rounded-md border border-border/50 bg-background/80 px-2 py-1.5'>
+      <div className='flex items-center gap-2'>
+        <button
+          type='button'
+          title={path}
+          className='min-w-0 flex-1 text-left text-[11px] hover:text-foreground'
+          onClick={onSelectDetail}
+        >
+          <span className='block truncate'>{path}</span>
+        </button>
+        {preview ? (
+          <button
+            type='button'
+            className='inline-flex items-center rounded border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted'
+            title={`${nodeLabel} / ${path}`}
+            onClick={onPreviewDetail}
+          >
+            预览 DDL
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function estimateNodeHeight(node: SyncWebUIDagVertexInfo): number {
   const connectorLines = Math.max(
     1,
@@ -265,6 +384,8 @@ function estimateNodeHeight(node: SyncWebUIDagVertexInfo): number {
 export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
   const [selectedTableDetail, setSelectedTableDetail] =
     useState<SelectedTableDetailState | null>(null);
+  const [selectedSaveModeDetail, setSelectedSaveModeDetail] =
+    useState<SelectedSaveModeDetailState | null>(null);
   const selectedSchemaColumns = useMemo(
     () => extractSchemaColumnDetails(selectedTableDetail?.schema),
     [selectedTableDetail],
@@ -292,7 +413,6 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
       ? 0
       : Math.max(...positionedNodes.map((node) => node.y + node.height)) +
         PADDING;
-
   return (
     <div className='grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]'>
       <Card className='overflow-hidden'>
@@ -397,12 +517,12 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                         <div className='space-y-1.5'>
                           {normalizeTablePaths(node.tablePaths).length > 0 ? (
                             normalizeTablePaths(node.tablePaths).map((path) => (
-                              <button
+                              <TablePathPreviewItem
                                 key={`${node.vertexId}-${path}`}
-                                type='button'
-                                title={path}
-                                className='flex w-full items-center rounded-md border border-border/50 bg-background/80 px-2 py-1 text-left text-[11px] hover:bg-background'
-                                onClick={() =>
+                                nodeLabel={`#${node.vertexId} ${node.connectorType}`}
+                                path={path}
+                                preview={resolveSaveModePreview(node, path)}
+                                onSelectDetail={() =>
                                   setSelectedTableDetail({
                                     nodeLabel: `#${node.vertexId} ${node.connectorType}`,
                                     tablePath: path,
@@ -410,9 +530,18 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                                     schema: node.tableSchemas?.[path],
                                   })
                                 }
-                              >
-                                <span className='block truncate'>{path}</span>
-                              </button>
+                                onPreviewDetail={() => {
+                                  const preview = resolveSaveModePreview(node, path);
+                                  if (!preview) {
+                                    return;
+                                  }
+                                  setSelectedSaveModeDetail({
+                                    nodeLabel: `#${node.vertexId} ${node.connectorType}`,
+                                    tablePath: path,
+                                    preview,
+                                  });
+                                }}
+                              />
                             ))
                           ) : (
                             <Badge
@@ -483,12 +612,12 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                   <div className='space-y-1.5'>
                     {normalizeTablePaths(vertex.tablePaths).length > 0 ? (
                       normalizeTablePaths(vertex.tablePaths).map((path) => (
-                        <button
+                        <TablePathPreviewItem
                           key={`${vertex.vertexId}-${path}`}
-                          type='button'
-                          title={path}
-                          className='flex w-full items-center rounded-md border border-border/50 bg-background/80 px-2 py-1 text-left text-[11px] hover:bg-background'
-                          onClick={() =>
+                          nodeLabel={`#${vertex.vertexId} ${vertex.connectorType}`}
+                          path={path}
+                          preview={resolveSaveModePreview(vertex, path)}
+                          onSelectDetail={() =>
                             setSelectedTableDetail({
                               nodeLabel: `#${vertex.vertexId} ${vertex.connectorType}`,
                               tablePath: path,
@@ -496,9 +625,18 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                               schema: vertex.tableSchemas?.[path],
                             })
                           }
-                        >
-                          <span className='block truncate'>{path}</span>
-                        </button>
+                          onPreviewDetail={() => {
+                            const preview = resolveSaveModePreview(vertex, path);
+                            if (!preview) {
+                              return;
+                            }
+                            setSelectedSaveModeDetail({
+                              nodeLabel: `#${vertex.vertexId} ${vertex.connectorType}`,
+                              tablePath: path,
+                              preview,
+                            });
+                          }}
+                        />
                       ))
                     ) : (
                       <Badge
@@ -709,6 +847,30 @@ export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
                 )}
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(selectedSaveModeDetail)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedSaveModeDetail(null);
+          }
+        }}
+      >
+        <DialogContent className='sm:max-w-[760px]'>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSaveModeDetail?.tablePath || 'DDL 预览'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className='space-y-4'>
+            <div className='text-sm text-muted-foreground'>
+              {selectedSaveModeDetail?.nodeLabel}
+            </div>
+            {selectedSaveModeDetail?.preview ? (
+              <SaveModePreviewDetail preview={selectedSaveModeDetail.preview} />
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

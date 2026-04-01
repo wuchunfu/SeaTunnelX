@@ -59,6 +59,10 @@ func newAutoPolicyTestService(t *testing.T, alertReader alertInstanceReader) (*S
 	return service, repo
 }
 
+func intPtr(value int) *int {
+	return &value
+}
+
 func TestAutoPolicyCheckerMatchJavaErrorCondition_matchesOOMAndMetaspace(t *testing.T) {
 	checker := &AutoPolicyChecker{}
 
@@ -112,11 +116,80 @@ func TestServiceCreateAutoPolicy_rejectsUnsupportedConditionTemplate(t *testing.
 		ClusterID: 7,
 		Enabled:   true,
 		Conditions: InspectionConditionItems{
-			{TemplateCode: ConditionCodeErrorSpike, Enabled: true},
+			{TemplateCode: InspectionConditionTemplateCode("NOT_SUPPORTED"), Enabled: true},
 		},
 	})
 	if err == nil {
 		t.Fatal("expected unsupported template to be rejected")
+	}
+}
+
+func TestAutoPolicyCheckerCheckErrorSpikePolicies_triggersInspectionWhenThresholdBreached(t *testing.T) {
+	service, repo := newAutoPolicyTestService(t, nil)
+	policy := &InspectionAutoPolicy{
+		ClusterID:       7,
+		Name:            "error-spike",
+		Enabled:         true,
+		CooldownMinutes: 10,
+		Conditions: InspectionConditionItems{
+			{
+				TemplateCode:          ConditionCodeErrorSpike,
+				Enabled:               true,
+				ThresholdOverride:     intPtr(3),
+				WindowMinutesOverride: intPtr(5),
+			},
+		},
+	}
+	if err := repo.CreateAutoPolicy(context.Background(), policy); err != nil {
+		t.Fatalf("CreateAutoPolicy returned error: %v", err)
+	}
+
+	group := &SeatunnelErrorGroup{
+		Fingerprint:        "oom-users",
+		FingerprintVersion: DefaultFingerprintVersion,
+		Title:              "users table write failed",
+		ExceptionClass:     "java.lang.RuntimeException",
+		SampleMessage:      "users batch failed",
+		OccurrenceCount:    3,
+		FirstSeenAt:        time.Date(2026, 3, 26, 2, 18, 0, 0, time.UTC),
+		LastSeenAt:         time.Date(2026, 3, 26, 2, 20, 0, 0, time.UTC),
+		LastClusterID:      7,
+	}
+	if err := repo.CreateErrorGroup(context.Background(), group); err != nil {
+		t.Fatalf("CreateErrorGroup returned error: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := repo.CreateErrorEvent(context.Background(), &SeatunnelErrorEvent{
+			ClusterID:      7,
+			ErrorGroupID:   group.ID,
+			Fingerprint:    group.Fingerprint,
+			AgentID:        "agent-1",
+			ExceptionClass: group.ExceptionClass,
+			Message:        group.SampleMessage,
+			OccurredAt:     time.Date(2026, 3, 26, 2, 18+i, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("CreateErrorEvent returned error: %v", err)
+		}
+	}
+
+	checker := NewAutoPolicyChecker(repo, service)
+	if err := checker.CheckErrorSpikePolicies(context.Background(), 7, time.Date(2026, 3, 26, 2, 20, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("CheckErrorSpikePolicies returned error: %v", err)
+	}
+
+	reports, err := service.ListInspectionReports(context.Background(), &ClusterInspectionReportFilter{
+		ClusterID: 7,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListInspectionReports returned error: %v", err)
+	}
+	if reports.Total != 1 || len(reports.Items) != 1 {
+		t.Fatalf("expected 1 inspection report, got total=%d len=%d", reports.Total, len(reports.Items))
+	}
+	if !strings.Contains(reports.Items[0].AutoTriggerReason, string(ConditionCodeErrorSpike)) {
+		t.Fatalf("expected auto trigger reason to mention %s, got %q", ConditionCodeErrorSpike, reports.Items[0].AutoTriggerReason)
 	}
 }
 
@@ -223,5 +296,126 @@ func TestAutoPolicyCheckerCheckPrometheusPolicies_triggersInspectionWhenThreshol
 	}
 	if reports[0].AutoTriggerReason == "" || !strings.Contains(reports[0].AutoTriggerReason, "PROM_HEAP_HIGH") {
 		t.Fatalf("expected PROM_HEAP_HIGH trigger reason, got %q", reports[0].AutoTriggerReason)
+	}
+}
+
+func TestAutoPolicyCheckerCheckPrometheusPolicies_triggersInspectionForNodeUnhealthy(t *testing.T) {
+	service, repo := newAutoPolicyTestService(t, &fakeInspectionAlertReader{
+		data: &monitoringapp.AlertInstanceListData{
+			Alerts: []*monitoringapp.AlertInstance{
+				{
+					AlertID:     "node-a",
+					ClusterID:   "7",
+					RuleKey:     "node_offline",
+					AlertName:   "Node offline",
+					Status:      monitoringapp.AlertDisplayStatusFiring,
+					FiringAt:    time.Date(2026, 3, 26, 2, 0, 0, 0, time.UTC),
+					SourceRef:   &monitoringapp.AlertInstanceSourceRef{Hostname: "host-a"},
+					ClusterName: "demo-cluster",
+				},
+				{
+					AlertID:     "node-b",
+					ClusterID:   "7",
+					RuleKey:     "node_offline",
+					AlertName:   "Node offline",
+					Status:      monitoringapp.AlertDisplayStatusFiring,
+					FiringAt:    time.Date(2026, 3, 26, 2, 1, 0, 0, time.UTC),
+					SourceRef:   &monitoringapp.AlertInstanceSourceRef{Hostname: "host-b"},
+					ClusterName: "demo-cluster",
+				},
+			},
+		},
+	})
+	policy := &InspectionAutoPolicy{
+		ClusterID:       7,
+		Name:            "node-unhealthy",
+		Enabled:         true,
+		CooldownMinutes: 5,
+		Conditions: InspectionConditionItems{
+			{
+				TemplateCode:          ConditionCodeNodeUnhealthy,
+				Enabled:               true,
+				ThresholdOverride:     intPtr(2),
+				WindowMinutesOverride: intPtr(10),
+			},
+		},
+	}
+	if err := repo.CreateAutoPolicy(context.Background(), policy); err != nil {
+		t.Fatalf("CreateAutoPolicy returned error: %v", err)
+	}
+
+	checker := NewAutoPolicyChecker(repo, service)
+	if err := checker.CheckPrometheusPolicies(context.Background(), 7, time.Date(2026, 3, 26, 2, 20, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("CheckPrometheusPolicies returned error: %v", err)
+	}
+
+	reports, total, err := repo.ListInspectionReports(context.Background(), &ClusterInspectionReportFilter{
+		ClusterID: 7,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListInspectionReports returned error: %v", err)
+	}
+	if total != 1 || len(reports) != 1 {
+		t.Fatalf("expected one node-unhealthy inspection report, total=%d len=%d", total, len(reports))
+	}
+	if !strings.Contains(reports[0].AutoTriggerReason, string(ConditionCodeNodeUnhealthy)) {
+		t.Fatalf("expected trigger reason to mention %s, got %q", ConditionCodeNodeUnhealthy, reports[0].AutoTriggerReason)
+	}
+}
+
+func TestAutoPolicyCheckerCheckPrometheusPolicies_triggersInspectionForAlertFiring(t *testing.T) {
+	service, repo := newAutoPolicyTestService(t, &fakeInspectionAlertReader{
+		data: &monitoringapp.AlertInstanceListData{
+			Alerts: []*monitoringapp.AlertInstance{
+				{
+					AlertID:     "alert-1",
+					ClusterID:   "7",
+					RuleKey:     "custom_rule_users_delay",
+					AlertName:   "Users delay high",
+					Summary:     "Users delay high",
+					Status:      monitoringapp.AlertDisplayStatusFiring,
+					FiringAt:    time.Date(2026, 3, 26, 2, 19, 0, 0, time.UTC),
+					ClusterName: "demo-cluster",
+				},
+			},
+		},
+	})
+	policy := &InspectionAutoPolicy{
+		ClusterID:       7,
+		Name:            "alert-firing",
+		Enabled:         true,
+		CooldownMinutes: 5,
+		Conditions: InspectionConditionItems{
+			{
+				TemplateCode:  ConditionCodeAlertFiring,
+				Enabled:       true,
+				ExtraKeywords: []string{"users_delay"},
+			},
+		},
+	}
+	if err := repo.CreateAutoPolicy(context.Background(), policy); err != nil {
+		t.Fatalf("CreateAutoPolicy returned error: %v", err)
+	}
+
+	checker := NewAutoPolicyChecker(repo, service)
+	if err := checker.CheckPrometheusPolicies(context.Background(), 7, time.Date(2026, 3, 26, 2, 20, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("CheckPrometheusPolicies returned error: %v", err)
+	}
+
+	reports, total, err := repo.ListInspectionReports(context.Background(), &ClusterInspectionReportFilter{
+		ClusterID: 7,
+		Page:      1,
+		PageSize:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListInspectionReports returned error: %v", err)
+	}
+	if total != 1 || len(reports) != 1 {
+		t.Fatalf("expected one alert-firing inspection report, total=%d len=%d", total, len(reports))
+	}
+	if !strings.Contains(reports[0].AutoTriggerReason, string(ConditionCodeAlertFiring)) {
+		t.Fatalf("expected trigger reason to mention %s, got %q", ConditionCodeAlertFiring, reports[0].AutoTriggerReason)
 	}
 }

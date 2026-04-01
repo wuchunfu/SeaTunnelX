@@ -195,6 +195,9 @@ var supportedConditionTemplateCodes = map[InspectionConditionTemplateCode]struct
 	ConditionCodePromHeapRising:    {},
 	ConditionCodePromHeapHigh:      {},
 	ConditionCodePromCPUHigh:       {},
+	ConditionCodeErrorSpike:        {},
+	ConditionCodeNodeUnhealthy:     {},
+	ConditionCodeAlertFiring:       {},
 	ConditionCodeScheduled:         {},
 }
 

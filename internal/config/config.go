@@ -91,8 +91,8 @@ func setDefaults(c *configModel) {
 		c.Database.SQLitePath = "./data/seatunnel.db"
 	}
 
-	if c.Sync.PreviewDataTTLHours <= 0 {
-		c.Sync.PreviewDataTTLHours = 24
+	if c.Sync.PreviewDataTTLMinutes <= 0 && c.Sync.PreviewDataTTLHours <= 0 {
+		c.Sync.PreviewDataTTLMinutes = 24 * 60
 	}
 
 	// 认证默认配置

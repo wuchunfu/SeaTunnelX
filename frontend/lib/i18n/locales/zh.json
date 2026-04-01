@@ -2765,7 +2765,10 @@
         "nodeUnhealthy": "节点异常",
         "alertFiring": "告警触发",
         "schedule": "定时巡检"
-      }
+      },
+      "keywordsLabel": "关键字过滤（可选）",
+      "keywordsPlaceholder": "多个关键字用逗号分隔",
+      "keywordsHint": "用于按告警名称、规则键、摘要、描述等文本做筛选；留空表示不过滤。"
     },
     "tasks": {
       "title": "诊断执行",

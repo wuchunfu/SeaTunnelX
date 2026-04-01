@@ -45,18 +45,29 @@ public class WebUiDagPreviewService {
     private static final String PREVIEW_JOB_ID = "preview";
 
     private final JobConfigSupportService jobConfigSupportService;
+    private final SinkSaveModePreviewService sinkSaveModePreviewService;
 
     public WebUiDagPreviewService() {
-        this(new JobConfigSupportService());
+        this(new JobConfigSupportService(), null);
     }
 
     WebUiDagPreviewService(JobConfigSupportService jobConfigSupportService) {
+        this(jobConfigSupportService, null);
+    }
+
+    WebUiDagPreviewService(
+            JobConfigSupportService jobConfigSupportService,
+            SinkSaveModePreviewService sinkSaveModePreviewService) {
         this.jobConfigSupportService = jobConfigSupportService;
+        this.sinkSaveModePreviewService =
+                sinkSaveModePreviewService == null
+                        ? new SinkSaveModePreviewService(jobConfigSupportService)
+                        : sinkSaveModePreviewService;
     }
 
     public WebUiDagPreviewResult preview(Map<String, Object> request) {
         JobConfigContext context = jobConfigSupportService.parseJobContext(request);
-        WebUiJobDag jobDag = toWebUiJobDag(context.getGraph());
+        WebUiJobDag jobDag = toWebUiJobDag(context, request);
         return new WebUiDagPreviewResult(
                 PREVIEW_JOB_ID,
                 "Config Preview",
@@ -71,7 +82,8 @@ public class WebUiDagPreviewService {
                 context.getWarnings());
     }
 
-    private WebUiJobDag toWebUiJobDag(DatasetDag graph) {
+    private WebUiJobDag toWebUiJobDag(JobConfigContext context, Map<String, Object> request) {
+        DatasetDag graph = context.getGraph();
         List<ProxyNode> orderedNodes = topologicalSort(graph);
         Map<String, Integer> nodeIds = new LinkedHashMap<>();
         Map<Integer, WebUiDagVertexInfo> vertexInfoMap = new LinkedHashMap<>();
@@ -79,6 +91,8 @@ public class WebUiDagPreviewService {
             ProxyNode node = orderedNodes.get(i);
             int vertexId = i + 1;
             nodeIds.put(node.getNodeId(), vertexId);
+            SaveModePreviewAttachment saveModePreviewAttachment =
+                    resolveSaveModePreviewAttachment(context, request, node);
             vertexInfoMap.put(
                     vertexId,
                     new WebUiDagVertexInfo(
@@ -87,7 +101,9 @@ public class WebUiDagPreviewService {
                             buildConnectorType(node),
                             buildTablePaths(node),
                             node.getTableColumns(),
-                            node.getTableSchemas()));
+                            node.getTableSchemas(),
+                            saveModePreviewAttachment.previews,
+                            saveModePreviewAttachment.warnings));
         }
 
         List<WebUiDagEdge> edges = new ArrayList<>();
@@ -103,6 +119,43 @@ public class WebUiDagPreviewService {
         pipelineEdges.put(0, Collections.unmodifiableList(edges));
         return new WebUiJobDag(
                 PREVIEW_JOB_ID, pipelineEdges, vertexInfoMap, Collections.emptyMap());
+    }
+
+    private SaveModePreviewAttachment resolveSaveModePreviewAttachment(
+            JobConfigContext context, Map<String, Object> request, ProxyNode node) {
+        if (node.getKind() != NodeKind.SINK) {
+            return SaveModePreviewAttachment.empty();
+        }
+        try {
+            Map<String, Object> previewResult =
+                    sinkSaveModePreviewService.preview(context, request, node.getConfigIndex());
+            return new SaveModePreviewAttachment(
+                    sinkSaveModePreviewService.toVertexTablePreviews(
+                            previewResult, buildTablePaths(node)),
+                    ProxyRequestUtils.getStringList(previewResult, "warnings"));
+        } catch (Exception e) {
+            return new SaveModePreviewAttachment(
+                    Collections.emptyMap(),
+                    Collections.singletonList(
+                            String.format(
+                                    "SaveMode preview skipped for %s: %s",
+                                    buildConnectorType(node), e.getMessage())));
+        }
+    }
+
+    private static class SaveModePreviewAttachment {
+        private final Map<String, Map<String, Object>> previews;
+        private final List<String> warnings;
+
+        private SaveModePreviewAttachment(
+                Map<String, Map<String, Object>> previews, List<String> warnings) {
+            this.previews = previews == null ? Collections.emptyMap() : previews;
+            this.warnings = warnings == null ? Collections.emptyList() : warnings;
+        }
+
+        private static SaveModePreviewAttachment empty() {
+            return new SaveModePreviewAttachment(Collections.emptyMap(), Collections.emptyList());
+        }
     }
 
     private List<ProxyNode> topologicalSort(DatasetDag graph) {

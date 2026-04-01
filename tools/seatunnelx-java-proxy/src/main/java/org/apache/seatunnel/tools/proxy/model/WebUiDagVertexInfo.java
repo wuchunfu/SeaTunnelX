@@ -30,6 +30,8 @@ public class WebUiDagVertexInfo {
     private final List<String> tablePaths;
     private final Map<String, List<String>> tableColumns;
     private final Map<String, Map<String, Object>> tableSchemas;
+    private final Map<String, Map<String, Object>> saveModePreviews;
+    private final List<String> saveModeWarnings;
 
     public WebUiDagVertexInfo(
             Integer vertexId,
@@ -37,7 +39,9 @@ public class WebUiDagVertexInfo {
             String connectorType,
             List<String> tablePaths,
             Map<String, List<String>> tableColumns,
-            Map<String, Map<String, Object>> tableSchemas) {
+            Map<String, Map<String, Object>> tableSchemas,
+            Map<String, Map<String, Object>> saveModePreviews,
+            List<String> saveModeWarnings) {
         this.vertexId = vertexId;
         this.type = type;
         this.connectorType = connectorType;
@@ -53,6 +57,14 @@ public class WebUiDagVertexInfo {
                 tableSchemas == null
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(new LinkedHashMap<>(tableSchemas));
+        this.saveModePreviews =
+                saveModePreviews == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(saveModePreviews));
+        this.saveModeWarnings =
+                saveModeWarnings == null
+                        ? Collections.emptyList()
+                        : Collections.unmodifiableList(saveModeWarnings);
     }
 
     public Integer getVertexId() {
@@ -77,5 +89,13 @@ public class WebUiDagVertexInfo {
 
     public Map<String, Map<String, Object>> getTableSchemas() {
         return tableSchemas;
+    }
+
+    public Map<String, Map<String, Object>> getSaveModePreviews() {
+        return saveModePreviews;
+    }
+
+    public List<String> getSaveModeWarnings() {
+        return saveModeWarnings;
     }
 }

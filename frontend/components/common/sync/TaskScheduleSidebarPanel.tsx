@@ -1,6 +1,8 @@
 'use client';
 
 import {useMemo} from 'react';
+
+import {cn} from '@/lib/utils';
 import {useTranslations} from 'next-intl';
 
 import {Badge} from '@/components/ui/badge';
@@ -25,11 +27,13 @@ export function TaskScheduleSidebarPanel({
   lastTriggeredAt,
   nextTriggeredAt,
   onChange,
+  className,
 }: {
   value: TaskScheduleValue;
   lastTriggeredAt?: string;
   nextTriggeredAt?: string;
   onChange: (value: TaskScheduleValue) => void;
+  className?: string;
 }) {
   const t = useTranslations('workbenchStudio');
   const presets = useMemo<CronPresetOption[]>(() => [
@@ -67,13 +71,13 @@ export function TaskScheduleSidebarPanel({
 
 
   return (
-    <div className='mx-auto min-w-0 max-w-[236px] space-y-4'>
-      <div className='rounded-lg border border-border/50 bg-muted/10 p-3'>
+    <div className={cn('min-w-0 space-y-4', className)}>
+      <div className='rounded-lg border border-border/50 bg-muted/10 p-4 md:p-5'>
         <div className='mb-3 flex items-center justify-between gap-2'>
           <div>
-            <div className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
+            <Label className='text-xs font-medium uppercase tracking-wide text-muted-foreground'>
               {t('taskSchedule')}
-            </div>
+            </Label>
             <p className='mt-1 text-[11px] leading-5 text-muted-foreground'>
               {t('taskScheduleHint')}
             </p>
@@ -85,7 +89,7 @@ export function TaskScheduleSidebarPanel({
         </div>
 
 
-        <div className='mb-3 grid gap-2 rounded-md border border-border/50 bg-background/60 p-2'>
+        <div className='mb-4 grid gap-3 rounded-md border border-border/50 bg-background/60 p-3 md:grid-cols-2'>
           <div className='space-y-1'>
             <div className='text-[10px] uppercase tracking-wide text-muted-foreground'>
               {t('scheduleLastTriggeredAt')}

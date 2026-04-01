@@ -41,6 +41,7 @@ type ConfigToolClient interface {
 	GetPluginOptions(ctx context.Context, endpoint string, req *ConfigToolPluginOptionsRequest) (*ConfigToolPluginOptionsResponse, error)
 	RenderPluginTemplate(ctx context.Context, endpoint string, req *ConfigToolPluginTemplateRequest) (*ConfigToolPluginTemplateResponse, error)
 	ListPluginEnumValues(ctx context.Context, endpoint string, req *ConfigToolPluginEnumValuesRequest) (*ConfigToolPluginEnumValuesResponse, error)
+	PreviewSinkSaveMode(ctx context.Context, endpoint string, req *ConfigToolSinkSaveModePreviewRequest) (*ConfigToolSinkSaveModePreviewResponse, error)
 }
 
 // ConfigToolResolver resolves java-proxy endpoint for a sync task.
@@ -174,6 +175,50 @@ type ConfigToolPluginEnumValuesResponse struct {
 	Warnings          []string `json:"warnings"`
 }
 
+// ConfigToolSinkSaveModePreviewRequest represents sink save mode preview input.
+type ConfigToolSinkSaveModePreviewRequest struct {
+	ConfigToolContentRequest
+	SinkIndex          *int     `json:"sinkIndex,omitempty"`
+	SinkNodeID         string   `json:"sinkNodeId,omitempty"`
+	PluginJars         []string `json:"pluginJars,omitempty"`
+	IncludeInfoPreview bool     `json:"includeInfoPreview"`
+}
+
+// ConfigToolSinkSaveModePreviewAction mirrors one java-proxy save mode preview action.
+type ConfigToolSinkSaveModePreviewAction struct {
+	Phase      string `json:"phase,omitempty"`
+	ActionType string `json:"actionType,omitempty"`
+	ResultType string `json:"resultType,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Native     bool   `json:"native"`
+}
+
+// ConfigToolSinkSaveModePreviewTable mirrors per-table preview details.
+type ConfigToolSinkSaveModePreviewTable struct {
+	TablePath      string                                `json:"tablePath,omitempty"`
+	Supported      bool                                  `json:"supported"`
+	Completeness   string                                `json:"completeness,omitempty"`
+	SchemaSaveMode string                                `json:"schemaSaveMode,omitempty"`
+	DataSaveMode   string                                `json:"dataSaveMode,omitempty"`
+	Actions        []ConfigToolSinkSaveModePreviewAction `json:"actions,omitempty"`
+	Warnings       []string                              `json:"warnings,omitempty"`
+}
+
+// ConfigToolSinkSaveModePreviewResponse mirrors java-proxy save mode preview response.
+type ConfigToolSinkSaveModePreviewResponse struct {
+	OK             bool                                  `json:"ok"`
+	Connector      string                                `json:"connector,omitempty"`
+	SinkIndex      int                                   `json:"sinkIndex,omitempty"`
+	Supported      bool                                  `json:"supported"`
+	Completeness   string                                `json:"completeness,omitempty"`
+	SchemaSaveMode string                                `json:"schemaSaveMode,omitempty"`
+	DataSaveMode   string                                `json:"dataSaveMode,omitempty"`
+	TablePath      string                                `json:"tablePath,omitempty"`
+	Actions        []ConfigToolSinkSaveModePreviewAction `json:"actions,omitempty"`
+	Tables         []ConfigToolSinkSaveModePreviewTable  `json:"tables,omitempty"`
+	Warnings       []string                              `json:"warnings,omitempty"`
+}
+
 // ConfigToolGraph mirrors java-proxy DAG payload.
 type ConfigToolGraph struct {
 	Nodes []map[string]interface{} `json:"nodes"`
@@ -209,12 +254,14 @@ type ConfigToolPreviewResponse struct {
 
 // ConfigToolWebUIDAGVertexInfo mirrors webui vertex payload from java-proxy.
 type ConfigToolWebUIDAGVertexInfo struct {
-	VertexID      int                               `json:"vertexId"`
-	Type          string                            `json:"type"`
-	ConnectorType string                            `json:"connectorType"`
-	TablePaths    []string                          `json:"tablePaths"`
-	TableColumns  map[string][]string               `json:"tableColumns"`
-	TableSchemas  map[string]map[string]interface{} `json:"tableSchemas"`
+	VertexID         int                                           `json:"vertexId"`
+	Type             string                                        `json:"type"`
+	ConnectorType    string                                        `json:"connectorType"`
+	TablePaths       []string                                      `json:"tablePaths"`
+	TableColumns     map[string][]string                           `json:"tableColumns"`
+	TableSchemas     map[string]map[string]interface{}             `json:"tableSchemas"`
+	SaveModePreviews map[string]ConfigToolSinkSaveModePreviewTable `json:"saveModePreviews,omitempty"`
+	SaveModeWarnings []string                                      `json:"saveModeWarnings,omitempty"`
 }
 
 // ConfigToolWebUIDAGEdge mirrors webui edge payload from java-proxy.
@@ -364,6 +411,15 @@ func (c *DefaultConfigToolClient) GetPluginOptions(ctx context.Context, endpoint
 func (c *DefaultConfigToolClient) RenderPluginTemplate(ctx context.Context, endpoint string, req *ConfigToolPluginTemplateRequest) (*ConfigToolPluginTemplateResponse, error) {
 	var result ConfigToolPluginTemplateResponse
 	if err := c.postJSON(ctx, endpoint, "/api/v1/plugin/template", req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// PreviewSinkSaveMode calls /api/v1/config/preview/sink-savemode.
+func (c *DefaultConfigToolClient) PreviewSinkSaveMode(ctx context.Context, endpoint string, req *ConfigToolSinkSaveModePreviewRequest) (*ConfigToolSinkSaveModePreviewResponse, error) {
+	var result ConfigToolSinkSaveModePreviewResponse
+	if err := c.postJSON(ctx, endpoint, "/api/v1/config/preview/sink-savemode", req, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

@@ -62,7 +62,7 @@ const (
 	defaultPreviewRowLimit       = 100
 	maxPreviewRowLimit           = 10000
 	defaultPreviewTimeoutMinutes = 10
-	defaultPreviewTTLHours       = 24
+	defaultPreviewTTLMinutes     = 24 * 60
 )
 
 // NewService creates a new sync service.
@@ -107,11 +107,15 @@ func (s *Service) StartPreviewRuntime(ctx context.Context) {
 }
 
 func (s *Service) previewDataTTL() time.Duration {
-	hours := defaultPreviewTTLHours
-	if config.Config != nil && config.Config.Sync.PreviewDataTTLHours > 0 {
-		hours = config.Config.Sync.PreviewDataTTLHours
+	minutes := defaultPreviewTTLMinutes
+	if config.Config != nil {
+		if config.Config.Sync.PreviewDataTTLMinutes > 0 {
+			minutes = config.Config.Sync.PreviewDataTTLMinutes
+		} else if config.Config.Sync.PreviewDataTTLHours > 0 {
+			minutes = config.Config.Sync.PreviewDataTTLHours * 60
+		}
 	}
-	return time.Duration(hours) * time.Hour
+	return time.Duration(minutes) * time.Minute
 }
 
 // ListGlobalVariables returns all workspace-wide variables.
@@ -1595,14 +1599,16 @@ func extractWebUIDAGNodes(vertexInfoMap map[string]ConfigToolWebUIDAGVertexInfo)
 	nodes := make([]JSONMap, 0, len(keyed))
 	for _, item := range keyed {
 		nodes = append(nodes, JSONMap{
-			"id":            item.value.VertexID,
-			"vertexId":      item.value.VertexID,
-			"name":          item.value.ConnectorType,
-			"type":          item.value.Type,
-			"connectorType": item.value.ConnectorType,
-			"tablePaths":    append([]string{}, item.value.TablePaths...),
-			"tableColumns":  item.value.TableColumns,
-			"tableSchemas":  item.value.TableSchemas,
+			"id":               item.value.VertexID,
+			"vertexId":         item.value.VertexID,
+			"name":             item.value.ConnectorType,
+			"type":             item.value.Type,
+			"connectorType":    item.value.ConnectorType,
+			"tablePaths":       append([]string{}, item.value.TablePaths...),
+			"tableColumns":     item.value.TableColumns,
+			"tableSchemas":     item.value.TableSchemas,
+			"saveModePreviews": item.value.SaveModePreviews,
+			"saveModeWarnings": append([]string{}, item.value.SaveModeWarnings...),
 		})
 	}
 	return nodes

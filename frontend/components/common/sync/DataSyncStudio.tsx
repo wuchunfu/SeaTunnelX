@@ -5604,6 +5604,7 @@ export function DataSyncStudio() {
                       size='icon'
                       variant='ghost'
                       className='size-7'
+                      aria-label={t('newFolder')}
                       onClick={() =>
                         openTreeDialog(
                           'create-folder',
@@ -5624,6 +5625,7 @@ export function DataSyncStudio() {
                       size='icon'
                       variant='ghost'
                       className='size-7'
+                      aria-label={t('newFile')}
                       onClick={() => {
                         const folderNode = selectedFolderId
                           ? findTreeNode(tree, selectedFolderId)
@@ -6675,6 +6677,7 @@ function SidebarIconTab({
       <TooltipTrigger asChild>
         <button
           type='button'
+          aria-label={label}
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-md border transition-colors',
             active
@@ -7801,6 +7804,7 @@ function JobRunsPanel({
                       size='icon'
                       variant='outline'
                       className='size-8'
+                      aria-label={t('viewExecutedScript')}
                       onClick={(event) => {
                         event.stopPropagation();
                         onViewScript(job);
@@ -7812,6 +7816,7 @@ function JobRunsPanel({
                       size='icon'
                       variant='outline'
                       className='size-8'
+                      aria-label={t('viewMetrics')}
                       onClick={(event) => {
                         event.stopPropagation();
                         onViewMetrics(job);

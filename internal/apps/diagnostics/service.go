@@ -374,9 +374,13 @@ func (s *Service) IngestSeatunnelError(ctx context.Context, req *IngestSeatunnel
 		clusterID := req.ClusterID
 		ec := exceptionClass
 		msg := req.Message
+		occurredAt := req.OccurredAt
 		go func() {
 			if err := s.policyChecker.CheckJavaErrorTrigger(context.Background(), clusterID, ec, msg); err != nil {
 				log.Printf("[DiagnosticsAutoPolicy] auto-policy check failed: cluster_id=%d err=%v", clusterID, err)
+			}
+			if err := s.policyChecker.CheckErrorSpikePolicies(context.Background(), clusterID, occurredAt); err != nil {
+				log.Printf("[DiagnosticsAutoPolicy] error-spike check failed: cluster_id=%d err=%v", clusterID, err)
 			}
 		}()
 	}

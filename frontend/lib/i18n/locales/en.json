@@ -2765,7 +2765,10 @@
         "nodeUnhealthy": "Node Health",
         "alertFiring": "Alert Trigger",
         "schedule": "Scheduled Inspection"
-      }
+      },
+      "keywordsLabel": "Keyword Filter (Optional)",
+      "keywordsPlaceholder": "Separate multiple keywords with commas",
+      "keywordsHint": "Filter by alert name, rule key, summary, description, and similar text fields; leave empty to match any alert."
     },
     "tasks": {
       "title": "Diagnosis Execution",

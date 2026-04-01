@@ -98,6 +98,45 @@ type SyncPluginEnumCatalogResult struct {
 	Warnings   []string                      `json:"warnings,omitempty"`
 }
 
+type SyncSinkSaveModePreviewAction struct {
+	Phase      string `json:"phase,omitempty"`
+	ActionType string `json:"action_type,omitempty"`
+	ResultType string `json:"result_type,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Native     bool   `json:"native"`
+}
+
+type SyncSinkSaveModePreviewTable struct {
+	TablePath      string                          `json:"table_path,omitempty"`
+	Supported      bool                            `json:"supported"`
+	Completeness   string                          `json:"completeness,omitempty"`
+	SchemaSaveMode string                          `json:"schema_save_mode,omitempty"`
+	DataSaveMode   string                          `json:"data_save_mode,omitempty"`
+	Actions        []SyncSinkSaveModePreviewAction `json:"actions,omitempty"`
+	Warnings       []string                        `json:"warnings,omitempty"`
+}
+
+type SyncSinkSaveModePreviewResult struct {
+	Connector      string                          `json:"connector,omitempty"`
+	SinkIndex      int                             `json:"sink_index,omitempty"`
+	Supported      bool                            `json:"supported"`
+	Completeness   string                          `json:"completeness,omitempty"`
+	SchemaSaveMode string                          `json:"schema_save_mode,omitempty"`
+	DataSaveMode   string                          `json:"data_save_mode,omitempty"`
+	TablePath      string                          `json:"table_path,omitempty"`
+	Actions        []SyncSinkSaveModePreviewAction `json:"actions,omitempty"`
+	Tables         []SyncSinkSaveModePreviewTable  `json:"tables,omitempty"`
+	Warnings       []string                        `json:"warnings,omitempty"`
+}
+
+type PreviewSyncSinkSaveModeRequest struct {
+	ClusterID          uint              `json:"cluster_id" binding:"required"`
+	SinkIndex          *int              `json:"sink_index,omitempty"`
+	SinkNodeID         string            `json:"sink_node_id,omitempty"`
+	IncludeInfoPreview *bool             `json:"include_info_preview,omitempty"`
+	Draft              *TaskDraftPayload `json:"draft,omitempty"`
+}
+
 type ListSyncPluginFactoriesRequest struct {
 	ClusterID  uint   `json:"cluster_id" binding:"required"`
 	PluginType string `json:"plugin_type" binding:"required"`
@@ -380,4 +419,84 @@ func builtinEnvEnumOptions() []SyncPluginOptionDescriptor {
 			RequiredMode: "OPTIONAL",
 		},
 	}
+}
+
+func (s *Service) PreviewSinkSaveMode(
+	ctx context.Context,
+	taskID uint,
+	req *PreviewSyncSinkSaveModeRequest,
+) (*SyncSinkSaveModePreviewResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("sync: sink save mode preview request is required")
+	}
+	task, err := s.getTaskForExecution(ctx, taskID, req.Draft)
+	if err != nil {
+		return nil, err
+	}
+	if task.NodeType != TaskNodeTypeFile {
+		return nil, ErrTaskNotFile
+	}
+	endpoint, err := s.configToolResolver.ResolveConfigToolEndpoint(ctx, req.ClusterID, task.Definition)
+	if err != nil {
+		return nil, err
+	}
+	contentReq, err := s.buildConfigToolContentRequest(ctx, task, nil)
+	if err != nil {
+		return nil, err
+	}
+	proxyReq := &ConfigToolSinkSaveModePreviewRequest{
+		ConfigToolContentRequest: *contentReq,
+		SinkIndex:                req.SinkIndex,
+		SinkNodeID:               strings.TrimSpace(req.SinkNodeID),
+		IncludeInfoPreview:       boolValue(req.IncludeInfoPreview, true),
+	}
+	result, err := s.configToolClient.PreviewSinkSaveMode(ctx, endpoint, proxyReq)
+	if err != nil {
+		return nil, err
+	}
+	return mapSyncSinkSaveModePreviewResult(result), nil
+}
+
+func mapSyncSinkSaveModePreviewResult(result *ConfigToolSinkSaveModePreviewResponse) *SyncSinkSaveModePreviewResult {
+	if result == nil {
+		return nil
+	}
+	items := make([]SyncSinkSaveModePreviewTable, 0, len(result.Tables))
+	for _, item := range result.Tables {
+		items = append(items, SyncSinkSaveModePreviewTable{
+			TablePath:      item.TablePath,
+			Supported:      item.Supported,
+			Completeness:   item.Completeness,
+			SchemaSaveMode: item.SchemaSaveMode,
+			DataSaveMode:   item.DataSaveMode,
+			Actions:        mapSyncSinkSaveModePreviewActions(item.Actions),
+			Warnings:       append([]string{}, item.Warnings...),
+		})
+	}
+	return &SyncSinkSaveModePreviewResult{
+		Connector:      result.Connector,
+		SinkIndex:      result.SinkIndex,
+		Supported:      result.Supported,
+		Completeness:   result.Completeness,
+		SchemaSaveMode: result.SchemaSaveMode,
+		DataSaveMode:   result.DataSaveMode,
+		TablePath:      result.TablePath,
+		Actions:        mapSyncSinkSaveModePreviewActions(result.Actions),
+		Tables:         items,
+		Warnings:       result.Warnings,
+	}
+}
+
+func mapSyncSinkSaveModePreviewActions(items []ConfigToolSinkSaveModePreviewAction) []SyncSinkSaveModePreviewAction {
+	result := make([]SyncSinkSaveModePreviewAction, 0, len(items))
+	for _, item := range items {
+		result = append(result, SyncSinkSaveModePreviewAction{
+			Phase:      item.Phase,
+			ActionType: item.ActionType,
+			ResultType: item.ResultType,
+			Content:    item.Content,
+			Native:     item.Native,
+		})
+	}
+	return result
 }

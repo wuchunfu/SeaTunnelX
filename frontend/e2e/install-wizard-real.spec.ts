@@ -25,6 +25,8 @@ import {
   expectInstallationSuccess,
   resolveInstalledConfigPaths,
   waitForOnlineHost,
+  waitForClusterByInstallDir,
+  waitForSeatunnelXJavaProxyHealthy,
 } from './helpers/install-wizard-real';
 
 const seatunnelVersion = process.env.E2E_INSTALLER_REAL_VERSION ?? '2.3.13';
@@ -202,6 +204,9 @@ test.describe.serial('install wizard real installer', () => {
       `fs.s3a.access.key: ${minioAccessKey}`,
       `fs.s3a.secret.key: ${minioSecretKey}`,
     ]);
+
+    const installedCluster = await waitForClusterByInstallDir(page, installDir);
+    await waitForSeatunnelXJavaProxyHealthy(page, installedCluster.id);
 
     const checkpointProbe = await expectSeatunnelXJavaProxyProbeSuccess({
       installDir,

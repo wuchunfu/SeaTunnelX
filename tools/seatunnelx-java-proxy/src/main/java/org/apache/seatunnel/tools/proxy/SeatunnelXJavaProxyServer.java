@@ -36,6 +36,7 @@ import org.apache.seatunnel.tools.proxy.service.ProxyException;
 import org.apache.seatunnel.tools.proxy.service.RuntimeStorageListService;
 import org.apache.seatunnel.tools.proxy.service.RuntimeStoragePreviewService;
 import org.apache.seatunnel.tools.proxy.service.RuntimeStorageStatService;
+import org.apache.seatunnel.tools.proxy.service.SinkSaveModePreviewService;
 import org.apache.seatunnel.tools.proxy.service.TemplateRenderService;
 
 import org.slf4j.Logger;
@@ -79,6 +80,7 @@ public class SeatunnelXJavaProxyServer {
     private final PluginOptionSchemaService pluginOptionSchemaService;
     private final TemplateRenderService templateRenderService;
     private final PluginEnumValueService pluginEnumValueService;
+    private final SinkSaveModePreviewService sinkSaveModePreviewService;
 
     public SeatunnelXJavaProxyServer(int port, int workerThreads) throws IOException {
         this(
@@ -99,7 +101,8 @@ public class SeatunnelXJavaProxyServer {
                 new PluginRuntimeService(),
                 new PluginOptionSchemaService(),
                 new TemplateRenderService(),
-                new PluginEnumValueService());
+                new PluginEnumValueService(),
+                new SinkSaveModePreviewService());
     }
 
     SeatunnelXJavaProxyServer(
@@ -120,7 +123,8 @@ public class SeatunnelXJavaProxyServer {
             PluginRuntimeService pluginRuntimeService,
             PluginOptionSchemaService pluginOptionSchemaService,
             TemplateRenderService templateRenderService,
-            PluginEnumValueService pluginEnumValueService) {
+            PluginEnumValueService pluginEnumValueService,
+            SinkSaveModePreviewService sinkSaveModePreviewService) {
         this.httpServer = httpServer;
         this.executorService = executorService;
         this.configResourceService = configResourceService;
@@ -139,6 +143,7 @@ public class SeatunnelXJavaProxyServer {
         this.pluginOptionSchemaService = pluginOptionSchemaService;
         this.templateRenderService = templateRenderService;
         this.pluginEnumValueService = pluginEnumValueService;
+        this.sinkSaveModePreviewService = sinkSaveModePreviewService;
         registerContexts();
         this.httpServer.setExecutor(executorService);
     }
@@ -194,6 +199,14 @@ public class SeatunnelXJavaProxyServer {
                     @Override
                     protected Object handleRequest(Map<String, Object> request) {
                         return previewConfigService.deriveTransformPreview(request);
+                    }
+                });
+        httpServer.createContext(
+                "/api/v1/config/preview/sink-savemode",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return sinkSaveModePreviewService.preview(request);
                     }
                 });
         httpServer.createContext(

@@ -52,9 +52,9 @@ function BuilderFields({
   labels: CronExpressionEditorLabels;
 }) {
   return (
-    <div className='grid gap-2'>
+    <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-5'>
       {(['minute', 'hour', 'dayOfMonth', 'month', 'dayOfWeek'] as const).map((key) => (
-        <div key={key} className='space-y-1.5'>
+        <div key={key} className='space-y-1.5 min-w-0'>
           <Label className='text-[11px] text-muted-foreground'>{labels[`cron${key.charAt(0).toUpperCase()}${key.slice(1)}` as keyof CronExpressionEditorLabels] as string}</Label>
           <Input
             value={parts[key]}
@@ -194,14 +194,14 @@ export function CronExpressionEditor({
           {footer}
         </div>
         {previewState.ok ? (
-          <div className='space-y-3 text-xs'>
-            <div className='rounded-md border border-border/50 bg-background/70 p-2'>
+          <div className='grid gap-3 text-xs xl:grid-cols-[150px_minmax(0,1fr)] xl:items-start'>
+            <div className='rounded-md border border-border/50 bg-background/70 p-2 xl:min-h-[132px]'>
               <div className='font-mono text-[11px]'>{expression || derivedExpression}</div>
               <div className='mt-1 text-muted-foreground'>{previewState.text}</div>
             </div>
-            <div>
+            <div className='min-w-0'>
               <div className='mb-1 text-[11px] text-muted-foreground'>{labels.nextRuns}</div>
-              <div className='space-y-1'>
+              <div className='space-y-2'>
                 {previewState.nextRuns.map((run, index) => (
                   <div key={`${run.toISOString()}-${index}`} className='rounded-md border border-border/50 bg-background/60 px-2 py-1.5 font-mono text-[11px]'>
                     {formatDate(run)}

@@ -510,7 +510,7 @@ public class JobConfigSupportService {
         }
     }
 
-    private List<CatalogTable> resolveSourceCatalogTables(
+    List<CatalogTable> resolveSourceCatalogTables(
             ReadonlyConfig readonlyConfig, ClassLoader classLoader) {
         String factoryId = readonlyConfig.get(PLUGIN_NAME);
         Function<PluginIdentifier, SeaTunnelSource> fallbackCreateSource =
@@ -522,7 +522,7 @@ public class JobConfigSupportService {
         return tuple._2();
     }
 
-    private List<CatalogTable> resolveTransformCatalogTables(
+    List<CatalogTable> resolveTransformCatalogTables(
             ReadonlyConfig readonlyConfig,
             List<CatalogTable> inputCatalogTables,
             ClassLoader classLoader) {
@@ -567,7 +567,7 @@ public class JobConfigSupportService {
         return toDisplayInfo(sinkTables);
     }
 
-    private List<CatalogTable> collectInputCatalogTables(
+    List<CatalogTable> collectInputCatalogTables(
             ReadonlyConfig readonlyConfig, Map<String, List<CatalogTable>> datasetCatalogTables) {
         List<CatalogTable> inputCatalogTables = new ArrayList<>();
         for (String inputDataset : getInputDatasets(readonlyConfig)) {

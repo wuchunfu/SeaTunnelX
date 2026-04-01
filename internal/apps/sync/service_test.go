@@ -80,6 +80,10 @@ func (s *stubConfigToolClient) ListPluginEnumValues(ctx context.Context, endpoin
 	return nil, nil
 }
 
+func (s *stubConfigToolClient) PreviewSinkSaveMode(ctx context.Context, endpoint string, req *ConfigToolSinkSaveModePreviewRequest) (*ConfigToolSinkSaveModePreviewResponse, error) {
+	return nil, nil
+}
+
 type stubConfigToolResolver struct {
 	endpoint string
 	err      error

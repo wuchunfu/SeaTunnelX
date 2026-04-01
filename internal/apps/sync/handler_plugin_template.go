@@ -122,3 +122,28 @@ func (h *Handler) ListPluginEnumCatalog(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, PluginEnumCatalogResponse{Data: result})
 }
+
+type SinkSaveModePreviewResponse struct {
+	ErrorMsg string                         `json:"error_msg"`
+	Data     *SyncSinkSaveModePreviewResult `json:"data"`
+}
+
+// PreviewSinkSaveMode handles POST /api/v1/sync/tasks/:id/preview/sink-savemode.
+func (h *Handler) PreviewSinkSaveMode(c *gin.Context) {
+	id, ok := parseUintParam(c, "id")
+	if !ok {
+		c.JSON(http.StatusBadRequest, SinkSaveModePreviewResponse{ErrorMsg: "invalid task id"})
+		return
+	}
+	var req PreviewSyncSinkSaveModeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, SinkSaveModePreviewResponse{ErrorMsg: err.Error()})
+		return
+	}
+	result, err := h.service.PreviewSinkSaveMode(c.Request.Context(), id, &req)
+	if err != nil {
+		c.JSON(h.getStatusCodeForError(err), SinkSaveModePreviewResponse{ErrorMsg: err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, SinkSaveModePreviewResponse{Data: result})
+}

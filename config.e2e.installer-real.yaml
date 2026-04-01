@@ -31,6 +31,9 @@ auth:
   default_admin_password: "admin123"
   bcrypt_cost: 10
 
+sync:
+  preview_data_ttl_minutes: 1
+
 database:
   enabled: true
   type: "sqlite"

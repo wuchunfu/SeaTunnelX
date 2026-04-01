@@ -706,6 +706,7 @@ func Serve() {
 					syncTaskRouter.POST("/:id/test-connections", syncHandler.TestTaskConnections)
 					syncTaskRouter.POST("/:id/dag", syncHandler.GetTaskDAG)
 					syncTaskRouter.POST("/:id/preview", syncHandler.PreviewTask)
+					syncTaskRouter.POST("/:id/preview/sink-savemode", syncHandler.PreviewSinkSaveMode)
 					syncTaskRouter.POST("/:id/submit", syncHandler.SubmitTask)
 				}
 

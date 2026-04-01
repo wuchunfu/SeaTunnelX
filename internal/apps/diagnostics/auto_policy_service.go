@@ -119,7 +119,7 @@ func (s *Service) UpdateAutoPolicy(ctx context.Context, id uint, req *UpdateInsp
 		if len(*req.Conditions) == 0 {
 			return nil, fmt.Errorf("%w: at least one condition is required", ErrInvalidAutoPolicyRequest)
 		}
-		if err := validateAutoPolicyConditions(*req.Conditions); err != nil {
+		if err := validateAutoPolicyConditionsForUpdate(*req.Conditions); err != nil {
 			return nil, err
 		}
 		policy.Conditions = *req.Conditions
@@ -194,6 +194,14 @@ func (s *Service) ListAutoPolicies(ctx context.Context, clusterID *uint, page, p
 	}, nil
 }
 
+func validateAutoPolicyConditionsForUpdate(conditions InspectionConditionItems) error {
+	for _, condition := range conditions {
+		if _, ok := findBuiltinConditionTemplate(condition.TemplateCode); !ok {
+			return fmt.Errorf("%w: unknown condition template %s", ErrInvalidAutoPolicyRequest, condition.TemplateCode)
+		}
+	}
+	return nil
+}
 func validateAutoPolicyConditions(conditions InspectionConditionItems) error {
 	for _, condition := range conditions {
 		if !isConditionTemplateSupported(condition.TemplateCode) {
