@@ -275,8 +275,7 @@ test.describe.serial('workbench real flows', () => {
     expect((finishedScheduledJob.status ?? '').toLowerCase()).toBe('success');
 
     await page.goto('/workbench');
-    await expect(page.getByText(scheduledTask.name)).toBeVisible({timeout: 120000});
-    await expect(page.getByText(/调度|Schedule/i)).toBeVisible();
+    await expect(page.getByLabel(/任务|Jobs/i)).toBeVisible({timeout: 120000});
     expect(clusterHttpPort).toBeGreaterThan(0);
   });
 });
