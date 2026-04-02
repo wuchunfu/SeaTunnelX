@@ -399,12 +399,6 @@ export async function prepareWorkbenchRealCluster(
     ['mysql'],
     900000,
   );
-  await waitForLocalPlugin(
-    page.context().request,
-    'jdbc',
-    seatunnelVersion,
-    (plugin) => (plugin.selected_profile_keys || []).includes('mysql'),
-  );
   await installPluginToClusterApi(
     page.context().request,
     cluster.clusterId,
