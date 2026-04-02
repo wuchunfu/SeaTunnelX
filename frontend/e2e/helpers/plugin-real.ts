@@ -193,14 +193,32 @@ export async function waitForPluginDownloadCompleted(
         expect(response.ok()).toBeTruthy();
         const payload = (await response.json()) as DownloadStatusResponse;
         const status = payload.data?.status || 'not_started';
-        if (status === 'failed') {
+        const errorMessage = payload.data?.error || payload.data?.message || '';
+        if (
+          status === 'failed' &&
+          !/download already in progress|下载正在进行中/i.test(errorMessage)
+        ) {
           throw new Error(
-            `plugin ${pluginName}@${version} download failed: ${
-              payload.data?.error || payload.data?.message || 'unknown error'
-            }`,
+            `plugin ${pluginName}@${version} download failed: ${errorMessage || 'unknown error'}`,
           );
         }
-        return status;
+        if (status === 'completed') {
+          return 'completed';
+        }
+        const localResponse = await request.get(`${backendBaseURL}/api/v1/plugins/local`);
+        expect(localResponse.ok()).toBeTruthy();
+        const localPayload = (await localResponse.json()) as LocalPluginsResponse;
+        const localPlugin = (localPayload.data || []).find(
+          (plugin) =>
+            plugin.name === pluginName &&
+            plugin.version === version &&
+            ((profileKeys && profileKeys.length > 0)
+              ? profileKeys.every((profileKey) =>
+                  (plugin.selected_profile_keys || []).includes(profileKey),
+                )
+              : true),
+        );
+        return localPlugin ? 'completed' : status;
       },
       {timeout: timeoutMs},
     )
