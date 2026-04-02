@@ -32,7 +32,6 @@ import {
   installPluginToClusterApi,
   waitForInstalledPlugin,
   waitForPluginDownloadCompleted,
-  waitForLocalPlugin,
 } from './plugin-real';
 import {
   installSourceCluster,
@@ -79,6 +78,17 @@ interface ValidateResponse extends ErrorResponse {
     valid?: boolean;
     errors?: string[];
     warnings?: string[];
+  };
+}
+
+interface SyncTaskDefinition extends Record<string, unknown> {
+  preview_mode?: string;
+  preview_output_format?: string;
+  preview_row_limit?: number;
+  preview_timeout_minutes?: number;
+  preview_http_sink?: {
+    url: string;
+    array_mode?: boolean;
   };
 }
 
@@ -435,6 +445,36 @@ export async function createSyncFolder(
   return Number(payload.data?.id);
 }
 
+
+function buildWorkbenchTaskDefinition(
+  definition?: Record<string, unknown>,
+): SyncTaskDefinition {
+  const next: SyncTaskDefinition = {...(definition || {})};
+  next.preview_mode = typeof next.preview_mode === 'string' ? next.preview_mode : 'source';
+  next.preview_output_format =
+    typeof next.preview_output_format === 'string' ? next.preview_output_format : 'hocon';
+  next.preview_row_limit =
+    typeof next.preview_row_limit === 'number' && next.preview_row_limit > 0
+      ? next.preview_row_limit
+      : 100;
+  next.preview_timeout_minutes =
+    typeof next.preview_timeout_minutes === 'number' && next.preview_timeout_minutes > 0
+      ? next.preview_timeout_minutes
+      : 10;
+  const existingSink =
+    next.preview_http_sink && typeof next.preview_http_sink === 'object'
+      ? next.preview_http_sink
+      : undefined;
+  next.preview_http_sink = {
+    url:
+      typeof existingSink?.url === 'string' && existingSink.url.trim()
+        ? existingSink.url
+        : `${backendBaseURL}/api/v1/sync/preview/collect`,
+    array_mode: existingSink?.array_mode === true,
+  };
+  return next;
+}
+
 export async function createSyncTask(
   request: APIRequestContext,
   options: {
@@ -461,7 +501,7 @@ export async function createSyncTask(
       content_format: options.contentFormat ?? 'hocon',
       content: options.content,
       job_name: options.jobName ?? options.name,
-      definition: options.definition ?? {},
+      definition: buildWorkbenchTaskDefinition(options.definition),
     },
   });
   await assertOK(response, 'create sync task');
