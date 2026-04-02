@@ -51,6 +51,30 @@ seatunnel:
 	}
 }
 
+func TestParseCheckpointValidationConfigFromYAMLLocalFile(t *testing.T) {
+	content := `
+seatunnel:
+  engine:
+    checkpoint:
+      storage:
+        plugin-config:
+          namespace: /tmp/seatunnel/checkpoint_snapshot
+          storage.type: hdfs
+          fs.defaultFS: file:///tmp/
+`
+
+	cfg := parseCheckpointValidationConfigFromYAML(content)
+	if cfg == nil {
+		t.Fatal("expected checkpoint validation config")
+	}
+	if cfg.StorageType != "LOCAL_FILE" {
+		t.Fatalf("expected LOCAL_FILE storage type, got %s", cfg.StorageType)
+	}
+	if cfg.Namespace != "/tmp/seatunnel/checkpoint_snapshot" {
+		t.Fatalf("unexpected namespace: %s", cfg.Namespace)
+	}
+}
+
 func TestParseIMAPStorageFromYAMLDisabled(t *testing.T) {
 	content := `
 map:

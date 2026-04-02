@@ -391,6 +391,11 @@ func parseIMAPResolvedConfigFromYAML(content string) *runtimeStorageResolvedConf
 
 func resolvedConfigFromPluginConfig(kind string, pluginConfig map[string]interface{}) *runtimeStorageResolvedConfig {
 	storageType := strings.ToUpper(asString(pluginConfig["storage.type"]))
+	if storageType == "" {
+		if fsDefault := asString(pluginConfig["fs.defaultFS"]); strings.HasPrefix(fsDefault, "file:///") {
+			storageType = "LOCAL_FILE"
+		}
+	}
 	cfg := &runtimeStorageResolvedConfig{
 		Kind:        kind,
 		StorageType: storageType,
@@ -408,7 +413,12 @@ func resolvedConfigFromPluginConfig(kind string, pluginConfig map[string]interfa
 		cfg.AccessKey = asString(pluginConfig["fs.oss.accessKeyId"])
 		cfg.SecretKey = asString(pluginConfig["fs.oss.accessKeySecret"])
 	case "HDFS":
-		cfg.Endpoint = asString(pluginConfig["fs.defaultFS"])
+		if fsDefault := asString(pluginConfig["fs.defaultFS"]); strings.HasPrefix(fsDefault, "file:///") {
+			cfg.StorageType = "LOCAL_FILE"
+			cfg.Endpoint = fsDefault
+		} else {
+			cfg.Endpoint = asString(pluginConfig["fs.defaultFS"])
+		}
 	default:
 		if fsDefault := asString(pluginConfig["fs.defaultFS"]); strings.HasPrefix(fsDefault, "file:///") {
 			cfg.StorageType = "LOCAL_FILE"
