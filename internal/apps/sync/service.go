@@ -2029,7 +2029,14 @@ func (s *Service) refreshJobInstance(ctx context.Context, instance *JobInstance)
 		return nil, nil
 	}
 	if submitSpecExecutionMode(instance.SubmitSpec) == "local" {
-		return s.refreshLocalJob(ctx, instance)
+		refreshed, err := s.refreshLocalJob(ctx, instance)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.syncPreviewSessionTerminalState(ctx, refreshed); err != nil {
+			return nil, err
+		}
+		return refreshed, nil
 	}
 	if s.engineClient == nil || strings.TrimSpace(instance.EngineJobID) == "" {
 		return instance, nil
@@ -2066,7 +2073,40 @@ func (s *Service) refreshJobInstance(ctx context.Context, instance *JobInstance)
 	if err := s.repo.UpdateJobInstance(ctx, instance); err != nil {
 		return nil, err
 	}
+	if err := s.syncPreviewSessionTerminalState(ctx, instance); err != nil {
+		return nil, err
+	}
 	return instance, nil
+}
+
+func (s *Service) syncPreviewSessionTerminalState(ctx context.Context, instance *JobInstance) error {
+	if s == nil || s.repo == nil || instance == nil || instance.RunType != RunTypePreview || !isFinalNormalizedJobStatus(instance.Status) {
+		return nil
+	}
+	session, err := s.repo.GetPreviewSessionByJobInstanceID(ctx, instance.ID)
+	if err != nil {
+		if errors.Is(err, ErrPreviewSessionNotFound) {
+			return nil
+		}
+		return err
+	}
+	if session == nil {
+		return nil
+	}
+	changed := false
+	if strings.TrimSpace(session.Status) == "" || strings.EqualFold(strings.TrimSpace(session.Status), "collecting") {
+		session.Status = string(instance.Status)
+		changed = true
+	}
+	if session.FinishedAt == nil && instance.FinishedAt != nil {
+		finished := *instance.FinishedAt
+		session.FinishedAt = &finished
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return s.repo.UpdatePreviewSession(ctx, session)
 }
 
 func isFinalNormalizedJobStatus(status JobStatus) bool {

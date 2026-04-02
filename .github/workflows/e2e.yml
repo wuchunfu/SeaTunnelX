@@ -310,18 +310,21 @@ jobs:
         if: steps.cache-seatunnel.outputs.cache-hit != 'true'
         env:
           E2E_INSTALLER_REAL_PRELOAD_MIRROR: apache
+          E2E_UPGRADE_REAL_SOURCE_VERSION: 2.3.12
+          E2E_UPGRADE_REAL_TARGET_VERSION: 2.3.13
         run: |
           bash frontend/scripts/e2e/run-real-installer.sh --prepare-package-only
 
-      - name: Ensure package exists
+      - name: Ensure packages exist
         run: |
           test -f "${E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR}/apache-seatunnel-2.3.13-bin.tar.gz"
+          test -f "${E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR}/apache-seatunnel-2.3.12-bin.tar.gz"
 
       - name: Upload SeaTunnel package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: seatunnel-bin-2.3.13
-          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}/apache-seatunnel-2.3.13-bin.tar.gz
+          name: seatunnel-bin-cache
+          path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}/apache-seatunnel-*-bin.tar.gz
           if-no-files-found: error
 
   smoke-select:
@@ -493,7 +496,7 @@ jobs:
       - name: Download SeaTunnel package artifact
         uses: actions/download-artifact@v4
         with:
-          name: seatunnel-bin-2.3.13
+          name: seatunnel-bin-cache
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
 
       - name: Run real installer E2E
@@ -566,7 +569,7 @@ jobs:
       - name: Download SeaTunnel package artifact
         uses: actions/download-artifact@v4
         with:
-          name: seatunnel-bin-2.3.13
+          name: seatunnel-bin-cache
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
 
       - name: Run real workbench E2E
@@ -638,7 +641,7 @@ jobs:
       - name: Download SeaTunnel package artifact
         uses: actions/download-artifact@v4
         with:
-          name: seatunnel-bin-2.3.13
+          name: seatunnel-bin-cache
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
 
       - name: Run real config E2E
@@ -710,7 +713,7 @@ jobs:
       - name: Download SeaTunnel package artifact
         uses: actions/download-artifact@v4
         with:
-          name: seatunnel-bin-2.3.13
+          name: seatunnel-bin-cache
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
 
       - name: Run real upgrade E2E
@@ -782,7 +785,7 @@ jobs:
       - name: Download SeaTunnel package artifact
         uses: actions/download-artifact@v4
         with:
-          name: seatunnel-bin-2.3.13
+          name: seatunnel-bin-cache
           path: ${{ env.E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR }}
 
       - name: Run real plugin E2E
