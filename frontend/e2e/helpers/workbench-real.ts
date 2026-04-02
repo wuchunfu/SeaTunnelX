@@ -31,6 +31,7 @@ import {
   downloadPluginApi,
   installPluginToClusterApi,
   waitForInstalledPlugin,
+  waitForPluginDownloadCompleted,
   waitForLocalPlugin,
 } from './plugin-real';
 import {
@@ -391,6 +392,13 @@ export async function prepareWorkbenchRealCluster(
   await downloadPluginApi(page.context().request, 'jdbc', seatunnelVersion, [
     'mysql',
   ]);
+  await waitForPluginDownloadCompleted(
+    page.context().request,
+    'jdbc',
+    seatunnelVersion,
+    ['mysql'],
+    900000,
+  );
   await waitForLocalPlugin(
     page.context().request,
     'jdbc',
