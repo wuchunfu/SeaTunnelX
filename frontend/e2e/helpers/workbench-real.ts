@@ -136,11 +136,19 @@ interface PreviewSnapshotResponse extends ErrorResponse {
   data?: {
     tables?: Array<{
       table_path?: string;
+      row_count?: number;
       total?: number;
       rows?: Array<Record<string, unknown>>;
     }>;
+    selected_table?: {
+      table_path?: string;
+      row_count?: number;
+      rows?: Array<Record<string, unknown>>;
+    };
+    total_rows?: number;
     rows?: Array<Record<string, unknown>>;
     empty_reason?: string;
+    status?: string;
   };
 }
 
@@ -780,8 +788,15 @@ export async function waitForPreviewRows(
         expect(body.error_msg ?? '').toBe('');
         latest = body.data as NonNullable<PreviewSnapshotResponse['data']>;
         const tables = latest?.tables ?? [];
+        const selectedRows = latest?.selected_table?.rows?.length ?? 0;
+        const totalRows = latest?.total_rows ?? 0;
         return (
-          tables.some((item) => (item.total ?? item.rows?.length ?? 0) > 0) ||
+          totalRows > 0 ||
+          selectedRows > 0 ||
+          tables.some(
+            (item) =>
+              (item.row_count ?? item.total ?? item.rows?.length ?? 0) > 0,
+          ) ||
           (latest?.rows?.length ?? 0) > 0
         );
       },
@@ -810,7 +825,18 @@ export async function waitForPreviewCleanup(
         if ((data?.rows?.length ?? 0) > 0) {
           return false;
         }
-        if (tables.some((item) => (item.total ?? item.rows?.length ?? 0) > 0)) {
+        if ((data?.selected_table?.rows?.length ?? 0) > 0) {
+          return false;
+        }
+        if ((data?.total_rows ?? 0) > 0) {
+          return false;
+        }
+        if (
+          tables.some(
+            (item) =>
+              (item.row_count ?? item.total ?? item.rows?.length ?? 0) > 0,
+          )
+        ) {
           return false;
         }
         return Boolean(data?.empty_reason);
