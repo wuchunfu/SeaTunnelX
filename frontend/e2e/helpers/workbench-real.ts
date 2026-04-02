@@ -469,7 +469,7 @@ function buildWorkbenchTaskDefinition(
     url:
       typeof existingSink?.url === 'string' && existingSink.url.trim()
         ? existingSink.url
-        : `${backendBaseURL}/api/v1/sync/preview/collect`,
+        : 'http://127.0.0.1:18000/api/v1/sync/preview/collect',
     array_mode: existingSink?.array_mode === true,
   };
   return next;
