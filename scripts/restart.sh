@@ -172,6 +172,22 @@ require_cmd() {
   fi
 }
 
+is_java_proxy_pid() {
+  local pid="$1"
+  if [[ -z "$pid" ]]; then
+    return 1
+  fi
+  local args=""
+  args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+  if [[ -z "$args" ]]; then
+    return 1
+  fi
+  if [[ "$args" == *"SeatunnelXJavaProxyApplication"* ]] || [[ "$args" == *"seatunnelx-java-proxy"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
 restart_local_java_proxy() {
   local install_dir="$LOCAL_SEATUNNEL_HOME"
   local port="$LOCAL_JAVA_PROXY_PORT"
@@ -212,6 +228,10 @@ restart_local_java_proxy() {
 
   old_pid="$(ss -lntp 2>/dev/null | awk -v port=":$port" '$4 ~ port"$" {print $NF}' | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | head -n1 || true)"
   if [[ -n "$old_pid" ]]; then
+    if ! is_java_proxy_pid "$old_pid"; then
+      echo "      端口 $port 当前被非 seatunnelx-java-proxy 进程占用 (pid=$old_pid)，为避免误杀已跳过重启."
+      return 1
+    fi
     echo "[*] 停止本机 seatunnelx-java-proxy (pid=$old_pid, port=$port) ..."
     kill -TERM "$old_pid" 2>/dev/null || true
     for _ in {1..20}; do

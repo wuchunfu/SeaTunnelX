@@ -47,6 +47,7 @@ var (
 	ErrLocalClusterRequired       = errors.New("sync: local execution requires a cluster context")
 	ErrLocalSavepointUnsupported  = errors.New("sync: local execution does not support savepoint")
 	ErrExecutionTargetUnavailable = errors.New("sync: execution target is unavailable")
+	ErrExecutionTargetClusterMismatch = errors.New("sync: execution target does not belong to task cluster")
 	ErrJobLogsUnavailable         = errors.New("sync: job logs are unavailable")
 	ErrPreviewPayloadInvalid      = errors.New("sync: preview collect payload is invalid")
 	ErrGlobalVariableNotFound     = errors.New("sync: global variable not found")

@@ -87,6 +87,15 @@ func (r *DefaultExecutionTargetResolver) ResolveExecutionTargets(ctx context.Con
 	if nodeID, ok := intValue(definition, "local_node_id", "node_id"); ok && nodeID > 0 {
 		node, err := r.clusterRepo.GetNodeByID(ctx, uint(nodeID))
 		if err == nil {
+			if node.ClusterID != clusterID {
+				return nil, fmt.Errorf(
+					"sync: local node %d belongs to cluster %d, expected cluster %d: %w",
+					node.ID,
+					node.ClusterID,
+					clusterID,
+					ErrExecutionTargetClusterMismatch,
+				)
+			}
 			target, buildErr := r.buildTarget(ctx, node)
 			if buildErr != nil {
 				return nil, buildErr

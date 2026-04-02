@@ -34,6 +34,8 @@ import (
 	hostapp "github.com/seatunnel/seatunnelX/internal/apps/host"
 )
 
+const engineEndpointHeartbeatTimeout = 30 * time.Second
+
 // EngineClient submits and manages jobs on SeaTunnel Engine REST API V2.
 type EngineClient interface {
 	Submit(ctx context.Context, req *EngineSubmitRequest) (*EngineSubmitResponse, error)
@@ -414,6 +416,9 @@ func (r *DefaultClusterRuntimeResolver) ResolveEngineEndpoint(ctx context.Contex
 		}
 		hostObj, err := r.hostRepo.GetByID(ctx, node.HostID)
 		if err != nil {
+			continue
+		}
+		if hostObj == nil || strings.TrimSpace(hostObj.AgentID) == "" || !hostObj.IsOnline(engineEndpointHeartbeatTimeout) {
 			continue
 		}
 		hostIP := strings.TrimSpace(hostObj.IPAddress)
