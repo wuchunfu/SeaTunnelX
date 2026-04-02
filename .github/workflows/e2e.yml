@@ -307,7 +307,6 @@ jobs:
           key: e2e-seatunnel-bin-${{ runner.os }}-${{ hashFiles('frontend/scripts/e2e/run-real-installer.sh') }}-2.3.13
 
       - name: Preload SeaTunnel package into cache dir
-        if: steps.cache-seatunnel.outputs.cache-hit != 'true'
         env:
           E2E_INSTALLER_REAL_PRELOAD_MIRROR: apache
           E2E_UPGRADE_REAL_SOURCE_VERSION: 2.3.12
