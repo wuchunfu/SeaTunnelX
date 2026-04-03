@@ -16,6 +16,8 @@
 
 set -euo pipefail
 
+PREPARE_PACKAGE_ONLY="${1:-}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ROOT_DIR="$(cd "${FRONTEND_DIR}/.." && pwd)"
@@ -31,7 +33,9 @@ PLAYWRIGHT_PROJECT="${PLAYWRIGHT_PROJECT:-}"
 PLAYWRIGHT_GREP="${PLAYWRIGHT_GREP:-}"
 PLAYWRIGHT_SPEC="${E2E_REAL_PLAYWRIGHT_SPEC:-e2e/install-wizard-real.spec.ts}"
 JAVA_PROXY_VERSION="${E2E_INSTALLER_REAL_VERSION:-2.3.13}"
-PACKAGE_PRELOAD_MIRROR="${E2E_INSTALLER_REAL_PRELOAD_MIRROR:-aliyun}"
+PACKAGE_PRELOAD_MIRROR="${E2E_INSTALLER_REAL_PRELOAD_MIRROR:-}"
+PACKAGE_DOWNLOAD_TIMEOUT_SECONDS="${E2E_INSTALLER_REAL_DOWNLOAD_TIMEOUT_SECONDS:-1800}"
+PACKAGE_CACHE_DIR="${E2E_INSTALLER_REAL_PACKAGE_CACHE_DIR:-}"
 
 if [[ -z "${SKIP_LOCAL_CLEANUP}" ]]; then
   if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
@@ -62,17 +66,34 @@ raise SystemExit("no free port found")
 PY
 }
 
+resolve_preload_mirror() {
+  local mirror="${PACKAGE_PRELOAD_MIRROR:-}"
+  if [[ -n "${mirror}" ]]; then
+    echo "${mirror}"
+    return 0
+  fi
+  if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "apache"
+    return 0
+  fi
+  echo "aliyun"
+}
+
 mirror_url() {
   local mirror="$1"
   case "$mirror" in
-    apache)
+    apache|maven|central|official)
       echo "https://archive.apache.org/dist/seatunnel"
       ;;
     huaweicloud)
       echo "https://mirrors.huaweicloud.com/apache/seatunnel"
       ;;
-    aliyun|*)
+    aliyun)
       echo "https://mirrors.aliyun.com/apache/seatunnel"
+      ;;
+    *)
+      echo "unsupported SeaTunnel preload mirror: ${mirror}" >&2
+      return 1
       ;;
   esac
 }
@@ -92,6 +113,7 @@ download_package_if_missing() {
   local base_url
   base_url="$(mirror_url "${mirror}")"
   local download_url="${base_url}/${version}/${file_name}"
+  local timeout_seconds="${PACKAGE_DOWNLOAD_TIMEOUT_SECONDS}"
 
   if [[ -s "${final_path}" ]]; then
     echo "[e2e-real] package cache hit: ${file_name}"
@@ -102,9 +124,33 @@ download_package_if_missing() {
   mkdir -p "${packages_dir}"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --retry-delay 2 --continue-at - -o "${temp_path}" "${download_url}"
+    curl -fL \
+      --retry 3 \
+      --retry-delay 2 \
+      --connect-timeout 30 \
+      --max-time "${timeout_seconds}" \
+      --continue-at - \
+      -o "${temp_path}" \
+      "${download_url}"
   elif command -v wget >/dev/null 2>&1; then
-    wget -c -O "${temp_path}" "${download_url}"
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "${timeout_seconds}" \
+        wget \
+        --tries=3 \
+        --waitretry=2 \
+        --timeout=30 \
+        --read-timeout=30 \
+        -O "${temp_path}" \
+        "${download_url}"
+    else
+      wget \
+        --tries=3 \
+        --waitretry=2 \
+        --timeout=30 \
+        --read-timeout=30 \
+        -O "${temp_path}" \
+        "${download_url}"
+    fi
   else
     echo "curl or wget is required to preload SeaTunnel packages" >&2
     exit 1
@@ -134,8 +180,12 @@ mkdir -p "${BASE_TMP_DIR}"
 TMP_DIR="$(mktemp -d "${BASE_TMP_DIR}/installer-real.XXXXXX")"
 mkdir -p "${TMP_DIR}/logs" "${TMP_DIR}/storage" "${TMP_DIR}/install" "${TMP_DIR}/minio"
 mkdir -p "${TMP_DIR}/storage/packages" "${TMP_DIR}/storage/temp"
+if [[ -n "${PACKAGE_CACHE_DIR}" ]]; then
+  mkdir -p "${PACKAGE_CACHE_DIR}"
+fi
 docker rm -f "${MINIO_NAME}" >/dev/null 2>&1 || true
 
+JAVA_PROXY_SCRIPT_PATH="${ROOT_DIR}/scripts/seatunnelx-java-proxy.sh"
 JAVA_PROXY_LIB_PATH="${ROOT_DIR}/lib/seatunnelx-java-proxy-${JAVA_PROXY_VERSION}.jar"
 if [[ ! -f "${JAVA_PROXY_LIB_PATH}" ]]; then
   mvn -q -DskipTests package -f "${ROOT_DIR}/tools/seatunnelx-java-proxy/pom.xml"
@@ -147,6 +197,11 @@ if [[ ! -f "${JAVA_PROXY_LIB_PATH}" ]]; then
   mkdir -p "${ROOT_DIR}/lib"
   cp "${BUILT_JAVA_PROXY_JAR}" "${JAVA_PROXY_LIB_PATH}"
 fi
+if [[ ! -f "${JAVA_PROXY_SCRIPT_PATH}" ]]; then
+  echo "seatunnelx-java-proxy script is missing: ${JAVA_PROXY_SCRIPT_PATH}" >&2
+  exit 1
+fi
+chmod +x "${JAVA_PROXY_SCRIPT_PATH}"
 
 BACKEND_HTTP_PORT="$(pick_port "${E2E_INSTALLER_REAL_BACKEND_PORT:-18000}")"
 BACKEND_GRPC_PORT="$(pick_port "${E2E_INSTALLER_REAL_GRPC_PORT:-19090}")"
@@ -174,9 +229,21 @@ declare -A PRELOAD_VERSION_SEEN=()
 for version in "${PRELOAD_VERSIONS[@]}"; do
   if [[ -n "${version}" && -z "${PRELOAD_VERSION_SEEN[${version}]:-}" ]]; then
     PRELOAD_VERSION_SEEN["${version}"]=1
-    download_package_if_missing "${version}" "${PACKAGE_PRELOAD_MIRROR}" "${TMP_DIR}/storage/packages"
+    resolved_mirror="$(resolve_preload_mirror)"
+    download_package_if_missing "${version}" "${resolved_mirror}" "${PACKAGE_CACHE_DIR:-${TMP_DIR}/storage/packages}"
   fi
 done
+
+if [[ -n "${PACKAGE_CACHE_DIR}" ]]; then
+  find "${PACKAGE_CACHE_DIR}" -maxdepth 1 -type f -name 'apache-seatunnel-*-bin.tar.gz' -print0 | while IFS= read -r -d '' package_file; do
+    cp -f "${package_file}" "${TMP_DIR}/storage/packages/"
+  done
+fi
+
+if [[ "${PREPARE_PACKAGE_ONLY}" == "--prepare-package-only" ]]; then
+  echo "[e2e-real] package preload only mode completed"
+  exit 0
+fi
 
 sed \
   -e "s/:18000/:${BACKEND_HTTP_PORT}/g" \
@@ -221,6 +288,9 @@ done
 
 export E2E_INSTALLER_REAL=1
 export E2E_API_MODE=real
+export SEATUNNELX_JAVA_PROXY_HOME="${ROOT_DIR}"
+export SEATUNNELX_JAVA_PROXY_SCRIPT="${JAVA_PROXY_SCRIPT_PATH}"
+export SEATUNNELX_JAVA_PROXY_JAR="${JAVA_PROXY_LIB_PATH}"
 export E2E_BACKEND_BASE_URL="${E2E_BACKEND_BASE_URL:-http://127.0.0.1:${BACKEND_HTTP_PORT}}"
 export E2E_FRONTEND_HOST="${E2E_FRONTEND_HOST:-127.0.0.1}"
 export E2E_FRONTEND_PORT="${E2E_FRONTEND_PORT:-${FRONTEND_PORT}}"

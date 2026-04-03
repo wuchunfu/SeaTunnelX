@@ -51,6 +51,30 @@ seatunnel:
 	}
 }
 
+func TestParseCheckpointValidationConfigFromYAMLLocalFile(t *testing.T) {
+	content := `
+seatunnel:
+  engine:
+    checkpoint:
+      storage:
+        plugin-config:
+          namespace: /tmp/seatunnel/checkpoint_snapshot
+          storage.type: hdfs
+          fs.defaultFS: file:///tmp/
+`
+
+	cfg := parseCheckpointValidationConfigFromYAML(content)
+	if cfg == nil {
+		t.Fatal("expected checkpoint validation config")
+	}
+	if cfg.StorageType != "LOCAL_FILE" {
+		t.Fatalf("expected LOCAL_FILE storage type, got %s", cfg.StorageType)
+	}
+	if cfg.Namespace != "/tmp/seatunnel/checkpoint_snapshot" {
+		t.Fatalf("unexpected namespace: %s", cfg.Namespace)
+	}
+}
+
 func TestParseIMAPStorageFromYAMLDisabled(t *testing.T) {
 	content := `
 map:
@@ -264,5 +288,25 @@ func TestRuntimeStorageListItemUnmarshalAcceptsCamelCaseFields(t *testing.T) {
 	}
 	if item.ModifiedAt != "2026-03-24T00:30:41+08:00" {
 		t.Fatalf("unexpected modified_at: %s", item.ModifiedAt)
+	}
+}
+
+func TestIMAPHazelcastConfigType(t *testing.T) {
+	cases := []struct {
+		name string
+		role NodeRole
+		want string
+	}{
+		{name: "master uses separated master config", role: NodeRoleMaster, want: "hazelcast-master.yaml"},
+		{name: "worker also uses separated master config", role: NodeRoleWorker, want: "hazelcast-master.yaml"},
+		{name: "hybrid uses default config", role: NodeRoleMasterWorker, want: "hazelcast.yaml"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := imapHazelcastConfigType(tc.role); got != tc.want {
+				t.Fatalf("expected %s, got %s", tc.want, got)
+			}
+		})
 	}
 }

@@ -87,8 +87,26 @@ const (
 	// PrecheckSubCommandSeatunnelXJavaProxyInspectCheckpoint deserializes checkpoint files through seatunnelx-java-proxy.
 	PrecheckSubCommandSeatunnelXJavaProxyInspectCheckpoint PrecheckSubCommand = "seatunnelx_java_proxy_inspect_checkpoint"
 
+	// PrecheckSubCommandSeatunnelXJavaProxyInspectCheckpointSourceState inspects checkpoint source state through seatunnelx-java-proxy.
+	PrecheckSubCommandSeatunnelXJavaProxyInspectCheckpointSourceState PrecheckSubCommand = "seatunnelx_java_proxy_inspect_checkpoint_source_state"
+
 	// PrecheckSubCommandSeatunnelXJavaProxyInspectIMAPWAL inspects IMAP WAL files through seatunnelx-java-proxy.
 	PrecheckSubCommandSeatunnelXJavaProxyInspectIMAPWAL PrecheckSubCommand = "seatunnelx_java_proxy_inspect_imap_wal"
+
+	// PrecheckSubCommandSyncLocalRun executes one local sync job through seatunnel.sh.
+	PrecheckSubCommandSyncLocalRun PrecheckSubCommand = "sync_local_run"
+
+	// PrecheckSubCommandSyncLocalStatus inspects one local sync job status.
+	PrecheckSubCommandSyncLocalStatus PrecheckSubCommand = "sync_local_status"
+
+	// PrecheckSubCommandSyncLocalStop stops one local sync job.
+	PrecheckSubCommandSyncLocalStop PrecheckSubCommand = "sync_local_stop"
+
+	// PrecheckSubCommandSyncLocalLogs reads one local sync job stdout/stderr buffer.
+	PrecheckSubCommandSyncLocalLogs PrecheckSubCommand = "sync_local_logs"
+
+	// PrecheckSubCommandSyncJobLogs reads one job log file through the agent.
+	PrecheckSubCommandSyncJobLogs PrecheckSubCommand = "sync_job_logs"
 
 	// PrecheckSubCommandFull runs all precheck items
 	// PrecheckSubCommandFull 运行所有预检查项
@@ -149,8 +167,20 @@ func HandlePrecheckCommand(ctx context.Context, cmd *pb.CommandRequest, reporter
 		result, err = handleSeatunnelXJavaProxyPreview(ctx, cmd.Parameters)
 	case PrecheckSubCommandSeatunnelXJavaProxyInspectCheckpoint:
 		result, err = handleSeatunnelXJavaProxyInspectCheckpoint(ctx, cmd.Parameters)
+	case PrecheckSubCommandSeatunnelXJavaProxyInspectCheckpointSourceState:
+		result, err = handleSeatunnelXJavaProxyInspectCheckpointSourceState(ctx, cmd.Parameters)
 	case PrecheckSubCommandSeatunnelXJavaProxyInspectIMAPWAL:
 		result, err = handleSeatunnelXJavaProxyInspectIMAPWAL(ctx, cmd.Parameters)
+	case PrecheckSubCommandSyncLocalRun:
+		result, err = handleSyncLocalRun(ctx, cmd.Parameters)
+	case PrecheckSubCommandSyncLocalStatus:
+		result, err = handleSyncLocalStatus(ctx, cmd.Parameters)
+	case PrecheckSubCommandSyncLocalStop:
+		result, err = handleSyncLocalStop(ctx, cmd.Parameters)
+	case PrecheckSubCommandSyncLocalLogs:
+		result, err = handleSyncLocalLogs(ctx, cmd.Parameters)
+	case PrecheckSubCommandSyncJobLogs:
+		result, err = handleSyncJobLogs(ctx, cmd.Parameters)
 	case PrecheckSubCommandFull:
 		result, err = handleFullPrecheck(ctx, cmd.Parameters, reporter)
 	default:
@@ -610,6 +640,46 @@ func handleSeatunnelXJavaProxyInspectCheckpoint(ctx context.Context, params map[
 	return runtimeStorageCheckpointInspectPrecheckResult(result), nil
 }
 
+func handleSeatunnelXJavaProxyInspectCheckpointSourceState(
+	ctx context.Context,
+	params map[string]string,
+) (*PrecheckResult, error) {
+	installDir := params["install_dir"]
+	version := params["version"]
+	path := params["path"]
+	contentBase64 := params["content_base64"]
+	jobConfigJSON := strings.TrimSpace(params["job_config_json"])
+	if installDir == "" || strings.TrimSpace(path) == "" {
+		return &PrecheckResult{Success: false, Message: "install_dir and path parameters are required"}, nil
+	}
+	if jobConfigJSON == "" {
+		return &PrecheckResult{Success: false, Message: "job_config_json parameter is required"}, nil
+	}
+	jobConfig := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(jobConfigJSON), &jobConfig); err != nil {
+		return &PrecheckResult{Success: false, Message: fmt.Sprintf("invalid job_config_json: %v", err)}, nil
+	}
+	var (
+		result *installer.RuntimeStorageCheckpointSourceStateInspectResult
+		err    error
+	)
+	if strings.TrimSpace(contentBase64) != "" {
+		result, err = installer.ExecuteCheckpointInspectSourceStateFromBase64(
+			ctx, installDir, version, path, contentBase64, jobConfig)
+	} else {
+		cfg, cfgErr := checkpointConfigFromParams(params)
+		if cfgErr != nil {
+			return &PrecheckResult{Success: false, Message: cfgErr.Error()}, nil
+		}
+		result, err = installer.ExecuteCheckpointInspectSourceState(
+			ctx, installDir, version, cfg, path, jobConfig)
+	}
+	if err != nil {
+		return &PrecheckResult{Success: false, Message: err.Error()}, nil
+	}
+	return runtimeStorageCheckpointSourceStateInspectPrecheckResult(result), nil
+}
+
 func handleSeatunnelXJavaProxyInspectIMAPWAL(ctx context.Context, params map[string]string) (*PrecheckResult, error) {
 	installDir := params["install_dir"]
 	version := params["version"]
@@ -692,6 +762,37 @@ func runtimeStorageCheckpointInspectPrecheckResult(result *installer.RuntimeStor
 	return &PrecheckResult{
 		Success: result.OK,
 		Message: firstNonEmpty(result.Message, "checkpoint deserialize completed"),
+		Details: details,
+	}
+}
+
+func runtimeStorageCheckpointSourceStateInspectPrecheckResult(
+	result *installer.RuntimeStorageCheckpointSourceStateInspectResult,
+) *PrecheckResult {
+	if result == nil {
+		return &PrecheckResult{Success: false, Message: "checkpoint source state inspect returned no result"}
+	}
+	details := map[string]string{
+		"ok": strconv.FormatBool(result.OK),
+	}
+	if bytes, err := json.Marshal(result.PipelineState); err == nil {
+		details["pipeline_state_json"] = string(bytes)
+	}
+	if bytes, err := json.Marshal(result.CompletedCheckpoint); err == nil {
+		details["completed_checkpoint_json"] = string(bytes)
+	}
+	if bytes, err := json.Marshal(result.Sources); err == nil {
+		details["sources_json"] = string(bytes)
+	}
+	if bytes, err := json.Marshal(result.UnsupportedSources); err == nil {
+		details["unsupported_sources_json"] = string(bytes)
+	}
+	if bytes, err := json.Marshal(result.Warnings); err == nil {
+		details["warnings_json"] = string(bytes)
+	}
+	return &PrecheckResult{
+		Success: result.OK,
+		Message: firstNonEmpty(result.Message, "checkpoint source state inspect completed"),
 		Details: details,
 	}
 }

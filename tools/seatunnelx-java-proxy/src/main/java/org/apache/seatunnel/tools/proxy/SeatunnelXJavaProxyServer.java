@@ -23,14 +23,21 @@ import org.apache.seatunnel.common.utils.JsonUtils;
 import org.apache.seatunnel.tools.proxy.service.CatalogProbeService;
 import org.apache.seatunnel.tools.proxy.service.CheckpointDeserializeService;
 import org.apache.seatunnel.tools.proxy.service.CheckpointProbeService;
+import org.apache.seatunnel.tools.proxy.service.CheckpointSourceStateInspectService;
 import org.apache.seatunnel.tools.proxy.service.ConfigResourceService;
+import org.apache.seatunnel.tools.proxy.service.ConfigValidationService;
 import org.apache.seatunnel.tools.proxy.service.IMapProbeService;
 import org.apache.seatunnel.tools.proxy.service.IMapWalInspectService;
+import org.apache.seatunnel.tools.proxy.service.PluginEnumValueService;
+import org.apache.seatunnel.tools.proxy.service.PluginOptionSchemaService;
+import org.apache.seatunnel.tools.proxy.service.PluginRuntimeService;
 import org.apache.seatunnel.tools.proxy.service.PreviewConfigService;
 import org.apache.seatunnel.tools.proxy.service.ProxyException;
 import org.apache.seatunnel.tools.proxy.service.RuntimeStorageListService;
 import org.apache.seatunnel.tools.proxy.service.RuntimeStoragePreviewService;
 import org.apache.seatunnel.tools.proxy.service.RuntimeStorageStatService;
+import org.apache.seatunnel.tools.proxy.service.SinkSaveModePreviewService;
+import org.apache.seatunnel.tools.proxy.service.TemplateRenderService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +65,7 @@ public class SeatunnelXJavaProxyServer {
     private final HttpServer httpServer;
     private final ExecutorService executorService;
     private final ConfigResourceService configResourceService;
+    private final ConfigValidationService configValidationService;
     private final CatalogProbeService catalogProbeService;
     private final CheckpointProbeService checkpointProbeService;
     private final IMapProbeService iMapProbeService;
@@ -65,14 +73,21 @@ public class SeatunnelXJavaProxyServer {
     private final RuntimeStorageListService runtimeStorageListService;
     private final RuntimeStoragePreviewService runtimeStoragePreviewService;
     private final CheckpointDeserializeService checkpointDeserializeService;
+    private final CheckpointSourceStateInspectService checkpointSourceStateInspectService;
     private final IMapWalInspectService iMapWalInspectService;
     private final PreviewConfigService previewConfigService;
+    private final PluginRuntimeService pluginRuntimeService;
+    private final PluginOptionSchemaService pluginOptionSchemaService;
+    private final TemplateRenderService templateRenderService;
+    private final PluginEnumValueService pluginEnumValueService;
+    private final SinkSaveModePreviewService sinkSaveModePreviewService;
 
     public SeatunnelXJavaProxyServer(int port, int workerThreads) throws IOException {
         this(
                 HttpServer.create(new InetSocketAddress(port), 0),
                 Executors.newFixedThreadPool(workerThreads),
                 new ConfigResourceService(),
+                new ConfigValidationService(),
                 new CatalogProbeService(),
                 new CheckpointProbeService(),
                 new IMapProbeService(),
@@ -80,14 +95,21 @@ public class SeatunnelXJavaProxyServer {
                 new RuntimeStorageListService(),
                 new RuntimeStoragePreviewService(),
                 new CheckpointDeserializeService(),
+                new CheckpointSourceStateInspectService(),
                 new IMapWalInspectService(),
-                new PreviewConfigService());
+                new PreviewConfigService(),
+                new PluginRuntimeService(),
+                new PluginOptionSchemaService(),
+                new TemplateRenderService(),
+                new PluginEnumValueService(),
+                new SinkSaveModePreviewService());
     }
 
     SeatunnelXJavaProxyServer(
             HttpServer httpServer,
             ExecutorService executorService,
             ConfigResourceService configResourceService,
+            ConfigValidationService configValidationService,
             CatalogProbeService catalogProbeService,
             CheckpointProbeService checkpointProbeService,
             IMapProbeService iMapProbeService,
@@ -95,11 +117,18 @@ public class SeatunnelXJavaProxyServer {
             RuntimeStorageListService runtimeStorageListService,
             RuntimeStoragePreviewService runtimeStoragePreviewService,
             CheckpointDeserializeService checkpointDeserializeService,
+            CheckpointSourceStateInspectService checkpointSourceStateInspectService,
             IMapWalInspectService iMapWalInspectService,
-            PreviewConfigService previewConfigService) {
+            PreviewConfigService previewConfigService,
+            PluginRuntimeService pluginRuntimeService,
+            PluginOptionSchemaService pluginOptionSchemaService,
+            TemplateRenderService templateRenderService,
+            PluginEnumValueService pluginEnumValueService,
+            SinkSaveModePreviewService sinkSaveModePreviewService) {
         this.httpServer = httpServer;
         this.executorService = executorService;
         this.configResourceService = configResourceService;
+        this.configValidationService = configValidationService;
         this.catalogProbeService = catalogProbeService;
         this.checkpointProbeService = checkpointProbeService;
         this.iMapProbeService = iMapProbeService;
@@ -107,8 +136,14 @@ public class SeatunnelXJavaProxyServer {
         this.runtimeStorageListService = runtimeStorageListService;
         this.runtimeStoragePreviewService = runtimeStoragePreviewService;
         this.checkpointDeserializeService = checkpointDeserializeService;
+        this.checkpointSourceStateInspectService = checkpointSourceStateInspectService;
         this.iMapWalInspectService = iMapWalInspectService;
         this.previewConfigService = previewConfigService;
+        this.pluginRuntimeService = pluginRuntimeService;
+        this.pluginOptionSchemaService = pluginOptionSchemaService;
+        this.templateRenderService = templateRenderService;
+        this.pluginEnumValueService = pluginEnumValueService;
+        this.sinkSaveModePreviewService = sinkSaveModePreviewService;
         registerContexts();
         this.httpServer.setExecutor(executorService);
     }
@@ -127,11 +162,27 @@ public class SeatunnelXJavaProxyServer {
                 "/healthz",
                 exchange -> writeJson(exchange, 200, Collections.singletonMap("ok", true)));
         httpServer.createContext(
+                "/api/v1/config/validate",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return configValidationService.validate(request);
+                    }
+                });
+        httpServer.createContext(
                 "/api/v1/config/dag",
                 new JsonPostHandler() {
                     @Override
                     protected Object handleRequest(Map<String, Object> request) {
                         return configResourceService.inspectDag(request);
+                    }
+                });
+        httpServer.createContext(
+                "/api/v1/config/webui-dag",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return configResourceService.inspectWebUiDag(request);
                     }
                 });
         httpServer.createContext(
@@ -151,11 +202,51 @@ public class SeatunnelXJavaProxyServer {
                     }
                 });
         httpServer.createContext(
+                "/api/v1/config/preview/sink-savemode",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return sinkSaveModePreviewService.preview(request);
+                    }
+                });
+        httpServer.createContext(
                 "/api/v1/catalog/probe",
                 new JsonPostHandler() {
                     @Override
                     protected Object handleRequest(Map<String, Object> request) {
                         return catalogProbeService.probe(request);
+                    }
+                });
+        httpServer.createContext(
+                "/api/v1/plugin/list",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return pluginRuntimeService.list(request);
+                    }
+                });
+        httpServer.createContext(
+                "/api/v1/plugin/options",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return pluginOptionSchemaService.inspect(request);
+                    }
+                });
+        httpServer.createContext(
+                "/api/v1/plugin/template",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return templateRenderService.render(request);
+                    }
+                });
+        httpServer.createContext(
+                "/api/v1/plugin/enum-values",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return pluginEnumValueService.listValues(request);
                     }
                 });
         httpServer.createContext(
@@ -232,6 +323,14 @@ public class SeatunnelXJavaProxyServer {
                     }
                 });
         httpServer.createContext(
+                "/api/v1/storage/checkpoint/inspect-source-state",
+                new JsonPostHandler() {
+                    @Override
+                    protected Object handleRequest(Map<String, Object> request) {
+                        return checkpointSourceStateInspectService.inspect(request);
+                    }
+                });
+        httpServer.createContext(
                 "/api/v1/storage/imap/inspect-wal",
                 new JsonPostHandler() {
                     @Override
@@ -253,7 +352,11 @@ public class SeatunnelXJavaProxyServer {
                 Object result = handleRequest(request);
                 writeJson(exchange, 200, result);
             } catch (ProxyException e) {
-                LOG.warn("Request failed: {}", e.getMessage());
+                if (e.getCause() != null) {
+                    LOG.warn("Request failed: {}", e.getMessage(), e);
+                } else {
+                    LOG.warn("Request failed: {}", e.getMessage());
+                }
                 writeJson(exchange, e.getStatusCode(), errorBody(e.getMessage()));
             } catch (Exception e) {
                 LOG.error("Unexpected request failure", e);

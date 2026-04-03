@@ -18,7 +18,9 @@
 package org.apache.seatunnel.tools.proxy.model;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ProxyNode {
 
@@ -28,6 +30,9 @@ public class ProxyNode {
     private final int configIndex;
     private final List<String> inputDatasets;
     private final String outputDataset;
+    private final List<String> tablePaths;
+    private final Map<String, List<String>> tableColumns;
+    private final Map<String, Map<String, Object>> tableSchemas;
 
     public ProxyNode(
             String nodeId,
@@ -35,7 +40,10 @@ public class ProxyNode {
             String pluginName,
             int configIndex,
             List<String> inputDatasets,
-            String outputDataset) {
+            String outputDataset,
+            List<String> tablePaths,
+            Map<String, List<String>> tableColumns,
+            Map<String, Map<String, Object>> tableSchemas) {
         this.nodeId = nodeId;
         this.kind = kind;
         this.pluginName = pluginName;
@@ -45,6 +53,18 @@ public class ProxyNode {
                         ? Collections.emptyList()
                         : Collections.unmodifiableList(inputDatasets);
         this.outputDataset = outputDataset;
+        this.tablePaths =
+                tablePaths == null
+                        ? Collections.emptyList()
+                        : Collections.unmodifiableList(tablePaths);
+        this.tableColumns =
+                tableColumns == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(tableColumns));
+        this.tableSchemas =
+                tableSchemas == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new LinkedHashMap<>(tableSchemas));
     }
 
     public String getNodeId() {
@@ -69,5 +89,17 @@ public class ProxyNode {
 
     public String getOutputDataset() {
         return outputDataset;
+    }
+
+    public List<String> getTablePaths() {
+        return tablePaths;
+    }
+
+    public Map<String, List<String>> getTableColumns() {
+        return tableColumns;
+    }
+
+    public Map<String, Map<String, Object>> getTableSchemas() {
+        return tableSchemas;
     }
 }

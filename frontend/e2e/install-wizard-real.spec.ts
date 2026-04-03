@@ -23,14 +23,19 @@ import {
   chooseSelectOption,
   expectSeatunnelXJavaProxyProbeSuccess,
   expectInstallationSuccess,
+  prepareClusterForInstallWizard,
   resolveInstalledConfigPaths,
   waitForOnlineHost,
+  waitForSeatunnelXJavaProxyHealthy,
 } from './helpers/install-wizard-real';
 
 const seatunnelVersion = process.env.E2E_INSTALLER_REAL_VERSION ?? '2.3.13';
 const installDirRoot =
   process.env.E2E_INSTALLER_REAL_INSTALL_DIR ??
-  path.resolve(process.cwd(), '../tmp/e2e/installer-real/install/seatunnel-2.3.13');
+  path.resolve(
+    process.cwd(),
+    '../tmp/e2e/installer-real/install/seatunnel-2.3.13',
+  );
 const minioEndpoint =
   process.env.E2E_INSTALLER_REAL_MINIO_ENDPOINT ?? 'http://127.0.0.1:19000';
 const minioAccessKey =
@@ -38,7 +43,8 @@ const minioAccessKey =
 const minioSecretKey =
   process.env.E2E_INSTALLER_REAL_MINIO_SECRET_KEY ?? 'minioadmin';
 const checkpointBucket =
-  process.env.E2E_INSTALLER_REAL_CHECKPOINT_BUCKET ?? 's3a://seatunnel-checkpoint';
+  process.env.E2E_INSTALLER_REAL_CHECKPOINT_BUCKET ??
+  's3a://seatunnel-checkpoint';
 const imapBucket =
   process.env.E2E_INSTALLER_REAL_IMAP_BUCKET ?? 's3a://seatunnel-imap';
 const clusterPortPrimary = Number(
@@ -63,6 +69,14 @@ test.describe.serial('install wizard real installer', () => {
     const installDir = `${installDirRoot}-local`;
     const clusterPort = clusterPortPrimary;
     const httpPort = httpPortPrimary;
+    const cluster = await prepareClusterForInstallWizard(page, {
+      hostId: host.id,
+      hostName: host.name,
+      version: seatunnelVersion,
+      installDir,
+      clusterPort,
+      httpPort,
+    });
 
     await page.goto(
       buildInstallWizardLabURL({
@@ -72,6 +86,7 @@ test.describe.serial('install wizard real installer', () => {
         installDir,
         clusterPort,
         httpPort,
+        clusterId: cluster.clusterId,
       }),
     );
 
@@ -79,7 +94,9 @@ test.describe.serial('install wizard real installer', () => {
     await expect(page.getByTestId('install-wizard-next')).toBeEnabled({
       timeout: 120000,
     });
-    console.log('[installer-real] precheck passed for local checkpoint scenario');
+    console.log(
+      '[installer-real] precheck passed for local checkpoint scenario',
+    );
 
     await page.getByTestId('install-wizard-next').click();
     await expect(page.getByTestId('install-wizard-step-config')).toBeVisible();
@@ -96,11 +113,15 @@ test.describe.serial('install wizard real installer', () => {
 
     await page.getByTestId('install-wizard-next').click();
     await expect(page.getByTestId('install-wizard-step-plugins')).toBeVisible();
-    console.log('[installer-real] config step completed for local checkpoint scenario');
+    console.log(
+      '[installer-real] config step completed for local checkpoint scenario',
+    );
     await page.getByTestId('install-wizard-next').click();
 
     await expectInstallationSuccess(page);
-    console.log('[installer-real] installation succeeded for local checkpoint scenario');
+    console.log(
+      '[installer-real] installation succeeded for local checkpoint scenario',
+    );
 
     const files = resolveInstalledConfigPaths(installDir);
     await assertFileContains(files.seatunnel, [
@@ -114,17 +135,29 @@ test.describe.serial('install wizard real installer', () => {
       'cluster-members:',
       `- 127.0.0.1:${clusterPort}`,
     ]);
-    await assertFileContains(files.log4j2, ['rootLogger.appenderRef.file.ref = routingAppender']);
+    await assertFileContains(files.log4j2, [
+      'rootLogger.appenderRef.file.ref = routingAppender',
+    ]);
   });
 
   test('installs with MinIO-backed S3 checkpoint and IMAP configuration', async ({
     page,
   }) => {
-    console.log('[installer-real] starting MinIO-backed checkpoint/imap scenario');
+    console.log(
+      '[installer-real] starting MinIO-backed checkpoint/imap scenario',
+    );
     const host = await waitForOnlineHost(page);
     const installDir = `${installDirRoot}-s3`;
     const clusterPort = clusterPortSecondary;
     const httpPort = httpPortSecondary;
+    const cluster = await prepareClusterForInstallWizard(page, {
+      hostId: host.id,
+      hostName: host.name,
+      version: seatunnelVersion,
+      installDir,
+      clusterPort,
+      httpPort,
+    });
 
     await page.goto(
       buildInstallWizardLabURL({
@@ -134,6 +167,7 @@ test.describe.serial('install wizard real installer', () => {
         installDir,
         clusterPort,
         httpPort,
+        clusterId: cluster.clusterId,
       }),
     );
 
@@ -150,11 +184,21 @@ test.describe.serial('install wizard real installer', () => {
     await page.getByTestId('install-config-install-dir').fill(installDir);
     await page.getByTestId('install-jvm-hybrid-heap').fill('1');
 
-    await chooseSelectOption(page, 'install-checkpoint-storage-type', /AWS S3/i);
-    await page.getByTestId('install-checkpoint-namespace').fill('/seatunnel/checkpoint/');
+    await chooseSelectOption(
+      page,
+      'install-checkpoint-storage-type',
+      /AWS S3/i,
+    );
+    await page
+      .getByTestId('install-checkpoint-namespace')
+      .fill('/seatunnel/checkpoint/');
     await page.getByTestId('install-checkpoint-endpoint').fill(minioEndpoint);
-    await page.getByTestId('install-checkpoint-access-key').fill(minioAccessKey);
-    await page.getByTestId('install-checkpoint-secret-key').fill(minioSecretKey);
+    await page
+      .getByTestId('install-checkpoint-access-key')
+      .fill(minioAccessKey);
+    await page
+      .getByTestId('install-checkpoint-secret-key')
+      .fill(minioSecretKey);
     await page.getByTestId('install-checkpoint-bucket').fill(checkpointBucket);
     await page.getByTestId('install-checkpoint-validate').click();
     await expect(
@@ -181,7 +225,9 @@ test.describe.serial('install wizard real installer', () => {
     await page.getByTestId('install-wizard-next').click();
     await page.getByTestId('install-wizard-next').click();
     await expectInstallationSuccess(page);
-    console.log('[installer-real] installation succeeded for MinIO-backed scenario');
+    console.log(
+      '[installer-real] installation succeeded for MinIO-backed scenario',
+    );
 
     const files = resolveInstalledConfigPaths(installDir);
     await assertFileContains(files.seatunnel, [
@@ -202,6 +248,8 @@ test.describe.serial('install wizard real installer', () => {
       `fs.s3a.access.key: ${minioAccessKey}`,
       `fs.s3a.secret.key: ${minioSecretKey}`,
     ]);
+
+    await waitForSeatunnelXJavaProxyHealthy(page, cluster.clusterId);
 
     const checkpointProbe = await expectSeatunnelXJavaProxyProbeSuccess({
       installDir,

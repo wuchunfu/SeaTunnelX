@@ -1,0 +1,879 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+'use client';
+
+import {useMemo, useState} from 'react';
+import {GitBranch} from 'lucide-react';
+import type {
+  SyncSinkSaveModePreviewTable,
+  SyncWebUIDagEdge,
+  SyncJSON,
+  SyncWebUIDagPreviewJob,
+  SyncWebUIDagVertexInfo,
+} from '@/lib/services/sync';
+import {Badge} from '@/components/ui/badge';
+import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {ScrollArea} from '@/components/ui/scroll-area';
+import {cn} from '@/lib/utils';
+
+interface PositionedNode extends SyncWebUIDagVertexInfo {
+  level: number;
+  row: number;
+  x: number;
+  y: number;
+  height: number;
+}
+
+const NODE_WIDTH = 220;
+const NODE_MIN_HEIGHT = 120;
+const COLUMN_GAP = 92;
+const ROW_GAP = 44;
+const PADDING = 28;
+const CANVAS_RIGHT_PADDING = 96;
+
+interface SelectedTableDetailState {
+  nodeLabel: string;
+  tablePath: string;
+  columns: string[];
+  schema?: SyncJSON;
+}
+
+interface SelectedSaveModeDetailState {
+  nodeLabel: string;
+  tablePath: string;
+  preview: SyncSinkSaveModePreviewTable;
+}
+
+interface SchemaColumnDetail {
+  name: string;
+  dataType: string;
+  nullable: boolean | null;
+  defaultValue: string;
+  comment: string;
+  primaryKey: boolean;
+  uniqueKey: boolean;
+}
+
+interface TablePathPreviewItemProps {
+  nodeLabel: string;
+  path: string;
+  preview?: SyncSinkSaveModePreviewTable;
+  onSelectDetail: () => void;
+  onPreviewDetail: () => void;
+}
+
+function toObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item));
+}
+
+function extractSchemaColumnDetails(schema?: SyncJSON): SchemaColumnDetail[] {
+  const root = toObject(schema);
+  const schemaObject = toObject(root.schema);
+  const primaryKeyColumns = new Set(
+    toStringArray(toObject(schemaObject.primaryKey).columnNames),
+  );
+  const uniqueColumns = new Set<string>();
+  const constraints = schemaObject.constraintKeys;
+  if (Array.isArray(constraints)) {
+    constraints.forEach((constraint) => {
+      const constraintObject = toObject(constraint);
+      if (String(constraintObject.constraintType || '') !== 'UNIQUE_KEY') {
+        return;
+      }
+      const columns = constraintObject.columns;
+      if (!Array.isArray(columns)) {
+        return;
+      }
+      columns.forEach((column) => {
+        const columnObject = toObject(column);
+        const columnName = String(columnObject.columnName || '').trim();
+        if (columnName) {
+          uniqueColumns.add(columnName);
+        }
+      });
+    });
+  }
+
+  const rawColumns = Array.isArray(schemaObject.columns) ? schemaObject.columns : [];
+  return rawColumns.map((column) => {
+    const columnObject = toObject(column);
+    const name = String(columnObject.name || '-');
+    return {
+      name,
+      dataType: String(columnObject.dataType || '-'),
+      nullable:
+        typeof columnObject.nullable === 'boolean'
+          ? columnObject.nullable
+          : null,
+      defaultValue:
+        columnObject.defaultValue === null ||
+        typeof columnObject.defaultValue === 'undefined'
+          ? '-'
+          : String(columnObject.defaultValue),
+      comment: String(columnObject.comment || '-'),
+      primaryKey: primaryKeyColumns.has(name),
+      uniqueKey: uniqueColumns.has(name),
+    };
+  });
+}
+
+function normalizeVertices(
+  job: SyncWebUIDagPreviewJob,
+): SyncWebUIDagVertexInfo[] {
+  return Object.values(job.jobDag?.vertexInfoMap || {}).sort(
+    (left, right) => left.vertexId - right.vertexId,
+  );
+}
+
+function normalizeEdges(job: SyncWebUIDagPreviewJob): SyncWebUIDagEdge[] {
+  return Object.entries(job.jobDag?.pipelineEdges || {})
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .flatMap(([, edges]) => edges || []);
+}
+
+function computeNodeLevels(
+  vertices: SyncWebUIDagVertexInfo[],
+  edges: SyncWebUIDagEdge[],
+): PositionedNode[] {
+  const incoming = new Map<number, number>();
+  const outgoing = new Map<number, number[]>();
+  const vertexByID = new Map<number, SyncWebUIDagVertexInfo>();
+
+  for (const vertex of vertices) {
+    incoming.set(vertex.vertexId, 0);
+    outgoing.set(vertex.vertexId, []);
+    vertexByID.set(vertex.vertexId, vertex);
+  }
+
+  for (const edge of edges) {
+    outgoing.set(edge.inputVertexId, [
+      ...(outgoing.get(edge.inputVertexId) || []),
+      edge.targetVertexId,
+    ]);
+    incoming.set(
+      edge.targetVertexId,
+      (incoming.get(edge.targetVertexId) || 0) + 1,
+    );
+  }
+
+  const queue = vertices
+    .filter((vertex) => (incoming.get(vertex.vertexId) || 0) === 0)
+    .map((vertex) => vertex.vertexId);
+
+  const levels = new Map<number, number>();
+  for (const vertex of vertices) {
+    levels.set(vertex.vertexId, 0);
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const currentLevel = levels.get(current) || 0;
+    for (const next of outgoing.get(current) || []) {
+      levels.set(next, Math.max(levels.get(next) || 0, currentLevel + 1));
+      incoming.set(next, Math.max(0, (incoming.get(next) || 1) - 1));
+      if ((incoming.get(next) || 0) === 0) {
+        queue.push(next);
+      }
+    }
+  }
+
+  const rowsByLevel = new Map<number, number>();
+  const yOffsetByLevel = new Map<number, number>();
+  return vertices.map((vertex) => {
+    const level = levels.get(vertex.vertexId) || 0;
+    const row = rowsByLevel.get(level) || 0;
+    const height = estimateNodeHeight(vertex);
+    const y = yOffsetByLevel.get(level) || PADDING;
+    rowsByLevel.set(level, row + 1);
+    yOffsetByLevel.set(level, y + height + ROW_GAP);
+    return {
+      ...vertex,
+      level,
+      row,
+      x: PADDING + level * (NODE_WIDTH + COLUMN_GAP),
+      y,
+      height,
+    };
+  });
+}
+
+function nodeTone(type: string): string {
+  switch (type) {
+    case 'source':
+      return 'border-emerald-500/40 bg-emerald-500/5';
+    case 'sink':
+      return 'border-amber-500/40 bg-amber-500/5';
+    default:
+      return 'border-blue-500/40 bg-blue-500/5';
+  }
+}
+
+function nodeBadgeTone(type: string): string {
+  switch (type) {
+    case 'source':
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+    case 'sink':
+      return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+    default:
+      return 'bg-blue-500/15 text-blue-700 dark:text-blue-300';
+  }
+}
+
+function normalizeTablePaths(paths?: string[]): string[] {
+  return (paths || []).filter(Boolean);
+}
+
+function resolveSaveModePreview(
+  node: SyncWebUIDagVertexInfo,
+  path: string,
+): SyncSinkSaveModePreviewTable | undefined {
+  const previews = node.saveModePreviews || {};
+  return previews[path] || previews.__default__;
+}
+
+function SaveModePreviewDetail({
+  preview,
+}: {
+  preview: SyncSinkSaveModePreviewTable;
+}) {
+  const actions = preview.actions || [];
+  const warnings = preview.warnings || [];
+
+  return (
+    <div className='space-y-3'>
+      <div className='flex flex-wrap gap-2'>
+        {preview.schemaSaveMode ? (
+          <Badge variant='outline' className='text-xs'>
+            Schema: {preview.schemaSaveMode}
+          </Badge>
+        ) : null}
+        {preview.dataSaveMode ? (
+          <Badge variant='outline' className='text-xs'>
+            Data: {preview.dataSaveMode}
+          </Badge>
+        ) : null}
+        {preview.completeness ? (
+          <Badge variant='secondary' className='text-xs'>
+            {preview.completeness}
+          </Badge>
+        ) : null}
+      </div>
+      {warnings.length > 0 ? (
+        <div className='space-y-1 text-sm text-amber-700 dark:text-amber-300'>
+          {warnings.map((warning, index) => (
+            <div key={`${warning}-${index}`}>{warning}</div>
+          ))}
+        </div>
+      ) : null}
+      {actions.length > 0 ? (
+        <div className='space-y-1'>
+          {actions.map((action, index) => (
+            <div
+              key={`${action.actionType || 'action'}-${index}`}
+              className='rounded border border-border/50 bg-background/80 p-2'
+            >
+              <div className='flex flex-wrap items-center gap-2 text-xs text-muted-foreground'>
+                {action.phase ? <span>{action.phase}</span> : null}
+                {action.actionType ? <span>{action.actionType}</span> : null}
+                {action.resultType ? <span>{action.resultType}</span> : null}
+              </div>
+              {action.content ? (
+                <pre className='mt-1 whitespace-pre-wrap break-all font-mono text-xs text-foreground'>
+                  {action.content}
+                </pre>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : warnings.length === 0 ? (
+        <div className='text-sm text-muted-foreground'>
+          暂无可预览的 SQL / 动作
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TablePathPreviewItem({
+  nodeLabel,
+  path,
+  preview,
+  onSelectDetail,
+  onPreviewDetail,
+}: TablePathPreviewItemProps) {
+  return (
+    <div className='rounded-md border border-border/50 bg-background/80 px-2 py-1.5'>
+      <div className='flex items-center gap-2'>
+        <button
+          type='button'
+          title={path}
+          className='min-w-0 flex-1 text-left text-[11px] hover:text-foreground'
+          onClick={onSelectDetail}
+        >
+          <span className='block truncate'>{path}</span>
+        </button>
+        {preview ? (
+          <button
+            type='button'
+            className='inline-flex items-center rounded border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted'
+            title={`${nodeLabel} / ${path}`}
+            onClick={onPreviewDetail}
+          >
+            预览 DDL
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function estimateNodeHeight(node: SyncWebUIDagVertexInfo): number {
+  const connectorLines = Math.max(
+    1,
+    Math.ceil((node.connectorType?.length || 0) / 22),
+  );
+  const tableCount = Math.max(1, normalizeTablePaths(node.tablePaths).length);
+  const headerHeight = 72;
+  const connectorHeight = connectorLines * 18;
+  const tableSectionLabelHeight = 20;
+  const tableButtonHeight = tableCount * 30;
+  const tableButtonGap = Math.max(0, tableCount - 1) * 6;
+  const bottomPadding = 22;
+  return Math.max(
+    NODE_MIN_HEIGHT,
+    headerHeight +
+      connectorHeight +
+      tableSectionLabelHeight +
+      tableButtonHeight +
+      tableButtonGap +
+      bottomPadding,
+  );
+}
+
+export function WebUiDagPreview({job}: {job: SyncWebUIDagPreviewJob}) {
+  const [selectedTableDetail, setSelectedTableDetail] =
+    useState<SelectedTableDetailState | null>(null);
+  const [selectedSaveModeDetail, setSelectedSaveModeDetail] =
+    useState<SelectedSaveModeDetailState | null>(null);
+  const selectedSchemaColumns = useMemo(
+    () => extractSchemaColumnDetails(selectedTableDetail?.schema),
+    [selectedTableDetail],
+  );
+  const vertices = useMemo(() => normalizeVertices(job), [job]);
+  const edges = useMemo(() => normalizeEdges(job), [job]);
+  const positionedNodes = useMemo(
+    () => computeNodeLevels(vertices, edges),
+    [vertices, edges],
+  );
+  const nodeByID = useMemo(
+    () =>
+      new Map(positionedNodes.map((node) => [node.vertexId, node] as const)),
+    [positionedNodes],
+  );
+  const width =
+    positionedNodes.length === 0
+      ? 0
+      : Math.max(...positionedNodes.map((node) => node.x)) +
+        NODE_WIDTH +
+        PADDING +
+        CANVAS_RIGHT_PADDING;
+  const height =
+    positionedNodes.length === 0
+      ? 0
+      : Math.max(...positionedNodes.map((node) => node.y + node.height)) +
+        PADDING;
+  return (
+    <div className='grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]'>
+      <Card className='overflow-hidden'>
+        <CardHeader className='border-b pb-3'>
+          <CardTitle className='flex items-center gap-2 text-sm'>
+            <GitBranch className='h-4 w-4' />
+            DAG
+          </CardTitle>
+        </CardHeader>
+        <CardContent className='p-0'>
+          <div className='h-[560px] w-full overflow-x-auto overflow-y-auto'>
+            <div
+              className='relative min-h-[560px] min-w-max bg-muted/15'
+              style={{
+                width: Math.max(width, 820),
+                height: Math.max(height, 560),
+              }}
+            >
+              <svg
+                className='absolute inset-0'
+                width={Math.max(width, 820)}
+                height={Math.max(height, 560)}
+              >
+                <defs>
+                  <marker
+                    id='sync-dag-arrow'
+                    markerWidth='8'
+                    markerHeight='8'
+                    refX='7'
+                    refY='4'
+                    orient='auto'
+                  >
+                    <path
+                      d='M0,0 L8,4 L0,8 z'
+                      className='fill-muted-foreground/60'
+                    />
+                  </marker>
+                </defs>
+                {edges.map((edge, index) => {
+                  const source = nodeByID.get(edge.inputVertexId);
+                  const target = nodeByID.get(edge.targetVertexId);
+                  if (!source || !target) {
+                    return null;
+                  }
+                  const x1 = source.x + NODE_WIDTH;
+                  const y1 = source.y + source.height / 2;
+                  const x2 = target.x;
+                  const y2 = target.y + target.height / 2;
+                  const midX = x1 + (x2 - x1) / 2;
+                  const path = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+                  return (
+                    <path
+                      key={`${edge.inputVertexId}-${edge.targetVertexId}-${index}`}
+                      d={path}
+                      fill='none'
+                      stroke='currentColor'
+                      strokeWidth='2'
+                      className='text-muted-foreground/60'
+                      markerEnd='url(#sync-dag-arrow)'
+                    />
+                  );
+                })}
+              </svg>
+
+              {positionedNodes.map((node) => (
+                <div
+                  key={node.vertexId}
+                  className={cn(
+                    'absolute rounded-xl border shadow-sm backdrop-blur-sm',
+                    nodeTone(node.type),
+                  )}
+                  style={{
+                    left: node.x,
+                    top: node.y,
+                    width: NODE_WIDTH,
+                    minHeight: node.height,
+                  }}
+                >
+                  <div className='flex h-full flex-col gap-3 p-4'>
+                    <div className='flex items-center justify-between gap-2'>
+                      <Badge
+                        variant='secondary'
+                        className={cn(
+                          'border-transparent text-[11px] uppercase tracking-wide',
+                          nodeBadgeTone(node.type),
+                        )}
+                      >
+                        {node.type}
+                      </Badge>
+                      <span className='text-[11px] text-muted-foreground'>
+                        #{node.vertexId}
+                      </span>
+                    </div>
+                    <div className='space-y-1'>
+                      <div className='line-clamp-2 text-sm font-medium'>
+                        {node.connectorType}
+                      </div>
+                      <div className='space-y-2'>
+                        <div className='text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
+                          TablePaths
+                        </div>
+                        <div className='space-y-1.5'>
+                          {normalizeTablePaths(node.tablePaths).length > 0 ? (
+                            normalizeTablePaths(node.tablePaths).map((path) => (
+                              <TablePathPreviewItem
+                                key={`${node.vertexId}-${path}`}
+                                nodeLabel={`#${node.vertexId} ${node.connectorType}`}
+                                path={path}
+                                preview={resolveSaveModePreview(node, path)}
+                                onSelectDetail={() =>
+                                  setSelectedTableDetail({
+                                    nodeLabel: `#${node.vertexId} ${node.connectorType}`,
+                                    tablePath: path,
+                                    columns: node.tableColumns?.[path] || [],
+                                    schema: node.tableSchemas?.[path],
+                                  })
+                                }
+                                onPreviewDetail={() => {
+                                  const preview = resolveSaveModePreview(node, path);
+                                  if (!preview) {
+                                    return;
+                                  }
+                                  setSelectedSaveModeDetail({
+                                    nodeLabel: `#${node.vertexId} ${node.connectorType}`,
+                                    tablePath: path,
+                                    preview,
+                                  });
+                                }}
+                              />
+                            ))
+                          ) : (
+                            <Badge
+                              variant='secondary'
+                              className='rounded-md border border-border/50 bg-background/80 text-[11px]'
+                            >
+                              default
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className='space-y-4'>
+        <Card>
+          <CardHeader className='pb-3'>
+            <CardTitle className='text-sm'>预览摘要</CardTitle>
+          </CardHeader>
+          <CardContent className='space-y-2 text-sm'>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-muted-foreground'>Job</span>
+              <span>{job.jobName}</span>
+            </div>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-muted-foreground'>Status</span>
+              <Badge variant='outline'>{job.jobStatus}</Badge>
+            </div>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-muted-foreground'>Nodes</span>
+              <span>{vertices.length}</span>
+            </div>
+            <div className='flex items-center justify-between gap-3'>
+              <span className='text-muted-foreground'>Edges</span>
+              <span>{edges.length}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className='pb-3'>
+            <CardTitle className='text-sm'>节点列表</CardTitle>
+          </CardHeader>
+          <CardContent className='space-y-2'>
+            {vertices.map((vertex) => (
+              <div
+                key={vertex.vertexId}
+                className='rounded-lg border border-border/60 p-3'
+              >
+                <div className='flex items-center justify-between gap-2'>
+                  <div className='text-sm font-medium'>
+                    {vertex.connectorType}
+                  </div>
+                  <Badge variant='outline' className='capitalize'>
+                    {vertex.type}
+                  </Badge>
+                </div>
+                <div className='mt-3 space-y-2'>
+                  <div className='text-[11px] font-medium uppercase tracking-wide text-muted-foreground'>
+                    TablePaths
+                  </div>
+                  <div className='space-y-1.5'>
+                    {normalizeTablePaths(vertex.tablePaths).length > 0 ? (
+                      normalizeTablePaths(vertex.tablePaths).map((path) => (
+                        <TablePathPreviewItem
+                          key={`${vertex.vertexId}-${path}`}
+                          nodeLabel={`#${vertex.vertexId} ${vertex.connectorType}`}
+                          path={path}
+                          preview={resolveSaveModePreview(vertex, path)}
+                          onSelectDetail={() =>
+                            setSelectedTableDetail({
+                              nodeLabel: `#${vertex.vertexId} ${vertex.connectorType}`,
+                              tablePath: path,
+                              columns: vertex.tableColumns?.[path] || [],
+                              schema: vertex.tableSchemas?.[path],
+                            })
+                          }
+                          onPreviewDetail={() => {
+                            const preview = resolveSaveModePreview(vertex, path);
+                            if (!preview) {
+                              return;
+                            }
+                            setSelectedSaveModeDetail({
+                              nodeLabel: `#${vertex.vertexId} ${vertex.connectorType}`,
+                              tablePath: path,
+                              preview,
+                            });
+                          }}
+                        />
+                      ))
+                    ) : (
+                      <Badge
+                        variant='secondary'
+                        className='rounded-md border border-border/50 bg-background/80 text-[11px]'
+                      >
+                        default
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+      <Dialog
+        open={Boolean(selectedTableDetail)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedTableDetail(null);
+          }
+        }}
+      >
+        <DialogContent className='sm:max-w-[720px]'>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedTableDetail?.tablePath || 'Table Detail'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className='space-y-4'>
+            <div className='text-sm text-muted-foreground'>
+              {selectedTableDetail?.nodeLabel}
+            </div>
+            {selectedTableDetail?.schema ? (
+              <>
+                <div className='grid grid-cols-1 gap-3 md:grid-cols-3'>
+                  <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                    <div className='text-xs text-muted-foreground'>Comment</div>
+                    <div className='mt-1 text-sm'>
+                      {String(
+                        toObject(selectedTableDetail.schema).comment || '-',
+                      )}
+                    </div>
+                  </div>
+                  <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                    <div className='text-xs text-muted-foreground'>
+                      Partition Keys
+                    </div>
+                    <div className='mt-2 flex flex-wrap gap-2'>
+                      {toStringArray(
+                        toObject(selectedTableDetail.schema).partitionKeys,
+                      ).length > 0 ? (
+                        toStringArray(
+                          toObject(selectedTableDetail.schema).partitionKeys,
+                        ).map((item) => (
+                          <Badge key={item} variant='secondary'>
+                            {item}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className='text-sm text-muted-foreground'>-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                    <div className='text-xs text-muted-foreground'>
+                      Primary Key
+                    </div>
+                    <div className='mt-2 flex flex-wrap gap-2'>
+                      {toStringArray(
+                        toObject(
+                          toObject(
+                            toObject(selectedTableDetail.schema).schema,
+                          ).primaryKey,
+                        ).columnNames,
+                      ).length > 0 ? (
+                        toStringArray(
+                          toObject(
+                            toObject(
+                              toObject(selectedTableDetail.schema).schema,
+                            ).primaryKey,
+                          ).columnNames,
+                        ).map((item) => (
+                          <Badge key={item} variant='default'>
+                            {item}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className='text-sm text-muted-foreground'>-</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                  <div className='mb-3 text-sm font-medium'>Columns</div>
+                  <ScrollArea className='max-h-[360px]'>
+                    <table className='w-full text-sm'>
+                      <thead className='sticky top-0 bg-background/95'>
+                        <tr className='border-b'>
+                          <th className='px-2 py-2 text-left'>Name</th>
+                          <th className='px-2 py-2 text-left'>Type</th>
+                          <th className='px-2 py-2 text-left'>Key</th>
+                          <th className='px-2 py-2 text-left'>Nullable</th>
+                          <th className='px-2 py-2 text-left'>Default</th>
+                          <th className='px-2 py-2 text-left'>Comment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSchemaColumns.map((column) => (
+                          <tr
+                            key={column.name}
+                            className='border-b last:border-0'
+                          >
+                            <td className='px-2 py-2 font-medium'>
+                              {column.name}
+                            </td>
+                            <td className='px-2 py-2'>
+                              {column.dataType}
+                            </td>
+                            <td className='px-2 py-2'>
+                              <div className='flex flex-wrap gap-1'>
+                                {column.primaryKey ? (
+                                  <Badge variant='default'>PK</Badge>
+                                ) : null}
+                                {column.uniqueKey ? (
+                                  <Badge variant='outline'>UK</Badge>
+                                ) : null}
+                                {!column.primaryKey && !column.uniqueKey ? (
+                                  <span className='text-muted-foreground'>-</span>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className='px-2 py-2'>
+                              <Badge
+                                variant={
+                                  column.nullable === false
+                                    ? 'destructive'
+                                    : 'secondary'
+                                }
+                              >
+                                {column.nullable === false
+                                  ? 'No'
+                                  : column.nullable === true
+                                    ? 'Yes'
+                                    : '-'}
+                              </Badge>
+                            </td>
+                            <td className='px-2 py-2'>
+                              {column.defaultValue}
+                            </td>
+                            <td className='px-2 py-2 text-muted-foreground'>
+                              {column.comment}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </ScrollArea>
+                </div>
+
+                <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                  <div className='mb-2 text-sm font-medium'>Constraint Keys</div>
+                  <div className='flex flex-wrap gap-2'>
+                    {(
+                      toObject(
+                        toObject(selectedTableDetail.schema).schema,
+                      ).constraintKeys as Array<Record<string, unknown>>
+                    )?.length ? (
+                      (
+                        toObject(
+                          toObject(selectedTableDetail.schema).schema,
+                        ).constraintKeys as Array<Record<string, unknown>>
+                      ).map((constraint, index) => (
+                        <Badge
+                          key={`${constraint.constraintName || index}`}
+                          variant='outline'
+                        >
+                          {String(constraint.constraintType || 'CONSTRAINT')}
+                        </Badge>
+                      ))
+                    ) : (
+                      <span className='text-sm text-muted-foreground'>-</span>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className='rounded-lg border border-border/60 bg-background/80 p-3'>
+                <div className='mb-2 text-sm font-medium'>Columns</div>
+                {selectedTableDetail?.columns?.length ? (
+                  <div className='flex flex-wrap gap-2'>
+                    {selectedTableDetail.columns.map((column) => (
+                      <Badge
+                        key={column}
+                        variant='secondary'
+                        className='rounded-md'
+                      >
+                        {column}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className='text-sm text-muted-foreground'>
+                    No schema columns available
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(selectedSaveModeDetail)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedSaveModeDetail(null);
+          }
+        }}
+      >
+        <DialogContent className='sm:max-w-[760px]'>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSaveModeDetail?.tablePath || 'DDL 预览'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className='space-y-4'>
+            <div className='text-sm text-muted-foreground'>
+              {selectedSaveModeDetail?.nodeLabel}
+            </div>
+            {selectedSaveModeDetail?.preview ? (
+              <SaveModePreviewDetail preview={selectedSaveModeDetail.preview} />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

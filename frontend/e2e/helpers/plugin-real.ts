@@ -38,6 +38,17 @@ interface InstalledPluginsResponse extends ErrorResponse {
   data?: InstalledPlugin[];
 }
 
+interface DownloadStatusResponse extends ErrorResponse {
+  data?: {
+    plugin_name?: string;
+    version?: string;
+    status?: 'not_started' | 'downloading' | 'completed' | 'failed';
+    error?: string;
+    message?: string;
+    selected_profile_keys?: string[];
+  } | null;
+}
+
 function normalizeTargetDir(targetDir: string): string {
   return targetDir.replace(/^[/\\]+/, '');
 }
@@ -160,6 +171,58 @@ export async function downloadPluginApi(
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as ErrorResponse;
   expect(payload.error_msg ?? '').toBe('');
+}
+
+export async function waitForPluginDownloadCompleted(
+  request: APIRequestContext,
+  pluginName: string,
+  version: string,
+  profileKeys?: string[],
+  timeoutMs: number = 600000,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const params = new URLSearchParams({version});
+        for (const profileKey of profileKeys || []) {
+          params.append('profile_keys', profileKey);
+        }
+        const response = await request.get(
+          `${backendBaseURL}/api/v1/plugins/${encodeURIComponent(pluginName)}/download/status?${params.toString()}`,
+        );
+        expect(response.ok()).toBeTruthy();
+        const payload = (await response.json()) as DownloadStatusResponse;
+        const status = payload.data?.status || 'not_started';
+        const errorMessage = payload.data?.error || payload.data?.message || '';
+        if (
+          status === 'failed' &&
+          !/download already in progress|下载正在进行中/i.test(errorMessage)
+        ) {
+          throw new Error(
+            `plugin ${pluginName}@${version} download failed: ${errorMessage || 'unknown error'}`,
+          );
+        }
+        if (status === 'completed') {
+          return 'completed';
+        }
+        const localResponse = await request.get(`${backendBaseURL}/api/v1/plugins/local`);
+        expect(localResponse.ok()).toBeTruthy();
+        const localPayload = (await localResponse.json()) as LocalPluginsResponse;
+        const localPlugin = (localPayload.data || []).find(
+          (plugin) =>
+            plugin.name === pluginName &&
+            plugin.version === version &&
+            ((profileKeys && profileKeys.length > 0)
+              ? profileKeys.every((profileKey) =>
+                  (plugin.selected_profile_keys || []).includes(profileKey),
+                )
+              : true),
+        );
+        return localPlugin ? 'completed' : status;
+      },
+      {timeout: timeoutMs},
+    )
+    .toBe('completed');
 }
 
 export async function waitForInstalledPlugin(

@@ -96,6 +96,34 @@
 - 如果安装包本身已经提供默认目录内容，升级执行只能对“平台管理资产”做追加/替换，不能直接扫空整目录
 - 对目录级操作，必须单独定义“哪些文件允许清理、哪些属于包内基线内容必须保留”
 
+### 错误六：运行时路由元数据只在提交阶段保存，读取阶段又被重建丢失
+
+**典型场景**：后端在提交任务时已经探测出运行时应该走 `REST V2` 还是 `Legacy REST V1`，也记录了实际使用的 endpoint；但后续轮询 / 停止接口重新从快照里“半重建” endpoint 时，只恢复了 `engine_base_url`，把 `engine_api_mode`、`engine_legacy_base_url` 丢了。
+
+**不好**：
+- 提交链路和轮询链路各自拼 endpoint
+- 只保存一部分运行时元数据，默认假设“读回时还能猜出来”
+- Service 层吞掉轮询错误，前端只能看到任务一直停在旧状态
+
+**好**：
+- 把“实际采用的运行时路由”当成 submit spec 的一部分完整持久化：至少包含 `engine_api_mode`、`engine_base_url`、`engine_legacy_base_url`
+- 后续 `GetJob / StopJob / Recover` 一律从同一份 submit spec 重建 endpoint，不再重新猜测
+- 对跨版本 / 多协议回退场景，补一条集成测试：**提交成功后必须还能轮询成功、停止成功**
+
+### 错误七：异步回调链路没有携带稳定实例标识，导致结果写不回原任务
+
+**典型场景**：工作台 preview 先派生配置，再通过 `Http sink` 把调试数据回调到平台。回调链路里如果没有带 `platform_job_id` / `engine_job_id` 之类的稳定标识，平台即使收到数据，也无法把 rows / columns / datasets 归档到正确的 preview job。
+
+**不好**：
+- 先派生 preview 配置，后生成 job id，导致注入到回调地址里的参数缺失
+- 回调接口只接受 body 里的实例标识，没有为 query/header 做兜底
+- 前端看到 preview 作业成功结束，但结果面板 rows / columns 仍然是空
+
+**好**：
+- 先生成 preview job id，再派生 preview 配置；把 `platform_job_id` 作为回调契约的一部分显式注入
+- 平台回调接口至少支持一条“稳定主链路”和一条“兜底链路”（例如 body + query）
+- 对异步回调类功能补一条端到端测试：**任务成功 -> 回调 200 -> rows/columns 落库 -> 前端可见**
+
 ---
 
 ## 跨层功能检查项

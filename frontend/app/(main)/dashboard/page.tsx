@@ -20,7 +20,7 @@
 import {useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
 import {motion} from 'motion/react';
-import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
+import {Card, CardHeader, CardTitle} from '@/components/ui/card';
 import {
   Server,
   Database,
@@ -102,18 +102,18 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className='space-y-6'>
+    <div className='space-y-3'>
       <motion.div
         initial={{opacity: 0, y: -20}}
         animate={{opacity: 1, y: 0}}
         transition={{duration: 0.5}}
         className='flex items-center justify-between'
       >
-        <div className='flex items-center gap-3'>
-          <Ship className='w-8 h-8 text-primary' />
+        <div className='flex items-center gap-2.5'>
+          <Ship className='h-6 w-6 text-primary' />
           <div>
-            <h1 className='text-2xl font-bold'>{t('title')}</h1>
-            <p className='text-muted-foreground text-sm'>{t('subtitle')}</p>
+            <h1 className='text-lg font-bold leading-tight'>{t('title')}</h1>
+            <p className='text-xs text-muted-foreground'>{t('subtitle')}</p>
           </div>
         </div>
         <Button variant='outline' size='sm' onClick={fetchData} disabled={loading}>
@@ -123,12 +123,12 @@ export default function DashboardPage() {
       </motion.div>
 
       {error && (
-        <div className='p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500'>
+        <div className='rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-500'>
           {error}
         </div>
       )}
 
-      <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
+      <div className='grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4'>
         {statCards.map((stat, index) => (
           <motion.div
             key={stat.title}
@@ -137,19 +137,21 @@ export default function DashboardPage() {
             transition={{delay: index * 0.1, duration: 0.5}}
           >
             <Link href={stat.href}>
-              <Card className='hover:shadow-md transition-shadow cursor-pointer'>
-                <CardHeader className='flex flex-row items-center justify-between pb-2'>
-                  <CardTitle className='text-sm font-medium text-muted-foreground'>
-                    {stat.title}
-                  </CardTitle>
-                  <div className={`p-2 rounded-lg ${stat.bgColor}`}>
-                    <stat.icon className={`w-4 h-4 ${stat.color}`} />
+              <Card className='cursor-pointer border-border/70 hover:shadow-sm transition-shadow'>
+                <CardHeader className='flex min-h-[72px] flex-row items-center justify-between space-y-0 px-4 py-3'>
+                  <div className='min-w-0 space-y-1'>
+                    <CardTitle className='truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground/90'>
+                      {stat.title}
+                    </CardTitle>
+                    <div className='text-lg font-semibold leading-none'>{stat.value}</div>
+                    <p className='truncate text-[11px] text-muted-foreground'>
+                      {stat.subValue}
+                    </p>
+                  </div>
+                  <div className={`rounded-md p-1.5 ${stat.bgColor}`}>
+                    <stat.icon className={`h-3.5 w-3.5 ${stat.color}`} />
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className='text-2xl font-bold'>{stat.value}</div>
-                  <p className='text-xs text-muted-foreground mt-1'>{stat.subValue}</p>
-                </CardContent>
               </Card>
             </Link>
           </motion.div>

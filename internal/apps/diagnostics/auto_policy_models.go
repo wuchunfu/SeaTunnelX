@@ -129,7 +129,7 @@ var BuiltinConditionTemplates = []InspectionConditionTemplate{
 		Code:                 ConditionCodePromGCFrequent,
 		Category:             ConditionCategoryPrometheus,
 		Name:                 bilingualText("GC 频繁", "Frequent GC"),
-		Description:          bilingualText("jvm_gc_pause_seconds_count rate 5m 超过阈值次/分钟，持续 N 分钟。", "Trigger when jvm_gc_pause_seconds_count rate over 5m exceeds the threshold per minute for N minutes."),
+		Description:          bilingualText("当 GC 频繁相关指标对应的告警持续触发时，自动发起巡检。", "Trigger inspection when the alert for frequent GC keeps firing."),
 		DefaultThreshold:     10,
 		DefaultWindowMinutes: 5,
 	},
@@ -137,14 +137,14 @@ var BuiltinConditionTemplates = []InspectionConditionTemplate{
 		Code:                 ConditionCodePromHeapRising,
 		Category:             ConditionCategoryPrometheus,
 		Name:                 bilingualText("堆内存持续上涨", "Heap Keeps Rising"),
-		Description:          bilingualText("jvm_memory_used_bytes{area=\"heap\"} 连续 N 分钟单调递增。", "Trigger when jvm_memory_used_bytes{area=\"heap\"} keeps increasing monotonically for N minutes."),
+		Description:          bilingualText("当堆内存持续上涨相关告警触发时，自动发起巡检。", "Trigger inspection when the heap-rising alert is firing."),
 		DefaultWindowMinutes: 15,
 	},
 	{
 		Code:                 ConditionCodePromHeapHigh,
 		Category:             ConditionCategoryPrometheus,
 		Name:                 bilingualText("堆内存使用率高", "High Heap Usage"),
-		Description:          bilingualText("heap used/max 超过 N% 持续 M 分钟。", "Trigger when heap used/max stays above N% for M minutes."),
+		Description:          bilingualText("当堆内存使用率高相关告警触发时，自动发起巡检。", "Trigger inspection when the high heap usage alert is firing."),
 		DefaultThreshold:     85,
 		DefaultWindowMinutes: 10,
 	},
@@ -152,7 +152,7 @@ var BuiltinConditionTemplates = []InspectionConditionTemplate{
 		Code:                 ConditionCodePromCPUHigh,
 		Category:             ConditionCategoryPrometheus,
 		Name:                 bilingualText("CPU 持续高负载", "Sustained High CPU"),
-		Description:          bilingualText("process_cpu_usage 超过 N% 持续 M 分钟。", "Trigger when process_cpu_usage stays above N% for M minutes."),
+		Description:          bilingualText("当 CPU 持续高负载相关告警触发时，自动发起巡检。", "Trigger inspection when the sustained high CPU alert is firing."),
 		DefaultThreshold:     90,
 		DefaultWindowMinutes: 10,
 	},
@@ -185,6 +185,34 @@ var BuiltinConditionTemplates = []InspectionConditionTemplate{
 		Description:     bilingualText("按 Cron 表达式定时触发巡检。", "Trigger inspection on a schedule defined by a cron expression."),
 		DefaultCronExpr: "0 0 * * *",
 	},
+}
+
+var supportedConditionTemplateCodes = map[InspectionConditionTemplateCode]struct{}{
+	ConditionCodeJavaOOM:           {},
+	ConditionCodeJavaStackOverflow: {},
+	ConditionCodeJavaMetaspace:     {},
+	ConditionCodePromGCFrequent:    {},
+	ConditionCodePromHeapRising:    {},
+	ConditionCodePromHeapHigh:      {},
+	ConditionCodePromCPUHigh:       {},
+	ConditionCodeErrorSpike:        {},
+	ConditionCodeNodeUnhealthy:     {},
+	ConditionCodeAlertFiring:       {},
+	ConditionCodeScheduled:         {},
+}
+
+func isConditionTemplateSupported(code InspectionConditionTemplateCode) bool {
+	_, ok := supportedConditionTemplateCodes[code]
+	return ok
+}
+
+func findBuiltinConditionTemplate(code InspectionConditionTemplateCode) (*InspectionConditionTemplate, bool) {
+	for i := range BuiltinConditionTemplates {
+		if BuiltinConditionTemplates[i].Code == code {
+			return &BuiltinConditionTemplates[i], true
+		}
+	}
+	return nil, false
 }
 
 // InspectionConditionItem stores one user-configured condition within an auto-policy.

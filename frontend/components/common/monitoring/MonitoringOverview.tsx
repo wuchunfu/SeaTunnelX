@@ -155,6 +155,10 @@ export function MonitoringOverview({compact = false}: {compact?: boolean} = {}) 
     }
   };
 
+  const compactActionButtonClass = compact ? 'h-8 px-2.5 text-xs' : 'shrink-0';
+  const compactSelectTriggerClass = compact ? 'h-8 text-xs' : undefined;
+  const compactControlWidthClass = compact ? 'w-full md:w-44' : 'w-full md:w-56';
+
   const loadHealth = useCallback(async () => {
     setHealthLoading(true);
     try {
@@ -490,30 +494,52 @@ export function MonitoringOverview({compact = false}: {compact?: boolean} = {}) 
       )}
 
       <Card>
-        <CardHeader className='space-y-3'>
-          <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
-            <CardTitle>{t('grafana.title')}</CardTitle>
+        <CardHeader className={compact ? 'space-y-2 px-4 py-3' : 'space-y-3'}>
+          <div
+            className={
+              compact
+                ? 'flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between'
+                : 'flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'
+            }
+          >
+            <CardTitle className={compact ? 'text-base' : undefined}>
+              {t('grafana.title')}
+            </CardTitle>
             <div className='flex flex-wrap items-center gap-2'>
               <Button
                 variant='outline'
+                size='sm'
                 onClick={() => setIframeKey((value) => value + 1)}
-                className='shrink-0'
+                className={compactActionButtonClass}
               >
-                <RefreshCw className='mr-2 h-4 w-4' />
+                <RefreshCw className={compact ? 'mr-1.5 h-3.5 w-3.5' : 'mr-2 h-4 w-4'} />
                 {t('grafana.reload')}
               </Button>
-              <Button asChild variant='outline' className='shrink-0'>
+              <Button
+                asChild
+                variant='outline'
+                size='sm'
+                className={compactActionButtonClass}
+              >
                 <a href={dashboardURL} target='_blank' rel='noreferrer'>
-                  <ExternalLink className='mr-2 h-4 w-4' />
+                  <ExternalLink
+                    className={compact ? 'mr-1.5 h-3.5 w-3.5' : 'mr-2 h-4 w-4'}
+                  />
                   {t('grafana.open')}
                 </a>
               </Button>
             </div>
           </div>
 
-          <div className='flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center'>
+          <div
+            className={
+              compact
+                ? 'flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center'
+                : 'flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center'
+            }
+          >
             {clusterHealth.length > 0 && (
-              <div className='w-full md:w-56'>
+              <div className={compactControlWidthClass}>
                 <Select
                   value={selectedClusterName ?? ''}
                   onValueChange={(value) => {
@@ -525,7 +551,7 @@ export function MonitoringOverview({compact = false}: {compact?: boolean} = {}) 
                     setSelectedClusterId(found ? found.cluster_id : null);
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={compactSelectTriggerClass}>
                     <SelectValue placeholder='选择集群' />
                   </SelectTrigger>
                   <SelectContent>
@@ -543,14 +569,14 @@ export function MonitoringOverview({compact = false}: {compact?: boolean} = {}) 
             )}
 
             {selectedClusterId && (
-              <div className='w-full md:w-56'>
+              <div className={compactControlWidthClass}>
                 <Select
                   value={selectedInstance}
                   onValueChange={(value) => {
                     setSelectedInstance(value);
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className={compactSelectTriggerClass}>
                     <SelectValue placeholder='选择节点' />
                   </SelectTrigger>
                   <SelectContent>
@@ -565,12 +591,12 @@ export function MonitoringOverview({compact = false}: {compact?: boolean} = {}) 
               </div>
             )}
 
-            <div className='w-full md:w-56'>
+            <div className={compactControlWidthClass}>
               <Select
                 value={timeRange}
                 onValueChange={(value) => setTimeRange(value as TimeRange)}
               >
-                <SelectTrigger>
+                <SelectTrigger className={compactSelectTriggerClass}>
                   <SelectValue placeholder={t('grafana.timeRange.label')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -590,14 +616,14 @@ export function MonitoringOverview({compact = false}: {compact?: boolean} = {}) 
               </Select>
             </div>
 
-            <div className='w-full md:w-56'>
+            <div className={compactControlWidthClass}>
               <Select
                 value={refreshInterval}
                 onValueChange={(value) =>
                   setRefreshInterval(value as RefreshInterval)
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className={compactSelectTriggerClass}>
                   <SelectValue
                     placeholder={t('grafana.refreshInterval.label')}
                   />

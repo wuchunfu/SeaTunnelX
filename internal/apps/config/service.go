@@ -20,7 +20,12 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -52,12 +57,21 @@ type AgentClient interface {
 	PushConfig(ctx context.Context, hostID uint, installDir string, configType ConfigType, content string) error
 }
 
+// PortMetadataUpdater updates cluster node API port metadata after config changes.
+// PortMetadataUpdater 在配置变更后更新集群节点 API 端口元数据。
+type PortMetadataUpdater interface {
+	UpdateSeatunnelAPIPortByHost(ctx context.Context, clusterID uint, hostID uint, port int) error
+	UpdateHazelcastPortByHost(ctx context.Context, clusterID uint, hostID uint, configType ConfigType, port int) error
+	UpdateClusterJobLogMode(ctx context.Context, clusterID uint, mode string) error
+}
+
 // Service 配置管理服务
 type Service struct {
 	repo             *Repository
 	hostProvider     HostProvider
 	nodeInfoProvider NodeInfoProvider
 	agentClient      AgentClient
+	portUpdater      PortMetadataUpdater
 }
 
 // NewService 创建配置服务实例
@@ -68,6 +82,12 @@ func NewService(repo *Repository, hostProvider HostProvider, nodeInfoProvider No
 		nodeInfoProvider: nodeInfoProvider,
 		agentClient:      agentClient,
 	}
+}
+
+// SetPortMetadataUpdater sets the cluster port metadata updater.
+// SetPortMetadataUpdater 设置集群端口元数据更新器。
+func (s *Service) SetPortMetadataUpdater(updater PortMetadataUpdater) {
+	s.portUpdater = updater
 }
 
 // Get 获取配置详情
@@ -204,8 +224,13 @@ func (s *Service) Update(ctx context.Context, id uint, req *UpdateConfigRequest,
 			pushErr := s.agentClient.PushConfig(ctx, *config.HostID, installDir, config.ConfigType, config.Content)
 			if pushErr != nil {
 				info.PushError = "推送配置到节点失败: " + pushErr.Error()
+			} else {
+				s.syncDerivedRuntimeMetadata(ctx, config.ClusterID, config.HostID, config.ConfigType, config.Content)
 			}
 		}
+	}
+	if config.ConfigType == ConfigTypeLog4j2 {
+		s.syncDerivedRuntimeMetadata(ctx, config.ClusterID, config.HostID, config.ConfigType, config.Content)
 	}
 
 	return info, nil
@@ -674,6 +699,8 @@ func (s *Service) SyncTemplateToAllNodes(ctx context.Context, clusterID uint, co
 							}
 						}
 						result.PushErrors = append(result.PushErrors, errInfo)
+					} else {
+						s.syncDerivedRuntimeMetadata(ctx, clusterID, nc.HostID, configType, template.Content)
 					}
 				}
 			}
@@ -726,4 +753,141 @@ func (s *Service) toConfigInfo(ctx context.Context, config *Config) (*ConfigInfo
 	}
 
 	return info, nil
+}
+
+func (s *Service) syncDerivedRuntimeMetadata(ctx context.Context, clusterID uint, hostID *uint, configType ConfigType, content string) {
+	if s.portUpdater == nil {
+		return
+	}
+	switch configType {
+	case ConfigTypeSeatunnel:
+		if hostID == nil {
+			return
+		}
+		port, ok, err := extractSeatunnelHTTPPort(content)
+		if err != nil || !ok || port <= 0 {
+			return
+		}
+		_ = s.portUpdater.UpdateSeatunnelAPIPortByHost(ctx, clusterID, *hostID, port)
+	case ConfigTypeHazelcast, ConfigTypeHazelcastMaster, ConfigTypeHazelcastWorker:
+		if hostID == nil {
+			return
+		}
+		port, ok, err := extractHazelcastNetworkPort(content)
+		if err != nil || !ok || port <= 0 {
+			return
+		}
+		_ = s.portUpdater.UpdateHazelcastPortByHost(ctx, clusterID, *hostID, configType, port)
+	case ConfigTypeLog4j2:
+		mode, ok := extractJobLogMode(content)
+		if !ok {
+			return
+		}
+		_ = s.portUpdater.UpdateClusterJobLogMode(ctx, clusterID, mode)
+	}
+}
+
+func extractSeatunnelHTTPPort(content string) (int, bool, error) {
+	if strings.TrimSpace(content) == "" {
+		return 0, false, nil
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return 0, false, fmt.Errorf("invalid seatunnel yaml: %w", err)
+	}
+	if len(root.Content) == 0 {
+		return 0, false, nil
+	}
+	seatunnel := findYAMLMapChild(root.Content[0], "seatunnel")
+	if seatunnel == nil {
+		return 0, false, nil
+	}
+	engine := findYAMLMapChild(seatunnel, "engine")
+	if engine == nil {
+		return 0, false, nil
+	}
+	httpNode := findYAMLMapChild(engine, "http")
+	if httpNode == nil {
+		return 0, false, nil
+	}
+	portNode := findYAMLMapChild(httpNode, "port")
+	if portNode == nil {
+		return 0, false, nil
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(portNode.Value))
+	if err != nil {
+		return 0, false, err
+	}
+	return port, true, nil
+}
+
+func findYAMLMapChild(parent *yaml.Node, key string) *yaml.Node {
+	if parent == nil || parent.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i < len(parent.Content)-1; i += 2 {
+		if parent.Content[i].Value == key {
+			return parent.Content[i+1]
+		}
+	}
+	return nil
+}
+
+func extractHazelcastNetworkPort(content string) (int, bool, error) {
+	if strings.TrimSpace(content) == "" {
+		return 0, false, nil
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return 0, false, fmt.Errorf("invalid hazelcast yaml: %w", err)
+	}
+	if len(root.Content) == 0 {
+		return 0, false, nil
+	}
+	hazelcast := findYAMLMapChild(root.Content[0], "hazelcast")
+	if hazelcast == nil {
+		return 0, false, nil
+	}
+	network := findYAMLMapChild(hazelcast, "network")
+	if network == nil {
+		return 0, false, nil
+	}
+	portNode := findYAMLMapChild(network, "port")
+	if portNode == nil {
+		return 0, false, nil
+	}
+	if portNode.Kind == yaml.MappingNode {
+		portValue := findYAMLMapChild(portNode, "port")
+		if portValue == nil {
+			return 0, false, nil
+		}
+		portNode = portValue
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(portNode.Value))
+	if err != nil {
+		return 0, false, err
+	}
+	return port, true, nil
+}
+
+func extractJobLogMode(content string) (string, bool) {
+	for _, rawLine := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, "rootLogger.appenderRef.file.ref") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return "", false
+		}
+		value := strings.TrimSpace(parts[1])
+		if strings.EqualFold(value, "routingAppender") {
+			return "per_job", true
+		}
+		return "mixed", true
+	}
+	return "", false
 }

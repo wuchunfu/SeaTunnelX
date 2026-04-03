@@ -27,8 +27,10 @@ import (
 	"strings"
 	"time"
 
+	appconfig "github.com/seatunnel/seatunnelX/internal/apps/config"
 	installerapp "github.com/seatunnel/seatunnelX/internal/apps/installer"
 	"github.com/seatunnel/seatunnelX/internal/logger"
+	"gopkg.in/yaml.v3"
 )
 
 // HealthStatus represents the health status of a cluster.
@@ -156,6 +158,13 @@ type AgentCommandSender interface {
 	SendCommand(ctx context.Context, agentID string, commandType string, params map[string]string) (bool, string, error)
 }
 
+// ConfigAgentClient reads/writes node config files via Agent.
+// ConfigAgentClient 通过 Agent 读写节点配置文件。
+type ConfigAgentClient interface {
+	PullConfig(ctx context.Context, hostID uint, installDir string, configType appconfig.ConfigType) (string, error)
+	PushConfig(ctx context.Context, hostID uint, installDir string, configType appconfig.ConfigType, content string) error
+}
+
 // Service provides business logic for cluster management operations.
 // Service 提供集群管理操作的业务逻辑。
 type Service struct {
@@ -163,6 +172,7 @@ type Service struct {
 	hostProvider             HostProvider
 	heartbeatTimeout         time.Duration
 	agentSender              AgentCommandSender
+	configAgentClient        ConfigAgentClient
 	onBeforeClusterDelete    func(context.Context, uint) // optional hook for monitor cleanup etc.
 	onClusterTopologyChanged func(context.Context, uint) // optional hook for observability sync etc.
 }
@@ -192,6 +202,12 @@ func NewService(repo *Repository, hostProvider HostProvider, cfg *ServiceConfig)
 // SetAgentCommandSender 设置用于集群操作的 Agent 命令发送器。
 func (s *Service) SetAgentCommandSender(sender AgentCommandSender) {
 	s.agentSender = sender
+}
+
+// SetConfigAgentClient sets the config agent client used for config file synchronization.
+// SetConfigAgentClient 设置用于配置文件同步的 Agent 配置客户端。
+func (s *Service) SetConfigAgentClient(client ConfigAgentClient) {
+	s.configAgentClient = client
 }
 
 // SetOnBeforeClusterDelete sets an optional hook called before cluster DB deletion (e.g. monitor config cleanup).
@@ -1163,6 +1179,7 @@ func (s *Service) UpdateNode(ctx context.Context, clusterID uint, nodeID uint, r
 	if err != nil {
 		return nil, err
 	}
+	originalNodeAPIPort := node.APIPort
 
 	// Update fields if provided
 	// 如果提供了字段则更新
@@ -1199,6 +1216,12 @@ func (s *Service) UpdateNode(ctx context.Context, clusterID uint, nodeID uint, r
 		node.Overrides = normalizedOverrides
 	}
 
+	if req.APIPort != nil && node.Role != NodeRoleWorker && node.APIPort != originalNodeAPIPort {
+		if err := s.syncNodeRuntimeAPIPort(ctx, clusterID, node, originalNodeAPIPort); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := s.repo.UpdateNode(ctx, node); err != nil {
 		return nil, err
 	}
@@ -1214,6 +1237,118 @@ func (s *Service) UpdateNode(ctx context.Context, clusterID uint, nodeID uint, r
 	s.notifyClusterTopologyChanged(ctx, clusterID)
 
 	return node, nil
+}
+
+func (s *Service) syncNodeRuntimeAPIPort(ctx context.Context, clusterID uint, node *ClusterNode, previousAPIPort int) error {
+	if node == nil {
+		return fmt.Errorf("node is required / 节点不能为空")
+	}
+	if s.configAgentClient == nil {
+		return fmt.Errorf("config agent client not configured / 配置 Agent 客户端未配置")
+	}
+	if node.HostID == 0 {
+		return fmt.Errorf("node host id is required / 节点 HostID 不能为空")
+	}
+
+	installDir := strings.TrimSpace(node.InstallDir)
+	if installDir == "" {
+		return fmt.Errorf("node install_dir is required / 节点安装目录不能为空")
+	}
+
+	content, err := s.configAgentClient.PullConfig(ctx, node.HostID, installDir, appconfig.ConfigTypeSeatunnel)
+	if err != nil {
+		return fmt.Errorf("pull seatunnel.yaml failed: %w / 拉取 seatunnel.yaml 失败: %w", err, err)
+	}
+	updatedContent, err := updateSeatunnelHTTPPort(content, node.APIPort)
+	if err != nil {
+		return err
+	}
+	if err := s.configAgentClient.PushConfig(ctx, node.HostID, installDir, appconfig.ConfigTypeSeatunnel, updatedContent); err != nil {
+		return fmt.Errorf("push seatunnel.yaml failed: %w / 推送 seatunnel.yaml 失败: %w", err, err)
+	}
+
+	logger.InfoF(ctx, "[Cluster] synced seatunnel.yaml http.port for node=%d: %d -> %d", node.ID, previousAPIPort, node.APIPort)
+
+	if _, err := s.restartNodeWithResolvedSpec(ctx, clusterID, node); err != nil {
+		return fmt.Errorf("restart node after api_port change failed: %w / 修改 api_port 后重启节点失败: %w", err, err)
+	}
+	return nil
+}
+
+func updateSeatunnelHTTPPort(content string, port int) (string, error) {
+	if strings.TrimSpace(content) == "" {
+		return "", fmt.Errorf("seatunnel.yaml content is empty / seatunnel.yaml 内容为空")
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return "", fmt.Errorf("invalid seatunnel.yaml: %w / 非法 seatunnel.yaml: %w", err, err)
+	}
+	if len(root.Content) == 0 {
+		return "", fmt.Errorf("invalid seatunnel.yaml root / 非法 seatunnel.yaml 根节点")
+	}
+
+	top := root.Content[0]
+	seatunnelNode := ensureYAMLMapChild(top, "seatunnel")
+	engineNode := ensureYAMLMapChild(seatunnelNode, "engine")
+	httpNode := ensureYAMLMapChild(engineNode, "http")
+	setYAMLMapValue(httpNode, "enable-http", "true")
+	setYAMLMapValue(httpNode, "enable-dynamic-port", "false")
+	setYAMLMapValue(httpNode, "port", strconv.Itoa(port))
+
+	normalized, err := yaml.Marshal(&root)
+	if err != nil {
+		return "", fmt.Errorf("marshal seatunnel.yaml failed: %w / 序列化 seatunnel.yaml 失败: %w", err, err)
+	}
+	return string(normalized), nil
+}
+
+func ensureYAMLMapChild(parent *yaml.Node, key string) *yaml.Node {
+	if parent.Kind != yaml.MappingNode {
+		parent.Kind = yaml.MappingNode
+		parent.Tag = "!!map"
+		parent.Content = []*yaml.Node{}
+	}
+	for i := 0; i < len(parent.Content)-1; i += 2 {
+		if parent.Content[i].Value == key {
+			return parent.Content[i+1]
+		}
+	}
+	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
+	valueNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	parent.Content = append(parent.Content, keyNode, valueNode)
+	return valueNode
+}
+
+func setYAMLMapValue(parent *yaml.Node, key, value string) {
+	if parent.Kind != yaml.MappingNode {
+		parent.Kind = yaml.MappingNode
+		parent.Tag = "!!map"
+		parent.Content = []*yaml.Node{}
+	}
+	for i := 0; i < len(parent.Content)-1; i += 2 {
+		if parent.Content[i].Value == key {
+			parent.Content[i+1].Kind = yaml.ScalarNode
+			parent.Content[i+1].Tag = inferYAMLScalarTag(value)
+			parent.Content[i+1].Value = value
+			return
+		}
+	}
+	parent.Content = append(parent.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: inferYAMLScalarTag(value), Value: value},
+	)
+}
+
+func inferYAMLScalarTag(value string) string {
+	switch value {
+	case "true", "false":
+		return "!!bool"
+	default:
+		if _, err := strconv.Atoi(value); err == nil {
+			return "!!int"
+		}
+		return "!!str"
+	}
 }
 
 // GetStatus retrieves the detailed status of a cluster including node health.
@@ -1869,6 +2004,17 @@ func (s *Service) RestartNode(ctx context.Context, clusterID uint, nodeID uint) 
 	return s.executeNodeOperation(ctx, clusterID, nodeID, OperationRestart)
 }
 
+func (s *Service) restartNodeWithResolvedSpec(ctx context.Context, clusterID uint, node *ClusterNode) (*OperationResult, error) {
+	if node == nil {
+		return nil, fmt.Errorf("node is required / 节点不能为空")
+	}
+	cluster, err := s.repo.GetByID(ctx, clusterID, false)
+	if err != nil {
+		return nil, err
+	}
+	return s.executeNodeOperationWithResolvedNode(ctx, cluster, node, OperationRestart)
+}
+
 // executeNodeOperation executes an operation on a single node.
 // executeNodeOperation 在单个节点上执行操作。
 func (s *Service) executeNodeOperation(ctx context.Context, clusterID uint, nodeID uint, operation OperationType) (*OperationResult, error) {
@@ -1889,9 +2035,12 @@ func (s *Service) executeNodeOperation(ctx context.Context, clusterID uint, node
 	if err != nil {
 		return nil, err
 	}
+	return s.executeNodeOperationWithResolvedNode(ctx, cluster, node, operation)
+}
 
+func (s *Service) executeNodeOperationWithResolvedNode(ctx context.Context, cluster *Cluster, node *ClusterNode, operation OperationType) (*OperationResult, error) {
 	result := &OperationResult{
-		ClusterID:   clusterID,
+		ClusterID:   cluster.ID,
 		Operation:   operation,
 		Success:     true,
 		NodeResults: make([]*NodeOperationResult, 0, 1),
@@ -1938,7 +2087,7 @@ func (s *Service) executeNodeOperation(ctx context.Context, clusterID uint, node
 		}
 
 		params := map[string]string{
-			"cluster_id":  fmt.Sprintf("%d", clusterID),
+			"cluster_id":  fmt.Sprintf("%d", cluster.ID),
 			"node_id":     fmt.Sprintf("%d", node.ID),
 			"role":        string(node.Role),
 			"install_dir": installDir,
@@ -1991,7 +2140,7 @@ func (s *Service) executeNodeOperation(ctx context.Context, clusterID uint, node
 
 	// Update cluster status based on all nodes' status
 	// 根据所有节点的状态更新集群状态
-	s.updateClusterStatusFromNodes(ctx, clusterID)
+	s.updateClusterStatusFromNodes(ctx, cluster.ID)
 
 	return result, nil
 }

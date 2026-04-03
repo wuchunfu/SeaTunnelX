@@ -51,6 +51,7 @@ import (
 	"github.com/seatunnel/seatunnelX/internal/apps/plugin"
 	"github.com/seatunnel/seatunnelX/internal/apps/releasebundle"
 	"github.com/seatunnel/seatunnelX/internal/apps/stupgrade"
+	syncapp "github.com/seatunnel/seatunnelX/internal/apps/sync"
 	"github.com/seatunnel/seatunnelX/internal/apps/task"
 	"github.com/seatunnel/seatunnelX/internal/config"
 	"github.com/seatunnel/seatunnelX/internal/db"
@@ -210,6 +211,10 @@ func Serve() {
 			// 如果 Agent Manager 可用，注入 Agent 命令发送器
 			if agentManager != nil {
 				clusterService.SetAgentCommandSender(&agentCommandSenderAdapter{manager: agentManager})
+				clusterService.SetConfigAgentClient(&configAgentClientAdapter{
+					manager:     agentManager,
+					hostService: hostService,
+				})
 				log.Println("[API] Agent command sender injected into cluster service / Agent 命令发送器已注入集群服务")
 			}
 
@@ -245,6 +250,7 @@ func Serve() {
 				clusterRouter.POST("/:id/restart", clusterHandler.RestartCluster)
 				clusterRouter.GET("/:id/status", clusterHandler.GetClusterStatus)
 				clusterRouter.GET("/:id/seatunnelx-java-proxy/status", clusterHandler.GetSeatunnelXJavaProxyStatus)
+				clusterRouter.GET("/:id/seatunnelx-java-proxy/logs", clusterHandler.PreviewSeatunnelXJavaProxyServiceLog)
 				clusterRouter.POST("/:id/seatunnelx-java-proxy/start", clusterHandler.StartSeatunnelXJavaProxy)
 				clusterRouter.POST("/:id/seatunnelx-java-proxy/stop", clusterHandler.StopSeatunnelXJavaProxy)
 				clusterRouter.POST("/:id/seatunnelx-java-proxy/restart", clusterHandler.RestartSeatunnelXJavaProxy)
@@ -369,6 +375,7 @@ func Serve() {
 			diagnosticsService := diagnostics.NewService(clusterService, monitorService, monitoringService)
 			diagnosticsService.SetHostReader(hostService)
 			diagnosticsService.SetAgentCommandSender(&agentCommandSenderAdapter{manager: agentManager})
+			diagnosticsService.StartAutoPolicyRuntime(ctx)
 			diagnosticsHandler := diagnostics.NewHandler(diagnosticsService)
 
 			// Public remote-observability integration endpoints (no login required).
@@ -660,6 +667,78 @@ func Serve() {
 				taskRouter.POST("/:id/retry", taskHandler.RetryTask)
 			}
 
+			// Sync studio 数据同步工作台
+			syncRepo := syncapp.NewRepository(db.DB(context.Background()))
+			syncService := syncapp.NewService(syncRepo)
+			syncService.SetEngineClient(syncapp.NewSeaTunnelEngineClient())
+			syncService.SetRuntimeResolver(syncapp.NewDefaultClusterRuntimeResolver(clusterRepo, hostRepo))
+			syncService.SetExecutionTargetResolver(syncapp.NewDefaultExecutionTargetResolver(clusterRepo, hostRepo))
+			syncService.SetClusterLogProvider(clusterService)
+			syncService.SetClusterVersionProvider(clusterService)
+			syncService.SetConfigToolClient(syncapp.NewDefaultConfigToolClient())
+			syncService.SetConfigToolResolver(syncapp.NewDefaultConfigToolResolver(clusterService))
+			if agentManager != nil {
+				syncService.SetAgentCommandSender(&agentCommandSenderAdapter{manager: agentManager})
+			}
+			syncService.StartPreviewRuntime(ctx)
+			syncService.StartTaskScheduleRuntime(ctx)
+			syncHandler := syncapp.NewHandler(syncService)
+
+			apiV1Router.POST("/sync/preview/collect", syncHandler.CollectPreview)
+
+			syncRouter := apiV1Router.Group("/sync")
+			syncRouter.Use(auth.LoginRequired())
+			{
+				syncRouter.GET("/tree", syncHandler.GetTaskTree)
+
+				syncTaskRouter := syncRouter.Group("/tasks")
+				{
+					syncTaskRouter.POST("", syncHandler.CreateTask)
+					syncTaskRouter.GET("", syncHandler.ListTasks)
+					syncTaskRouter.GET("/:id", syncHandler.GetTask)
+					syncTaskRouter.PUT("/:id", syncHandler.UpdateTask)
+					syncTaskRouter.DELETE("/:id", syncHandler.DeleteTask)
+					syncTaskRouter.POST("/:id/publish", syncHandler.PublishTask)
+					syncTaskRouter.GET("/:id/versions", syncHandler.ListTaskVersions)
+					syncTaskRouter.POST("/:id/versions/:versionId/rollback", syncHandler.RollbackTaskVersion)
+					syncTaskRouter.DELETE("/:id/versions/:versionId", syncHandler.DeleteTaskVersion)
+					syncTaskRouter.POST("/:id/validate", syncHandler.ValidateTask)
+					syncTaskRouter.POST("/:id/test-connections", syncHandler.TestTaskConnections)
+					syncTaskRouter.POST("/:id/dag", syncHandler.GetTaskDAG)
+					syncTaskRouter.POST("/:id/preview", syncHandler.PreviewTask)
+					syncTaskRouter.POST("/:id/preview/sink-savemode", syncHandler.PreviewSinkSaveMode)
+					syncTaskRouter.POST("/:id/submit", syncHandler.SubmitTask)
+				}
+
+				syncGlobalVarRouter := syncRouter.Group("/global-variables")
+				{
+					syncGlobalVarRouter.GET("", syncHandler.ListGlobalVariables)
+					syncGlobalVarRouter.POST("", syncHandler.CreateGlobalVariable)
+					syncGlobalVarRouter.PUT("/:id", syncHandler.UpdateGlobalVariable)
+					syncGlobalVarRouter.DELETE("/:id", syncHandler.DeleteGlobalVariable)
+				}
+
+				syncPluginRouter := syncRouter.Group("/plugins")
+				{
+					syncPluginRouter.POST("/list", syncHandler.ListPluginFactories)
+					syncPluginRouter.POST("/options", syncHandler.GetPluginOptions)
+					syncPluginRouter.POST("/template", syncHandler.RenderPluginTemplate)
+					syncPluginRouter.POST("/enum-values", syncHandler.ListPluginEnumValues)
+					syncPluginRouter.POST("/enum-catalog", syncHandler.ListPluginEnumCatalog)
+				}
+
+				syncJobRouter := syncRouter.Group("/jobs")
+				{
+					syncJobRouter.GET("", syncHandler.ListJobs)
+					syncJobRouter.GET("/:id", syncHandler.GetJob)
+					syncJobRouter.GET("/:id/preview", syncHandler.GetPreviewSnapshot)
+					syncJobRouter.GET("/:id/checkpoint", syncHandler.GetJobCheckpointSnapshot)
+					syncJobRouter.GET("/:id/logs", syncHandler.GetJobLogs)
+					syncJobRouter.POST("/:id/recover", syncHandler.RecoverJob)
+					syncJobRouter.POST("/:id/cancel", syncHandler.CancelJob)
+				}
+			}
+
 			// Host tasks route 主机任务路由
 			// GET /api/v1/hosts/:id/tasks - 获取主机任务列表
 			// GET /api/v1/hosts/:id/tasks - List host tasks
@@ -805,6 +884,7 @@ func Serve() {
 			configAgentClient := &configAgentClientAdapter{manager: agentManager, hostService: hostService}
 			configNodeInfoProvider := &configNodeInfoProviderAdapter{clusterService: clusterService}
 			configService := appconfig.NewService(configRepo, &configHostProviderAdapter{hostService: hostService}, configNodeInfoProvider, configAgentClient)
+			configService.SetPortMetadataUpdater(&configPortMetadataUpdaterAdapter{clusterRepo: clusterRepo})
 			configHandler := appconfig.NewHandler(configService)
 
 			// Inject config initializer into installer service for initializing configs after installation
@@ -1096,7 +1176,7 @@ func (a *agentCommandSenderAdapter) SendCommand(ctx context.Context, agentID str
 // stringToCommandType 将命令类型字符串转换为 pb.CommandType。
 func (a *agentCommandSenderAdapter) stringToCommandType(cmdType string) pb.CommandType {
 	switch cmdType {
-	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "seatunnelx_java_proxy_probe", "seatunnelx_java_proxy_stat", "seatunnelx_java_proxy_list", "seatunnelx_java_proxy_preview", "seatunnelx_java_proxy_inspect_checkpoint", "seatunnelx_java_proxy_inspect_imap_wal", "full":
+	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "seatunnelx_java_proxy_probe", "seatunnelx_java_proxy_stat", "seatunnelx_java_proxy_list", "seatunnelx_java_proxy_preview", "seatunnelx_java_proxy_inspect_checkpoint", "seatunnelx_java_proxy_inspect_checkpoint_source_state", "seatunnelx_java_proxy_inspect_imap_wal", "sync_local_run", "sync_local_status", "sync_local_stop", "sync_local_logs", "sync_job_logs", "full":
 		return pb.CommandType_PRECHECK
 	case "install":
 		return pb.CommandType_INSTALL
@@ -1341,7 +1421,7 @@ func (a *installerAgentManagerAdapter) SendCommand(ctx context.Context, agentID 
 // stringToCommandType 将命令类型字符串转换为 pb.CommandType。
 func (a *installerAgentManagerAdapter) stringToCommandType(cmdType string) pb.CommandType {
 	switch cmdType {
-	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "seatunnelx_java_proxy_probe", "seatunnelx_java_proxy_stat", "seatunnelx_java_proxy_list", "seatunnelx_java_proxy_preview", "seatunnelx_java_proxy_inspect_checkpoint", "seatunnelx_java_proxy_inspect_imap_wal", "full":
+	case "check_port", "check_directory", "check_http", "check_process", "check_java", "check_tcp", "check_path_ready", "stat_path", "cleanup_path", "seatunnelx_java_proxy_probe", "seatunnelx_java_proxy_stat", "seatunnelx_java_proxy_list", "seatunnelx_java_proxy_preview", "seatunnelx_java_proxy_inspect_checkpoint", "seatunnelx_java_proxy_inspect_checkpoint_source_state", "seatunnelx_java_proxy_inspect_imap_wal", "sync_local_run", "sync_local_status", "sync_local_stop", "full":
 		return pb.CommandType_PRECHECK
 	case "install":
 		return pb.CommandType_INSTALL
@@ -1542,6 +1622,115 @@ type configNodeInfoProviderAdapter struct {
 // GetNodeInstallDir 根据集群 ID 和主机 ID 返回节点的安装目录。
 func (a *configNodeInfoProviderAdapter) GetNodeInstallDir(ctx context.Context, clusterID uint, hostID uint) (string, error) {
 	return a.clusterService.GetNodeInstallDir(ctx, clusterID, hostID)
+}
+
+// configPortMetadataUpdaterAdapter adapts cluster.Repository to appconfig.PortMetadataUpdater interface.
+// configPortMetadataUpdaterAdapter 将 cluster.Repository 适配到 appconfig.PortMetadataUpdater 接口。
+type configPortMetadataUpdaterAdapter struct {
+	clusterRepo *cluster.Repository
+}
+
+// UpdateSeatunnelAPIPortByHost updates the API port metadata for non-worker nodes on a host.
+// UpdateSeatunnelAPIPortByHost 更新指定主机上非 worker 节点的 API 端口元数据。
+func (a *configPortMetadataUpdaterAdapter) UpdateSeatunnelAPIPortByHost(ctx context.Context, clusterID uint, hostID uint, port int) error {
+	if a == nil || a.clusterRepo == nil {
+		return nil
+	}
+	nodes, err := a.clusterRepo.GetNodesByHostID(ctx, hostID)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		if node == nil || node.ClusterID != clusterID || node.Role == cluster.NodeRoleWorker {
+			continue
+		}
+		if node.APIPort == port {
+			continue
+		}
+		node.APIPort = port
+		if err := a.clusterRepo.UpdateNode(ctx, node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateHazelcastPortByHost updates hazelcast-related port metadata for nodes on a host.
+// UpdateHazelcastPortByHost 更新指定主机上节点的 Hazelcast 端口元数据。
+func (a *configPortMetadataUpdaterAdapter) UpdateHazelcastPortByHost(ctx context.Context, clusterID uint, hostID uint, configType appconfig.ConfigType, port int) error {
+	if a == nil || a.clusterRepo == nil {
+		return nil
+	}
+	nodes, err := a.clusterRepo.GetNodesByHostID(ctx, hostID)
+	if err != nil {
+		return err
+	}
+	var clusterObj *cluster.Cluster
+	for _, node := range nodes {
+		if node == nil || node.ClusterID != clusterID {
+			continue
+		}
+		shouldUpdate := false
+		switch configType {
+		case appconfig.ConfigTypeHazelcast:
+			shouldUpdate = node.Role == cluster.NodeRoleMasterWorker || node.Role == cluster.NodeRoleMaster
+		case appconfig.ConfigTypeHazelcastMaster:
+			shouldUpdate = node.Role == cluster.NodeRoleMaster
+		case appconfig.ConfigTypeHazelcastWorker:
+			shouldUpdate = node.Role == cluster.NodeRoleWorker
+		}
+		if !shouldUpdate || node.HazelcastPort == port {
+			continue
+		}
+		node.HazelcastPort = port
+		if err := a.clusterRepo.UpdateNode(ctx, node); err != nil {
+			return err
+		}
+		if clusterObj == nil {
+			clusterObj, _ = a.clusterRepo.GetByID(ctx, clusterID, false)
+		}
+	}
+	if clusterObj != nil {
+		if clusterObj.Config == nil {
+			clusterObj.Config = cluster.ClusterConfig{}
+		}
+		switch configType {
+		case appconfig.ConfigTypeHazelcast, appconfig.ConfigTypeHazelcastMaster:
+			ensureClusterConfigPath(clusterObj.Config, "ports")["master_hazelcast_port"] = port
+		case appconfig.ConfigTypeHazelcastWorker:
+			ensureClusterConfigPath(clusterObj.Config, "ports")["worker_port"] = port
+		}
+		if err := a.clusterRepo.Update(ctx, clusterObj); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UpdateClusterJobLogMode syncs runtime job log mode inferred from log4j2.properties.
+// UpdateClusterJobLogMode 同步由 log4j2.properties 反向解析出的作业日志模式。
+func (a *configPortMetadataUpdaterAdapter) UpdateClusterJobLogMode(ctx context.Context, clusterID uint, mode string) error {
+	if a == nil || a.clusterRepo == nil || strings.TrimSpace(mode) == "" {
+		return nil
+	}
+	clusterObj, err := a.clusterRepo.GetByID(ctx, clusterID, false)
+	if err != nil {
+		return err
+	}
+	if clusterObj.Config == nil {
+		clusterObj.Config = cluster.ClusterConfig{}
+	}
+	ensureClusterConfigPath(clusterObj.Config, "runtime")["job_log_mode"] = mode
+	return a.clusterRepo.Update(ctx, clusterObj)
+}
+
+func ensureClusterConfigPath(cfg cluster.ClusterConfig, key string) map[string]interface{} {
+	current, ok := cfg[key].(map[string]interface{})
+	if !ok || current == nil {
+		current = map[string]interface{}{}
+		cfg[key] = current
+	}
+	return current
 }
 
 // ==================== Discovery Service Adapters 发现服务适配器 ====================
